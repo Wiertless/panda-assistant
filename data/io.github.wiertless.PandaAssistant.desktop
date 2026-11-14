@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Panda
+GenericName=AI Assistant
+Comment=Local AI assistant on your NPU that can act on your desktop
+Exec=panda-assistant
+Icon=io.github.wiertless.PandaAssistant
+Terminal=false
+Categories=Utility;GTK;
+Keywords=ai;assistant;chat;llm;npu;ask;
+StartupNotify=true
+DBusActivatable=true

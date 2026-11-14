@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.wiertless.PandaAssistant</id>
+  <name>Panda</name>
+  <summary>Local AI assistant on your NPU</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <developer id="io.github.wiertless">
+    <name>Wiertless</name>
+  </developer>
+  <description>
+    <p>Panda chats with a model running on your AMD Ryzen AI NPU through FastFlowLM. Nothing leaves your computer.</p>
+    <p>It can open apps, files and websites, switch dark mode, Do Not Disturb, volume, brightness, Wi-Fi and Bluetooth, and read battery and system information. Actions that could disconnect you ask first.</p>
+    <p>Type a question in the GNOME overview search and pick “Ask:” to send it to Panda.</p>
+  </description>
+  <launchable type="desktop-id">io.github.wiertless.PandaAssistant.desktop</launchable>
+  <url type="homepage">https://github.com/Wiertless/panda-assistant</url>
+  <url type="bugtracker">https://github.com/Wiertless/panda-assistant/issues</url>
+  <provides><binary>panda-assistant</binary></provides>
+  <requires><display_length compare="ge">360</display_length></requires>
+  <supports><control>keyboard</control><control>pointing</control></supports>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-11-14"/>
+  </releases>
+</component>

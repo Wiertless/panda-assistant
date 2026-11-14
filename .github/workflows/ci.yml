@@ -1,0 +1,47 @@
+name: ci
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq python3-gi gir1.2-glib-2.0 desktop-file-utils appstream
+      - name: Unit tests
+        run: make test PYTHON=/usr/bin/python3
+      - name: Validate desktop and AppStream files
+        run: |
+          desktop-file-validate data/*.desktop
+          appstreamcli validate --no-net data/*.metainfo.xml
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check the tag matches the app version
+        run: |
+          v=$(sed -n 's/^VERSION = "\(.*\)"/\1/p' src/panda_assistant/__init__.py)
+          [ "v$v" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME != VERSION $v" >&2; exit 1; }
+      - name: Build and publish the release tarball
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v=${GITHUB_REF_NAME#v}
+          make dist VERSION="$v"
+          sha256sum "panda-assistant-$v.tar.gz" | tee "panda-assistant-$v.tar.gz.sha256"
+          gh release create "$GITHUB_REF_NAME" "panda-assistant-$v.tar.gz" "panda-assistant-$v.tar.gz.sha256" \
+            --title "Panda $v" --notes "Install: \`./install.sh /usr\` from the extracted tarball."
