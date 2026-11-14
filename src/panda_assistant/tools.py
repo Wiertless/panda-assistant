@@ -14,7 +14,7 @@ import platform
 import re
 import shutil
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
@@ -32,6 +32,11 @@ class Context:
     """What tools may need from the app (kept out of the tools for testing)."""
 
     copy_to_clipboard: Callable[[str], None] | None = None
+    # Hide and show Panda's window around a screenshot.
+    hide_window: Callable[[], None] | None = None
+    show_window: Callable[[], None] | None = None
+    # Images a tool produced (data: URLs) for the agent to show the model.
+    images: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -71,10 +76,13 @@ def _percent(args: dict, key: str, low: int = 0) -> int:
     return value
 
 
-def _run(cmd: list[str]) -> str:
+def _run(cmd: list[str], timeout: int = 15) -> str:
     if not shutil.which(cmd[0]):
         raise ToolError(f"{cmd[0]} is not installed")
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired:
+        raise ToolError(f"{cmd[0]} didn't finish within {timeout} seconds") from None
     if proc.returncode != 0:
         raise ToolError((proc.stderr or proc.stdout).strip() or f"{cmd[0]} failed")
     return proc.stdout.strip()
