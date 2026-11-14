@@ -1,12 +1,25 @@
 [Desktop Entry]
 Type=Application
-Name=Panda
+Name=Assistant
 GenericName=AI Assistant
 Comment=Local AI assistant on your NPU that can act on your desktop
 Exec=panda-assistant
 Icon=io.github.wiertless.PandaAssistant
 Terminal=false
 Categories=Utility;GTK;
-Keywords=ai;assistant;chat;llm;npu;ask;
+Keywords=ai;assistant;chat;llm;npu;ask;panda;
 StartupNotify=true
 DBusActivatable=true
+Actions=new-chat;look-at-screen;unload-model;
+
+[Desktop Action new-chat]
+Name=New Chat
+Exec=panda-assistant --new-chat
+
+[Desktop Action look-at-screen]
+Name=Look at My Screen
+Exec=panda-assistant --ask "What's on my screen?"
+
+[Desktop Action unload-model]
+Name=Unload Model
+Exec=panda-assistant --unload

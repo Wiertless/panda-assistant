@@ -331,7 +331,7 @@ class Server:
         self.transport = HttpTransport(cfg) if cfg.url else StdioTransport(cfg)
         try:
             info = self._rpc("initialize", {"protocolVersion": PROTOCOL_VERSION, "capabilities": {},
-                                            "clientInfo": {"name": "panda-assistant", "title": "Panda",
+                                            "clientInfo": {"name": "panda-assistant", "title": "Assistant",
                                                            "version": VERSION}})
             self.label = (info.get("serverInfo") or {}).get("title") or cfg.name
             self.transport.send({"jsonrpc": "2.0", "method": "notifications/initialized"})

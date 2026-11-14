@@ -14,7 +14,7 @@ from .flm import FlmClient, FlmError, strip_think
 
 MAX_ROUNDS = 6
 
-SYSTEM_PROMPT = """You are Panda, an assistant running locally on the user's laptop \
+SYSTEM_PROMPT = """You are the user's assistant, running locally on the user's laptop \
 (Fedora Silverblue with GNOME) on its NPU. Be brief and direct. When the user asks you \
 to do something on the computer, or asks about its state, call a tool instead of \
 describing how to do it. Only call tools the request needs. Never invent tool results; \
@@ -90,6 +90,8 @@ class Agent:
     notes: str | None = None  # memory and skills, taken once per chat
     # Tools from other apps (MCP servers), looked up at each request.
     extra_tools: Callable[[], list] = lambda: []
+    # Tools the user chose "Always Allow" for (shared with the app).
+    always_allow: set[str] = field(default_factory=set)
 
     def reset(self) -> None:
         self.messages = []
@@ -213,7 +215,8 @@ class Agent:
         cb.handoff(self.vision_model)
         helper = Agent(self.client, self.vision_model, use_tools=self.use_tools, ctx=self.ctx, cancel=self.cancel,
                        web_enabled=self.web_enabled, machine=self.machine, memory_enabled=self.memory_enabled,
-                       sees=lambda m: True, notes=self.notes, extra_tools=self.extra_tools)
+                       sees=lambda m: True, notes=self.notes, extra_tools=self.extra_tools,
+                       always_allow=self.always_allow)
         helper.messages = [{"role": m["role"], "content": m["content"]} for m in self.messages
                            if m["role"] in ("user", "assistant") and m.get("content")]
         helper.ask(text, cb, images)
@@ -237,7 +240,8 @@ class Agent:
         cb.handoff(self.smarter_model)
         helper = Agent(self.client, self.smarter_model, use_tools=True, ctx=self.ctx, cancel=self.cancel,
                        web_enabled=self.web_enabled, machine=self.machine, memory_enabled=self.memory_enabled,
-                       sees=self.sees, notes=self.notes, extra_tools=self.extra_tools)
+                       sees=self.sees, notes=self.notes, extra_tools=self.extra_tools,
+                       always_allow=self.always_allow)
         # Earlier turns as plain text; tool traffic belongs to the other model.
         helper.messages = [{"role": m["role"], "content": store.plain_text(m["content"])} for m in self.messages[:-2]
                            if m["role"] in ("user", "assistant") and m.get("content")]
@@ -283,7 +287,8 @@ class Agent:
             return result
         summary = tool.summary(args)
         detail = tool.detail(args) if tool.detail else T.detail(call.name, args)
-        if tool.risk == T.CONFIRM and not cb.confirm(call.name, summary, detail):
+        needs_ok = tool.risk == T.CONFIRM and (call.name in T.ALWAYS_ASK or call.name not in self.always_allow)
+        if needs_ok and not cb.confirm(call.name, summary, detail):
             result = "The user declined this action."
             cb.tool_finished(call.name, "Cancelled", False)
             return result

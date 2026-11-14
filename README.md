@@ -1,9 +1,11 @@
-# Panda
+# Assistant (panda-assistant)
 
-A local AI assistant for GNOME that runs on an AMD Ryzen AI NPU through [FastFlowLM](https://github.com/FastFlowLM/FastFlowLM). Nothing leaves the computer.
+Shown simply as **Assistant** on the desktop. A local AI assistant for GNOME that runs on an AMD Ryzen AI NPU through [FastFlowLM](https://github.com/FastFlowLM/FastFlowLM). Nothing leaves the computer.
 
 - **Chat window** built with GTK 4 and libadwaita, following the GNOME HIG: model as the window subtitle, model picker, Keyboard Shortcuts and About in the primary menu, toasts, a banner for chat-only models, and a notification when an answer finishes in the background.
-- **GNOME search:** type anything (3+ characters) in the overview and pick **Ask: …** to send it to Panda. The search provider only echoes your text back; the model runs only when you pick the result.
+- **GNOME search:** type anything (3+ characters) in the overview and pick **Ask: …**. The answer arrives as a notification (with **Open Chat**) and no window opens, unless the window is already open, in which case the question goes there. A question after 30 quiet minutes starts a new chat. Search also lists matching skills (**Run skill: …**) and earlier chats. The search provider reads only files; the model runs only when you pick a result. When nothing else needs it, the background instance quits after the unload timer.
+- **App icon menu:** right-click the icon in the dash for **New Chat**, **Look at My Screen** and **Unload Model**.
+- **Gestures (libadwaita):** on narrow windows the chat list and the conversation are two pages; swipe right with two fingers (or from the edge on a touchscreen) to go back to the list. Pinch, Ctrl+scroll or Ctrl+plus/minus/0 change the conversation's text size.
 - **Desktop actions** through the model's tool calls:
   - **Web:** search (DuckDuckGo, falling back to Wikipedia's API) and read pages, with results trimmed to fit small contexts.
   - **Open:** apps, files in your home folder, web pages and pages of GNOME Settings. Kinds of apps ("email", "files", "browser", "calendar", "music", "photos", "text editor", "terminal"…) open your default app for them, as set in GNOME Settings → Apps → Default Apps, and apps also match on their generic name and keywords.
@@ -13,8 +15,8 @@ A local AI assistant for GNOME that runs on an AMD Ryzen AI NPU through [FastFlo
   - **Commands:** `run_command` runs a shell command in the `zed` toolbox (created on first use by SilverPanda's `zed-toolbox-setup`), always after you press **Allow**, with the exact command shown. Commands time out after 2 minutes. The toolbox shares your home folder, so the Allow card is the safety net: read it.
   - **Taildrop:** list your Tailscale devices and send a file to one (asks first). Needs `sudo tailscale set --operator=$USER` once.
   - **Read:** battery, system info, time and current settings.
-  - **Change directly:** dark mode, Night Light, power mode, Do Not Disturb, volume, mute, brightness and the clipboard.
-  - **Ask first:** Wi-Fi and Bluetooth (they can disconnect you), and any other GNOME desktop setting (`find_settings` / `get_setting` / `change_setting`). Changes are limited to `org.gnome.desktop.*`, settings-daemon plugins, mutter, shell keybindings and Files. Extension, lockdown and screensaver keys are blocked.
+  - **Change directly:** dark mode, Night Light, power mode, Do Not Disturb, volume, mute, brightness, Wi-Fi, Bluetooth, the clipboard, and any other GNOME desktop setting (`find_settings` / `get_setting` / `change_setting`). Setting changes are limited to `org.gnome.desktop.*`, settings-daemon plugins, mutter, shell keybindings and Files; extension, lockdown and screensaver keys are blocked.
+  - **Ask first:** only what can't be undone or sends something out: commands, sending files with Taildrop, and other apps' actions (MCP). The card has **Always Allow** (manage the list in Preferences), except for commands, which always ask.
   - Nothing runs through a shell, and every argument is validated.
 - **Knows the computer:** each chat's system prompt names the laptop, CPU, memory (total and free), NPU, OS, battery and date, so it doesn't need a tool call for those.
 
@@ -24,7 +26,7 @@ Everything lives in `~/.local/share/panda-assistant` as plain files you can read
 
 - **Memory** (`memory.md`): tell Panda something lasting ("remember I prefer metric units") and it's added to every new chat's prompt. See, add and forget facts in **Preferences → Memory**, or turn memory off.
 - **Skills** (`skills/*.md`): saved workflows. Ask "save that as a skill called morning" or write a Markdown file: a `# Title`, an optional one-line description, then steps. Run one by typing `/morning` (anything after the name is passed along), or just ask for it. Manage them in **Preferences → Skills**.
-- **Chat history** (`chats/*.json`): every chat is saved after each answer. **F9** shows the list, **Ctrl+F** searches it. The last 200 chats are kept.
+- **Chat history** (`chats/*.json`): every chat is saved after each answer. **Ctrl+F** searches the list. The last 200 chats are kept.
 
 ## Other apps (MCP)
 
@@ -71,9 +73,9 @@ A server you started yourself is used as it is and never stopped. Set `PANDA_FLM
 | --- | --- |
 | Ctrl+N | New chat |
 | Ctrl+L | Focus the message field |
-| F9 | Show or hide chats |
 | Ctrl+F | Search chats |
 | Ctrl+Shift+A | Attach an image |
+| Ctrl+plus / Ctrl+minus / Ctrl+0 | Text size |
 | Esc | Stop the answer |
 | Ctrl+, | Preferences |
 | Ctrl+? | Keyboard shortcuts |

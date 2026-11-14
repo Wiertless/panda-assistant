@@ -55,7 +55,7 @@ def facts() -> list[str]:
 
 
 def _save_facts(items: list[str]) -> None:
-    _write(memory_file(), "# Things Panda remembers\n\n" + "".join(f"- {f}\n" for f in items))
+    _write(memory_file(), "# Things the assistant remembers\n\n" + "".join(f"- {f}\n" for f in items))
 
 
 def remember(fact: str) -> str:

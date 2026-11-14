@@ -38,12 +38,22 @@ class AgentTest(unittest.TestCase):
         self.assertIn("tools", self.flm.requests[0])
 
     def test_risky_tool_asks_and_declines(self):
-        self.flm.replies = [(200, tool_reply("set_wifi", '{"enabled": false}')), (200, text_reply("OK."))]
+        self.flm.replies = [(200, tool_reply("send_file", '{"path": "a.txt", "device": "phone"}')),
+                            (200, text_reply("OK."))]
         rec = Recorder(allow=False)
-        self.agent.ask("turn off wifi", rec)
-        self.assertIn(("confirm", "set_wifi", "Turn Wi-Fi off"), rec.log)
+        self.agent.ask("send a.txt to my phone", rec)
+        self.assertIn(("confirm", "send_file", "Send a.txt to phone"), rec.log)
         tool_msg = self.flm.requests[1]["messages"][-1]
         self.assertEqual(tool_msg["content"], "The user declined this action.")
+
+    def test_always_allow_skips_the_question_except_for_commands(self):
+        self.agent.always_allow = {"send_file", "run_command"}
+        self.flm.replies = [(200, tool_reply("send_file", '{"path": "/nonexistent", "device": "phone"}')),
+                            (200, tool_reply("run_command", '{"command": "ls"}', call_id="c2")),
+                            (200, text_reply("OK."))]
+        rec = Recorder(allow=False)
+        self.agent.ask("send it, then list", rec)
+        self.assertEqual([e[1] for e in rec.log if e[0] == "confirm"], ["run_command"])
 
     def test_bad_arguments_are_reported_not_run(self):
         self.flm.replies = [(200, tool_reply("set_volume", '{"percent": 500}')), (200, text_reply("Sorry."))]
@@ -107,10 +117,10 @@ class ToolsTest(unittest.TestCase):
         with self.assertRaises(T.ToolError):
             T.run_tool(T.Context(), "open_file", {"path": "/etc/passwd"})
 
-    def test_only_connectivity_needs_confirmation(self):
+    def test_only_irreversible_or_outward_actions_ask(self):
         risky = {t.name for t in T.TOOLS if t.risk == T.CONFIRM}
-        self.assertEqual(risky, {"set_wifi", "set_bluetooth", "change_setting", "send_file",
-                                 "disconnect_network", "run_command"})
+        self.assertEqual(risky, {"send_file", "run_command"})
+        self.assertEqual(T.ALWAYS_ASK, {"run_command"})
 
     def test_datetime_and_battery_run(self):
         self.assertTrue(T.run_tool(T.Context(), "get_datetime", {}))

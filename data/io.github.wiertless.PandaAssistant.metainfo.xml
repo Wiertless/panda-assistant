@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
   <id>io.github.wiertless.PandaAssistant</id>
-  <name>Panda</name>
+  <name>Assistant</name>
   <summary>Local AI assistant on your NPU</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT</project_license>
@@ -9,9 +9,9 @@
     <name>Wiertless</name>
   </developer>
   <description>
-    <p>Panda chats with a model running on your AMD Ryzen AI NPU through FastFlowLM. Nothing leaves your computer.</p>
+    <p>Assistant chats with a model running on your AMD Ryzen AI NPU through FastFlowLM. Nothing leaves your computer.</p>
     <p>It can search the web, open apps, files and websites, change settings such as dark mode, power mode, Night Light, volume, brightness, Wi-Fi and Bluetooth, and read battery and system information. Changes that could disconnect you, and general desktop settings, ask first.</p>
-    <p>Type a question in the GNOME overview search and pick “Ask:” to send it to Panda.</p>
+    <p>Type a question in the GNOME overview search and pick “Ask:” to get an answer as a notification.</p>
   </description>
   <launchable type="desktop-id">io.github.wiertless.PandaAssistant.desktop</launchable>
   <url type="homepage">https://github.com/Wiertless/panda-assistant</url>
@@ -21,6 +21,19 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.8.0" date="2026-11-14">
+      <description>
+        <ul>
+          <li>Now simply called Assistant</li>
+          <li>Questions from GNOME search are answered in a notification, without opening the window</li>
+          <li>A question from search after 30 quiet minutes starts a new chat</li>
+          <li>Search also finds your skills and earlier chats</li>
+          <li>Right-click the app icon for New Chat, Look at My Screen and Unload Model</li>
+          <li>Asks first only for commands, sending files and other apps' actions, with Always Allow</li>
+          <li>Swipe back to the chat list on narrow windows; pinch or Ctrl+scroll to zoom text</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.7.0" date="2026-11-14">
       <description>
         <ul>

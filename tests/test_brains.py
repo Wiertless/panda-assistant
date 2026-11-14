@@ -32,7 +32,7 @@ class MemoryTest(DataDir):
         self.assertEqual(store.remember("prefers metric units."), "Already remembered.")
         store.remember("Uses fish shell")
         self.assertEqual(store.facts(), ["Prefers metric units", "Uses fish shell"])
-        self.assertTrue(store.memory_file().read_text().startswith("# Things Panda remembers"))
+        self.assertTrue(store.memory_file().read_text().startswith("# Things the assistant remembers"))
         self.assertEqual(store.forget("fish"), ["Uses fish shell"])
         self.assertEqual(store.forget("nothing like this"), [])
         with self.assertRaises(ValueError):

@@ -1,8 +1,9 @@
-"""GNOME Shell search provider: shows "Ask: <query>" and opens the app.
+"""GNOME Shell search provider.
 
-It never talks to the model itself. GNOME queries providers on every
-keystroke, so this only echoes the text back; the NPU runs when the user
-picks the result. The process is D-Bus activated and exits when idle.
+Shows "Ask: <query>", plus saved skills and earlier chats that match. It
+never talks to the model itself: GNOME queries providers on every
+keystroke, so results come from plain files; the NPU runs only when the
+user picks one. The process is D-Bus activated and exits when idle.
 """
 
 from __future__ import annotations
@@ -13,12 +14,17 @@ import sys
 
 from gi.repository import Gio, GLib
 
-from . import APP_ID
+from . import APP_ID, store
 
 BUS_NAME = APP_ID + ".SearchProvider"
 OBJECT_PATH = "/" + APP_ID.replace(".", "/") + "/SearchProvider"
 IDLE_EXIT_SECONDS = 60
 MIN_CHARS = 3
+MAX_SKILLS = 2
+MAX_CHATS = 3
+# Result ids: a plain query means "Ask"; these prefixes mark the others.
+SKILL = "panda-skill:"
+CHAT = "panda-chat:"
 
 INTERFACE_XML = """
 <node>
@@ -50,32 +56,69 @@ INTERFACE_XML = """
 """
 
 
+def _matches(text: str, words: list[str]) -> bool:
+    text = text.casefold()
+    return all(w in text for w in words)
+
+
 def results_for(terms: list[str]) -> list[str]:
     query = " ".join(terms).strip()
-    return [query] if len(query) >= MIN_CHARS else []
+    if len(query) < MIN_CHARS:
+        return []
+    words = [t.casefold().lstrip("/") for t in terms if t.strip("/")]
+    out = [query]
+    try:
+        out += [SKILL + s.slug for s in store.skills()
+                if _matches(f"{s.slug} {s.title} {s.description}", words)][:MAX_SKILLS]
+        out += [CHAT + c.id for c in store.list_chats() if _matches(c.title, words)][:MAX_CHATS]
+    except OSError:
+        pass
+    return out
 
 
-def meta_for(query: str) -> dict:
+def meta_for(result: str) -> dict:
+    name, desc, icon = f"Ask: {result}", "Ask the assistant on your NPU", APP_ID
+    if result.startswith(SKILL):
+        skill = store.find_skill(result[len(SKILL):])
+        if skill:
+            name, desc = f"Run skill: {skill.title}", skill.description or f"/{skill.slug}"
+            icon = "view-list-bullet-symbolic"
+    elif result.startswith(CHAT):
+        chat = store.load_chat(result[len(CHAT):])
+        if chat:
+            name, desc = chat.get("title") or "Chat", "Earlier chat"
+            icon = "document-open-recent-symbolic"
     return {
-        "id": GLib.Variant("s", query),
-        "name": GLib.Variant("s", f"Ask: {query}"),
-        "description": GLib.Variant("s", "Ask Panda, running on your NPU"),
-        "gicon": GLib.Variant("s", APP_ID),
+        "id": GLib.Variant("s", result),
+        "name": GLib.Variant("s", name),
+        "description": GLib.Variant("s", desc),
+        "gicon": GLib.Variant("s", icon),
     }
 
 
-def launch_app(query: str) -> None:
-    """Ask the (D-Bus activatable) app; start it the classic way if that fails."""
+def activate(result: str) -> None:
+    """Hand a picked result to the app."""
+    if result.startswith(SKILL):
+        launch_app("ask", "/" + result[len(SKILL):])
+    elif result.startswith(CHAT):
+        launch_app("open-chat", result[len(CHAT):])
+    else:
+        launch_app("ask", result)
+
+
+def launch_app(action: str, value: str) -> None:
+    """Run an action of the (D-Bus activatable) app; start it the classic way if that fails."""
     try:
         bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
         bus.call_sync(APP_ID, "/" + APP_ID.replace(".", "/"), "org.freedesktop.Application", "ActivateAction",
-                      GLib.Variant("(sava{sv})", ("ask", [GLib.Variant("s", query)], {})),
+                      GLib.Variant("(sava{sv})", (action, [GLib.Variant("s", value)], {})),
                       None, Gio.DBusCallFlags.NONE, 10000, None)
         return
     except GLib.Error:
         pass
     exe = os.environ.get("PANDA_ASSISTANT_BIN", "/usr/bin/panda-assistant")
-    subprocess.Popen([exe, "--ask", query], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+    flag = "--open-chat" if action == "open-chat" else "--ask"
+    subprocess.Popen([exe, flag, value], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                      stderr=subprocess.DEVNULL, start_new_session=True)
 
 
@@ -104,10 +147,10 @@ class SearchProvider:
         elif method == "GetResultMetas":
             invocation.return_value(GLib.Variant("(aa{sv})", ([meta_for(i) for i in args[0]],)))
         elif method == "ActivateResult":
-            launch_app(args[0])
+            activate(args[0])
             invocation.return_value(None)
         elif method == "LaunchSearch":
-            launch_app(" ".join(args[0]))
+            launch_app("ask", " ".join(args[0]))
             invocation.return_value(None)
         else:
             invocation.return_dbus_error("org.freedesktop.DBus.Error.UnknownMethod", method)

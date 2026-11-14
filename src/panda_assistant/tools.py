@@ -2,7 +2,8 @@
 
 Each tool has a JSON schema for the model, a risk level and a function.
 "safe" tools run straight away; "confirm" tools wait for the user to press
-Run. Arguments come from a model, so every tool validates them and nothing
+Allow. Only what can't be undone or sends something out asks: running a
+command, sending a file, and other apps' actions (MCP). Arguments come from a model, so every tool validates them and nothing
 goes through a shell.
 """
 
@@ -560,7 +561,7 @@ BLOCKED_SCHEMAS = ("org.gnome.desktop.lockdown", "org.gnome.desktop.screensaver"
 def _schema(name: str):
     name = name.strip()
     if not name.startswith(SETTINGS_PREFIXES) or name.startswith(BLOCKED_SCHEMAS):
-        raise ToolError(f"{name or 'that schema'} isn't a desktop setting Panda may use")
+        raise ToolError(f"{name or 'that schema'} isn't a desktop setting the assistant may use")
     src = _gio().SettingsSchemaSource.get_default()
     schema = src.lookup(name, True) if src else None
     if schema is None:
@@ -571,7 +572,7 @@ def _schema(name: str):
 def _key(schema, key: str):
     key = key.strip()
     if key in BLOCKED_KEYS:
-        raise ToolError(f"{key} can't be changed by Panda")
+        raise ToolError(f"{key} can't be changed by the assistant")
     if not schema.has_key(key):
         raise ToolError(f"{schema.get_id()} has no key {key}")
     return schema.get_key(key)
@@ -1110,7 +1111,7 @@ TOOLS: list[Tool] = [
     Tool("change_setting", "Change a GNOME desktop setting. value is in GVariant text form, "
          "e.g. true, 1.25, 'prefer-dark', 300.",
          _obj({"schema": {"type": "string"}, "key": {"type": "string"}, "value": {"type": "string"}},
-              ["schema", "key", "value"]), CONFIRM, change_setting,
+              ["schema", "key", "value"]), SAFE, change_setting,
          lambda a: f"Set {a.get('key', 'a setting')} to {a.get('value')}"),
     Tool("open_settings", "Open GNOME Settings at a page, e.g. display, power, keyboard, sound.",
          _obj({"panel": {"type": "string"}}, ["panel"]), SAFE, open_settings,
@@ -1121,17 +1122,17 @@ TOOLS: list[Tool] = [
          _obj({"path": {"type": "string"}, "device": {"type": "string", "description": "Device name"}},
               ["path", "device"]), CONFIRM, send_file,
          lambda a: f"Send {Path(str(a.get('path', 'a file'))).name} to {a.get('device', 'a device')}"),
-    Tool("set_wifi", "Turn Wi-Fi on or off. Turning it off disconnects the network.", ENABLED, CONFIRM, set_wifi,
+    Tool("set_wifi", "Turn Wi-Fi on or off. Turning it off disconnects the network.", ENABLED, SAFE, set_wifi,
          _onoff("enabled", "Wi-Fi")),
     Tool("set_bluetooth", "Turn Bluetooth on or off. Turning it off disconnects Bluetooth devices.", ENABLED,
-         CONFIRM, set_bluetooth, _onoff("enabled", "Bluetooth")),
+         SAFE, set_bluetooth, _onoff("enabled", "Bluetooth")),
     Tool("list_networks", "List saved networks (Wi-Fi, wired, VPN) and which are connected or in range.",
          _obj(), SAFE, list_networks, lambda a: "List saved networks"),
     Tool("connect_network", "Connect to a saved Wi-Fi network, wired connection or VPN by name.",
          _obj({"name": {"type": "string"}}, ["name"]), SAFE, connect_network,
          lambda a: f"Connect to {a.get('name', 'a network')}"),
     Tool("disconnect_network", "Disconnect a connected network or VPN by name.",
-         _obj({"name": {"type": "string"}}, ["name"]), CONFIRM, disconnect_network,
+         _obj({"name": {"type": "string"}}, ["name"]), SAFE, disconnect_network,
          lambda a: f"Disconnect {a.get('name', 'a network')}"),
     Tool("list_bluetooth", "List paired Bluetooth devices (headphones, mice…) and which are connected.",
          _obj(), SAFE, list_bluetooth, lambda a: "List Bluetooth devices"),
@@ -1167,6 +1168,8 @@ TOOLS: list[Tool] = [
 ]
 
 BY_NAME = {t.name: t for t in TOOLS}
+# Asked every time, never "Always Allow": a command can do anything.
+ALWAYS_ASK = {"run_command"}
 WEB_TOOLS = {"web_search", "read_web_page"}
 MEMORY_TOOLS = {"remember", "forget"}
 VISION_TOOLS = {"look_at_screen", "look_at_image"}

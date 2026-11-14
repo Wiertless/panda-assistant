@@ -35,3 +35,36 @@ class SearchProviderTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipIf(sp is None, "needs PyGObject")
+class SearchResultsTest(unittest.TestCase):
+    def setUp(self):
+        import os
+        import tempfile
+        from unittest import mock
+        self.tmp = tempfile.TemporaryDirectory()
+        patcher = mock.patch.dict(os.environ, {"XDG_DATA_HOME": self.tmp.name})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_skills_and_chats_follow_the_ask_result(self):
+        from panda_assistant import store
+        store.save_skill("Morning Routine", "1. dark mode", "Start the day")
+        store.save_chat("c1", [{"role": "user", "content": "Plan my morning run"}], "m")
+        store.save_chat("c2", [{"role": "user", "content": "Something else"}], "m")
+        results = sp.results_for(["morning"])
+        self.assertEqual(results, ["morning", sp.SKILL + "morning-routine", sp.CHAT + "c1"])
+        self.assertEqual(sp.meta_for(results[1])["name"].unpack(), "Run skill: Morning Routine")
+        self.assertEqual(sp.meta_for(results[2])["name"].unpack(), "Plan my morning run")
+        self.assertEqual(sp.results_for(["/morning", "routine"])[1], sp.SKILL + "morning-routine")
+
+    def test_activation_routes(self):
+        from unittest import mock
+        with mock.patch.object(sp, "launch_app") as launch:
+            sp.activate(sp.SKILL + "morning")
+            sp.activate(sp.CHAT + "c1")
+            sp.activate("what time")
+        self.assertEqual([c.args for c in launch.call_args_list],
+                         [("ask", "/morning"), ("open-chat", "c1"), ("ask", "what time")])

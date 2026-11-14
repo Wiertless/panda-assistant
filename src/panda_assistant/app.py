@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
+import time
 from pathlib import Path
 
 import gi
@@ -82,6 +84,18 @@ TOOL_ICONS = {
 }
 IMAGE_TYPES = ("image/png", "image/jpeg", "image/webp", "image/gif", "image/bmp", "image/tiff")
 MAX_ATTACHMENTS = 4
+# A question from GNOME search starts a new chat when the last one is older.
+STALE_MINUTES = 30
+
+
+def plain(markdown: str, limit: int = 400) -> str:
+    """Notification text: markdown marks removed, cut at a word."""
+    text = re.sub(r"```\w*\n?", "", markdown)
+    text = re.sub(r"(\*\*|__|`|^#+\s*)", "", text, flags=re.M)
+    text = re.sub(r"\n{2,}", "\n", text).strip()
+    if len(text) > limit:
+        text = text[:limit].rsplit(" ", 1)[0] + "…"
+    return text
 
 
 def relative_time(stamp: float) -> str:
@@ -172,7 +186,9 @@ class Window(Adw.ApplicationWindow):
         self.agent.sees = self._model_sees
         self.mcp = mcp.Hub()  # other apps' tools; started on the first message
         self.agent.extra_tools = lambda: mcp.as_tools(self.mcp)
+        self.agent.always_allow = set(self.cfg.get("always_allow", []))
         self.chat_id = store.new_chat_id()
+        self.last_activity = 0.0  # when the last answer finished
         self.attachments: list[tuple[Gdk.Texture | None, str]] = []  # (thumbnail, data: URL)
         self.smarter_choice = self.cfg.get("smarter_model", "auto")  # "auto", "off" or a model
         self._apply_smarter()  # "auto" is resolved again once the model list has loaded
@@ -185,11 +201,9 @@ class Window(Adw.ApplicationWindow):
         # Header bar: new chat at the start, primary menu at the end, model as subtitle.
         self.title = Adw.WindowTitle(title=APP_NAME, subtitle=self.agent.model)
         header = Adw.HeaderBar(title_widget=self.title)
-        self.split = Adw.OverlaySplitView(show_sidebar=False, min_sidebar_width=240, max_sidebar_width=320)
-        sidebar_btn = Gtk.ToggleButton(icon_name="sidebar-show-symbolic", tooltip_text="Chats")
-        self.split.bind_property("show-sidebar", sidebar_btn, "active",
-                                 GObject.BindingFlags.SYNC_CREATE | GObject.BindingFlags.BIDIRECTIONAL)
-        header.pack_start(sidebar_btn)
+        # Chats beside the conversation; on narrow windows they're two pages, and
+        # libadwaita's back swipe (touchpad or touchscreen) returns to the list.
+        self.split = Adw.NavigationSplitView(min_sidebar_width=240, max_sidebar_width=320, show_content=True)
         new_btn = Gtk.Button(icon_name="list-add-symbolic", tooltip_text="New Chat", action_name="win.new-chat")
         header.pack_start(new_btn)
         self.model_menu = Gio.Menu()
@@ -217,7 +231,7 @@ class Window(Adw.ApplicationWindow):
         self.stack.add_named(self.scroller, "chat")
 
         # Composer: a rounded floating bar, with attached pictures above it.
-        self.entry = Gtk.Entry(hexpand=True, placeholder_text="Message Panda, or type / for skills…")
+        self.entry = Gtk.Entry(hexpand=True, placeholder_text="Message, or type / for skills…")
         # Pasting a picture attaches it (the signal lives on the inner GtkText).
         self.entry.get_delegate().connect("paste-clipboard", self._on_paste)
         self.entry.connect("activate", lambda *_: self.send())
@@ -252,16 +266,14 @@ class Window(Adw.ApplicationWindow):
         view.add_top_bar(header)
         view.add_bottom_bar(composer_clamp)
         view.set_bottom_bar_style(Adw.ToolbarStyle.FLAT)
-        self.split.set_content(view)
-        self.split.set_sidebar(self._build_sidebar())
+        self.split.set_content(Adw.NavigationPage(title=APP_NAME, tag="chat", child=view))
+        self.split.set_sidebar(Adw.NavigationPage(title="Chats", tag="chats", child=self._build_sidebar()))
         self.toasts = Adw.ToastOverlay(child=self.split)
         self.set_content(self.toasts)
-        # Narrow windows show the chat list over the conversation.
         narrow = Adw.Breakpoint.new(Adw.BreakpointCondition.parse("max-width: 680sp"))
         narrow.add_setter(self.split, "collapsed", GObject.Value(bool, True))
         self.add_breakpoint(narrow)
-        if self.cfg.get("width", 600) > 680 and self.cfg.get("sidebar"):
-            self.split.set_show_sidebar(True)
+        self._setup_zoom()
         drop = Gtk.DropTarget.new(Gdk.FileList, Gdk.DragAction.COPY)
         drop.connect("drop", self._on_drop)
         self.add_controller(drop)
@@ -272,7 +284,9 @@ class Window(Adw.ApplicationWindow):
         self._add_action("show-help-overlay", self.show_shortcuts)
         self._add_action("preferences", self.show_preferences)
         self._add_action("attach", self.choose_image)
-        self._add_action("toggle-sidebar", lambda: self.split.set_show_sidebar(not self.split.get_show_sidebar()))
+        self._add_action("zoom-in", lambda: self.set_text_scale(self.text_scale + 0.1))
+        self._add_action("zoom-out", lambda: self.set_text_scale(self.text_scale - 0.1))
+        self._add_action("zoom-reset", lambda: self.set_text_scale(1.0))
         self._add_action("search-chats", self._focus_search)
         self.unload_action = self._add_action("unload", lambda: self.unload(manual=True))
         self.unload_action.set_enabled(False)
@@ -292,7 +306,7 @@ class Window(Adw.ApplicationWindow):
         self.greeting = Gtk.Label(label=greeting(), wrap=True, justify=Gtk.Justification.CENTER)
         self.greeting.add_css_class("greeting")
         box.append(self.greeting)
-        sub = Gtk.Label(label="Ask anything. Panda runs privately on your NPU and can search the web, "
+        sub = Gtk.Label(label="Ask anything. It runs privately on your NPU and can search the web, "
                               "see your screen, change settings and work with your apps and files.",
                         wrap=True, justify=Gtk.Justification.CENTER, max_width_chars=46)
         sub.add_css_class("dim-label")
@@ -334,9 +348,46 @@ class Window(Adw.ApplicationWindow):
         self.toasts.add_toast(Adw.Toast(title=GLib.markup_escape_text(text), timeout=3))
         return GLib.SOURCE_REMOVE
 
+    # -- text size: pinch, Ctrl+scroll, Ctrl+plus/minus -------------------
+    def _setup_zoom(self):
+        self.text_scale = float(self.cfg.get("text_scale", 1.0))
+        self._zoom_css = Gtk.CssProvider()
+        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), self._zoom_css,
+                                                  Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
+        self.messages.add_css_class("conversation")
+        pinch = Gtk.GestureZoom()
+        start = {"scale": self.text_scale}
+        pinch.connect("begin", lambda *_: start.update(scale=self.text_scale))
+        pinch.connect("scale-changed", lambda _g, s: self.set_text_scale(start["scale"] * s, save=False))
+        pinch.connect("end", lambda *_: self.set_text_scale(self.text_scale))
+        self.scroller.add_controller(pinch)
+        scroll = Gtk.EventControllerScroll(flags=Gtk.EventControllerScrollFlags.VERTICAL)
+        scroll.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+
+        def on_scroll(ctrl, _dx, dy):
+            if not ctrl.get_current_event_state() & Gdk.ModifierType.CONTROL_MASK:
+                return False
+            self.set_text_scale(self.text_scale - dy * 0.05)
+            return True
+
+        scroll.connect("scroll", on_scroll)
+        self.scroller.add_controller(scroll)
+        self.set_text_scale(self.text_scale, save=False)
+
+    def set_text_scale(self, scale: float, save: bool = True):
+        self.text_scale = round(min(2.0, max(0.7, scale)), 2)
+        css = f".conversation {{ font-size: {self.text_scale * 100:.0f}%; }}"
+        if hasattr(self._zoom_css, "load_from_string"):
+            self._zoom_css.load_from_string(css)
+        else:
+            self._zoom_css.load_from_data(css.encode())
+        if save:
+            self.cfg["text_scale"] = self.text_scale
+            save_config(self.cfg)
+
     # -- chat history sidebar ---------------------------------------------
     def _build_sidebar(self) -> Gtk.Widget:
-        header = Adw.HeaderBar(title_widget=Adw.WindowTitle(title="Chats"))
+        header = Adw.HeaderBar()
         self.search = Gtk.SearchEntry(placeholder_text="Search Chats", margin_start=12, margin_end=12,
                                       margin_bottom=6)
         self.search.connect("search-changed", lambda *_: self._refresh_chats())
@@ -395,7 +446,7 @@ class Window(Adw.ApplicationWindow):
         return GLib.SOURCE_REMOVE
 
     def _focus_search(self):
-        self.split.set_show_sidebar(True)
+        self.split.set_show_content(False)
         self.search.grab_focus()
 
     def delete_chat(self, chat_id: str):
@@ -407,8 +458,7 @@ class Window(Adw.ApplicationWindow):
 
     def open_chat(self, chat_id: str):
         if self.busy or chat_id == self.chat_id:
-            if self.split.get_collapsed():
-                self.split.set_show_sidebar(False)
+            self.split.set_show_content(True)
             return
         data = store.load_chat(chat_id)
         if data is None:
@@ -420,8 +470,7 @@ class Window(Adw.ApplicationWindow):
         self.agent.messages = data["messages"]
         self._render_history(data["messages"], data.get("model") or self.agent.model)
         self.stack.set_visible_child_name("chat")
-        if self.split.get_collapsed():
-            self.split.set_show_sidebar(False)
+        self.split.set_show_content(True)
         self._refresh_chats()
 
     def _render_history(self, messages: list[dict], model: str):
@@ -677,12 +726,22 @@ class Window(Adw.ApplicationWindow):
 
     def _schedule_idle(self):
         self._cancel_idle()
-        if self.unload_after > 0 and self.client.owns_server and not self.busy:
+        if self.busy:
+            return GLib.SOURCE_REMOVE
+        if not self.get_visible():
+            # Answering from search with no window: quit once idle.
+            self._idle_id = GLib.timeout_add_seconds(max(self.unload_after, 1) * 60, self._on_idle)
+        elif self.unload_after > 0 and self.client.owns_server:
             self._idle_id = GLib.timeout_add_seconds(self.unload_after * 60, self._on_idle)
         return GLib.SOURCE_REMOVE
 
     def _on_idle(self):
         self._idle_id = 0
+        if not self.get_visible() and not self.busy:
+            self.mcp.stop_all()
+            self.client.stop_server()
+            self.destroy()  # the last window: the app exits
+            return GLib.SOURCE_REMOVE
         self.unload(manual=False)
         return GLib.SOURCE_REMOVE
 
@@ -708,7 +767,7 @@ class Window(Adw.ApplicationWindow):
                                model=Gtk.StringList.new([label for _, label in CTX_CHOICES]))
         ctx_values = [v for v, _ in CTX_CHOICES]
         ctx_row.set_selected(ctx_values.index(self.ctx_len) if self.ctx_len in ctx_values else 1)
-        idle_row = Adw.ComboRow(title="Unload Model", subtitle="Frees memory when Panda isn't used",
+        idle_row = Adw.ComboRow(title="Unload Model", subtitle="Frees memory when the assistant isn't used",
                                 model=Gtk.StringList.new([label for _, label in IDLE_CHOICES]))
         idle_values = [v for v, _ in IDLE_CHOICES]
         idle_row.set_selected(idle_values.index(self.unload_after) if self.unload_after in idle_values else 1)
@@ -728,7 +787,7 @@ class Window(Adw.ApplicationWindow):
 
         abilities = Adw.PreferencesGroup(title="Abilities")
         web_row = Adw.SwitchRow(title="Search the Web", active=self.agent.web_enabled,
-                                subtitle="Lets Panda look things up with DuckDuckGo and read web pages")
+                                subtitle="Look things up with DuckDuckGo and read web pages")
 
         def on_web(row, _p):
             self.agent.web_enabled = row.get_active()
@@ -737,6 +796,30 @@ class Window(Adw.ApplicationWindow):
 
         web_row.connect("notify::active", on_web)
         abilities.add(web_row)
+
+        allowed = Adw.PreferencesGroup(title="Allowed Without Asking",
+                                       description="Actions you chose “Always Allow” for")
+        allowed_rows: list[Gtk.Widget] = []
+
+        def fill_allowed():
+            for r in allowed_rows:
+                allowed.remove(r)
+            allowed_rows.clear()
+            for name in sorted(self.agent.always_allow):
+                server, _, tool = name.partition("__")
+                title = f"{server}: {tool}" if tool else name.replace("_", " ").capitalize()
+                row = Adw.ActionRow(title=GLib.markup_escape_text(title))
+                ask = Gtk.Button(label="Ask Again", valign=Gtk.Align.CENTER)
+                ask.connect("clicked", lambda _b, n=name: (self.agent.always_allow.discard(n),
+                                                           self.cfg.__setitem__("always_allow",
+                                                                                sorted(self.agent.always_allow)),
+                                                           save_config(self.cfg), fill_allowed()))
+                row.add_suffix(ask)
+                allowed_rows.append(row)
+                allowed.add(row)
+            allowed.set_visible(bool(allowed_rows))
+
+        fill_allowed()
 
         smart_group = Adw.PreferencesGroup(
             title="Smarter Model",
@@ -764,6 +847,7 @@ class Window(Adw.ApplicationWindow):
         group.add(ctx_row)
         group.add(idle_row)
         page.add(abilities)
+        page.add(allowed)
         page.add(smart_group)
         page.add(group)
         pages = [page, self._memory_page(), self._skills_page(), self._connections_page()]
@@ -780,7 +864,7 @@ class Window(Adw.ApplicationWindow):
 
     def _memory_page(self) -> Adw.PreferencesPage:
         page = Adw.PreferencesPage(title="Memory", icon_name="starred-symbolic")
-        top = Adw.PreferencesGroup(description="Panda remembers what you ask it to, in every new chat. "
+        top = Adw.PreferencesGroup(description="The assistant remembers what you ask it to, in every new chat. "
                                                "It's kept on this computer only.")
         switch = Adw.SwitchRow(title="Remember Things", active=self.agent.memory_enabled)
 
@@ -822,9 +906,9 @@ class Window(Adw.ApplicationWindow):
         page = Adw.PreferencesPage(title="Connections", icon_name="network-server-symbolic")
         group = Adw.PreferencesGroup(
             title="Apps and Services",
-            description="Panda can use tools that other apps and services offer through the Model Context "
+            description="The assistant can use tools that other apps and services offer through the Model Context "
                         "Protocol (MCP). Tools that change things ask first. Each one uses some of the "
-                        f"model's memory, so Panda loads at most {mcp.MAX_TOOLS}.")
+                        f"model's memory, so at most {mcp.MAX_TOOLS}.")
         buttons = Gtk.Box(spacing=6)
         add = Gtk.Button(icon_name="list-add-symbolic", tooltip_text="Add Server", valign=Gtk.Align.CENTER)
         add.add_css_class("flat")
@@ -945,7 +1029,7 @@ class Window(Adw.ApplicationWindow):
         page = Adw.PreferencesPage(title="Skills", icon_name="view-list-bullet-symbolic")
         group = Adw.PreferencesGroup(
             title="Skills",
-            description="Saved workflows. Ask Panda to “save that as a skill”, or add Markdown files to the "
+            description="Saved workflows. Ask “save that as a skill”, or add Markdown files to the "
                         "skills folder. Run one by typing / and its name.")
         folder = Gtk.Button(icon_name="folder-open-symbolic", tooltip_text="Open Skills Folder",
                             valign=Gtk.Align.CENTER)
@@ -1000,6 +1084,7 @@ class Window(Adw.ApplicationWindow):
             self.messages.remove(child)
             child = nxt
         self.greeting.set_label(greeting())
+        self.split.set_show_content(True)
         self.stack.set_visible_child_name("empty")
         self.entry.grab_focus()
 
@@ -1009,6 +1094,21 @@ class Window(Adw.ApplicationWindow):
             return
         self.entry.set_text(text)
         self.send()
+
+    def ask_from_shell(self, text: str):
+        """A question from GNOME search: answer in a notification unless the window is open."""
+        stale = self.last_activity and time.time() - self.last_activity > STALE_MINUTES * 60
+        if stale and not self.busy and self.agent.messages:
+            self.new_chat()
+        if self.get_visible():
+            self.present()
+            self.ask(text)
+            return
+        if self.busy:
+            self.app.notify(f"{APP_NAME} is busy", "Still working on the last question.", self.chat_id)
+            return
+        self.app.notify(f"Asking {APP_NAME}…", text, self.chat_id)
+        self.ask(text)
 
     def send_or_stop(self):
         self.stop() if self.busy else self.send()
@@ -1063,6 +1163,7 @@ class Window(Adw.ApplicationWindow):
                 store.save_chat(self.chat_id, self.agent.messages, self.agent.model)
             except OSError as e:
                 GLib.idle_add(self.toast, f"Couldn't save the chat: {e}")
+            self.last_activity = time.time()
             GLib.idle_add(reply.finish)
             GLib.idle_add(self._refresh_chats)
             GLib.idle_add(self._set_busy, False)
@@ -1114,12 +1215,18 @@ class Window(Adw.ApplicationWindow):
             return GLib.SOURCE_REMOVE
         GLib.timeout_add(30, go)
 
+    def allow_always(self, name: str):
+        self.agent.always_allow.add(name)
+        self.cfg["always_allow"] = sorted(self.agent.always_allow)
+        save_config(self.cfg)
+
     def copy_text(self, text: str):
         on_main(lambda: Gdk.Display.get_default().get_clipboard().set(text))
 
     def show_shortcuts(self):
         sections = [("General", [("New Chat", "<Ctrl>n"), ("Focus Message Field", "<Ctrl>l"),
-                                 ("Show Chats", "F9"), ("Search Chats", "<Ctrl>f"),
+                                 ("Search Chats", "<Ctrl>f"), ("Bigger Text", "<Ctrl>plus"),
+                                 ("Smaller Text", "<Ctrl>minus"), ("Normal Text Size", "<Ctrl>0"),
                                  ("Attach Image", "<Ctrl><Shift>a"),
                                  ("Stop Answer", "Escape"), ("Preferences", "<Ctrl>comma"),
                                  ("Keyboard Shortcuts", "<Ctrl>question"),
@@ -1145,7 +1252,6 @@ class Window(Adw.ApplicationWindow):
 
     def _on_close(self, *_):
         self.cfg["maximized"] = self.is_maximized()
-        self.cfg["sidebar"] = self.split.get_show_sidebar() and not self.split.get_collapsed()
         if not self.is_maximized():
             self.cfg["width"], self.cfg["height"] = self.get_default_size()
         save_config(self.cfg)
@@ -1184,6 +1290,7 @@ class Reply:
         self.spin.append(spinner())
         self.spin_label = Gtk.Label(label="Thinking…")
         self.spin.append(self.spin_label)
+        self.failure = ""
         self.text = ""          # text of the current message label
         self.answer = ""        # everything the model said this turn
         self.label: Gtk.Label | None = None
@@ -1279,13 +1386,13 @@ class Reply:
         """Worker thread: show the action inline and wait for Allow or Cancel."""
         answered = threading.Event()
         answer = {"v": False}
-        on_main(self._confirm_card, summary, detail, answer, answered)
+        on_main(self._confirm_card, name, summary, detail, answer, answered)
         while not answered.wait(0.2):
             if self.win.agent.cancel.is_set():
                 return False
         return answer["v"]
 
-    def _confirm_card(self, summary: str, detail: str, answer: dict, answered: threading.Event):
+    def _confirm_card(self, name: str, summary: str, detail: str, answer: dict, answered: threading.Event):
         card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         card.add_css_class("card")
         card.add_css_class("confirm-card")
@@ -1294,11 +1401,16 @@ class Reply:
         title = Gtk.Label(label=f"{summary}?", xalign=0, wrap=True, hexpand=True)
         title.add_css_class("heading")
         head.append(title)
-        buttons = Gtk.Box(spacing=6, halign=Gtk.Align.END, margin_bottom=12, margin_end=12, homogeneous=True)
+        buttons = Gtk.Box(spacing=6, halign=Gtk.Align.END, margin_bottom=12, margin_end=12)
         cancel = Gtk.Button(label="_Cancel", use_underline=True)
         allow = Gtk.Button(label="_Allow", use_underline=True)
         allow.add_css_class("suggested-action")
         buttons.append(cancel)
+        if name not in T.ALWAYS_ASK:
+            always = Gtk.Button(label="Always A_llow", use_underline=True,
+                                tooltip_text="Don't ask again for this kind of action")
+            always.connect("clicked", lambda *_: (self.win.allow_always(name), pick(True)))
+            buttons.append(always)
         buttons.append(allow)
         card.append(head)
         if detail:
@@ -1312,6 +1424,9 @@ class Reply:
         self.label = None
         self.spin_label.set_label("Waiting for you…")
         self.win.scroll_down()
+        if not self.win.is_active():
+            self.win.app.notify(f"{APP_NAME} needs your OK", f"{summary}?", self.win.chat_id,
+                                button="Review")
 
         def pick(value: bool):
             self.spin_label.set_label("Working…")
@@ -1326,6 +1441,7 @@ class Reply:
         allow.grab_focus()
 
     def error(self, text: str):
+        self.failure = text
         label = Gtk.Label(label=text, wrap=True, xalign=0, selectable=True)
         label.add_css_class("error")
         self._before_spinner(label)
@@ -1343,11 +1459,11 @@ class Reply:
             copy.add_css_class("circular")
             copy.connect("clicked", lambda *_: (self.win.copy_text(answer), self.win.toast("Copied")))
             self.box.append(copy)
-            if notify and not self.win.is_active():
-                note = Gio.Notification.new(f"{APP_NAME} answered")
-                note.set_body(answer[:200])
-                note.set_default_action("app.activate")
-                self.win.app.send_notification("answer", note)
+        if notify and not self.win.is_active():
+            if answer:
+                self.win.app.notify(APP_NAME, plain(answer), self.win.chat_id)
+            elif self.failure:
+                self.win.app.notify(f"{APP_NAME} couldn't answer", self.failure, self.win.chat_id)
         return GLib.SOURCE_REMOVE
 
 
@@ -1355,6 +1471,9 @@ class App(Adw.Application):
     def __init__(self):
         super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
         self.add_main_option("ask", 0, GLib.OptionFlags.NONE, GLib.OptionArg.STRING, "Ask a question", "TEXT")
+        self.add_main_option("open-chat", 0, GLib.OptionFlags.NONE, GLib.OptionArg.STRING, "Open a saved chat", "ID")
+        self.add_main_option("new-chat", 0, GLib.OptionFlags.NONE, GLib.OptionArg.NONE, "Start a new chat", None)
+        self.add_main_option("unload", 0, GLib.OptionFlags.NONE, GLib.OptionArg.NONE, "Unload the model", None)
         self.add_main_option("version", 0, GLib.OptionFlags.NONE, GLib.OptionArg.NONE, "Show the version", None)
         self.window: Window | None = None
         self.connect("shutdown", self._on_shutdown)
@@ -1377,20 +1496,50 @@ class App(Adw.Application):
             self.add_action(action)
         # Used by the GNOME search provider through org.freedesktop.Application.
         ask = Gio.SimpleAction.new("ask", GLib.VariantType.new("s"))
-        ask.connect("activate", lambda _a, v: self._present().ask(v.unpack()))
+        ask.connect("activate", lambda _a, v: self._window().ask_from_shell(v.unpack()))
         self.add_action(ask)
+        open_chat = Gio.SimpleAction.new("open-chat", GLib.VariantType.new("s"))
+        open_chat.connect("activate", lambda _a, v: self._present().open_chat(v.unpack()))
+        self.add_action(open_chat)
+        # Right-click actions of the app icon (see the desktop file).
+        for name, fn in (("new-chat", lambda: self._present().new_chat()),
+                         ("look-at-screen", lambda: self._present().ask("What's on my screen?")),
+                         ("unload-model", self._unload)):
+            action = Gio.SimpleAction.new(name, None)
+            action.connect("activate", lambda *_a, f=fn: f())
+            self.add_action(action)
         for action, accels in (("app.quit", ["<Ctrl>q"]), ("window.close", ["<Ctrl>w"]),
                                ("win.new-chat", ["<Ctrl>n"]), ("win.focus-entry", ["<Ctrl>l"]),
                                ("win.stop", ["Escape"]), ("win.show-help-overlay", ["<Ctrl>question"]),
-                               ("win.preferences", ["<Ctrl>comma"]), ("win.toggle-sidebar", ["F9"]),
+                               ("win.preferences", ["<Ctrl>comma"]), ("win.zoom-in", ["<Ctrl>plus", "<Ctrl>equal"]),
+                               ("win.zoom-out", ["<Ctrl>minus"]), ("win.zoom-reset", ["<Ctrl>0"]),
                                ("win.search-chats", ["<Ctrl>f"]), ("win.attach", ["<Ctrl><Shift>a"])):
             self.set_accels_for_action(action, accels)
 
-    def _present(self) -> Window:
+    def _unload(self):
+        if self.window:
+            self.window.unload(manual=True)
+
+    def _window(self) -> Window:
+        """The window, created hidden if there is none yet."""
         if self.window is None:
             self.window = Window(self)
-        self.window.present()
+            self.window.connect("destroy", lambda *_: setattr(self, "window", None))
         return self.window
+
+    def notify(self, title: str, body: str, chat_id: str, button: str = "Open Chat"):
+        """One notification at a time; clicking it opens the chat."""
+        note = Gio.Notification.new(title)
+        note.set_body(body)
+        note.set_default_action_and_target_value("app.open-chat", GLib.Variant("s", chat_id))
+        note.add_button_with_target_value(button, "app.open-chat", GLib.Variant("s", chat_id))
+        self.send_notification("panda", note)
+
+    def _present(self) -> Window:
+        win = self._window()
+        win.present()
+        self.withdraw_notification("panda")
+        return win
 
     def do_activate(self):
         self._present()
@@ -1400,9 +1549,16 @@ class App(Adw.Application):
         if opts.get("version"):
             cmdline.print_literal(f"{APP_NAME} {VERSION}\n")
             return 0
+        if opts.get("unload"):
+            self._unload()  # without opening a window
+            return 0
         win = self._present()
         if opts.get("ask"):
             win.ask(opts["ask"])
+        elif opts.get("open-chat"):
+            win.open_chat(opts["open-chat"])
+        elif opts.get("new-chat"):
+            win.new_chat()
         return 0
 
     def show_about(self):
