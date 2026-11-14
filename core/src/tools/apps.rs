@@ -44,6 +44,12 @@ pub fn role_for(name: &str) -> Option<&'static str> {
 }
 
 pub fn default_app(role: &str) -> Option<gio::AppInfo> {
+    // Intents first (freedesktop Application Intents): the file manager the
+    // user chose for org.freedesktop.FileManager1.
+    if role == "files"
+        && let Some(app) = super::intents::default_for(super::intents::FILE_MANAGER) {
+            return Some(app.upcast());
+        }
     let ctype = APP_ROLES.iter().find(|(r, _)| *r == role).and_then(|(_, c)| *c);
     let app = match ctype {
         Some(c) if c.starts_with("x-scheme-handler/") => gio::AppInfo::default_for_uri_scheme(&c[17..]),

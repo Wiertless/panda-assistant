@@ -665,19 +665,22 @@ pub fn run() -> ControlFlow {
         }
     };
     let service = Service::new(conn.clone(), Arc::new(FlmClient::from_env()));
-    // One service per session: if another one has the name, leave.
-    if request_name(&conn, BUS_NAME) != Some(1) {
-        return ControlFlow::Continue;
-    }
+    // Export the objects first, then take the names: a client D-Bus started
+    // us for may call the moment the name is ours.
     if let Err(e) = service.register() {
         eprintln!("assistantd: can't export the service: {e}");
         return ControlFlow::Break;
     }
-    match search::register(&service, &conn) {
-        Ok(_) => {
-            request_name(&conn, search::BUS_NAME);
-        }
-        Err(e) => eprintln!("assistantd: no GNOME search: {e}"),
+    let search = search::register(&service, &conn);
+    if let Err(e) = &search {
+        eprintln!("assistantd: no GNOME search: {e}");
+    }
+    // One service per session: if another one has the name, leave.
+    if request_name(&conn, BUS_NAME) != Some(1) {
+        return ControlFlow::Continue;
+    }
+    if search.is_ok() {
+        request_name(&conn, search::BUS_NAME);
     }
     service.load_models();
     let main_loop = glib::MainLoop::new(None, false);

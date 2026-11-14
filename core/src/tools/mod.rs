@@ -13,6 +13,7 @@ pub mod apps;
 pub mod brains;
 pub mod connect;
 pub mod files;
+pub mod intents;
 pub mod localsearch;
 pub mod personal;
 pub mod run;
@@ -100,6 +101,8 @@ music, video, photos, text editor, pdf, terminal or settings opens the user's de
         Tool::new("open_file", "Open a file or folder with its default app. Paths can be relative to the home \
 folder, start with ~, or start with a folder name like Downloads or Documents.", path(), Safe, files::open_file,
                   text("path", |p| format!("Open {}", or(p, "a file")))),
+        Tool::new("show_in_files", "Show a file or folder in the file manager (opens its folder with it selected).",
+                  path(), Safe, intents::show_in_files, text("path", |p| format!("Show {} in Files", or(p, "it")))),
         Tool::new("list_folder", "List what's in a folder (default: the home folder).",
                   obj(json!({"path": {"type": "string", "description": "e.g. Downloads, Documents/work, ~"}}), &[]),
                   Safe, files::list_folder, text("path", |p| format!("Look in {}", or(p, "your home folder")))),
@@ -259,7 +262,7 @@ mod tests {
     #[test]
     fn same_tools_and_risks_as_the_python_app() {
         let names: Vec<String> = all().into_iter().map(|t| t.name).collect();
-        assert_eq!(names.len(), 49, "{names:?}");
+        assert_eq!(names.len(), 50, "{names:?}");
         let risky: Vec<String> = all().into_iter().filter(|t| t.risk == Risk::Confirm).map(|t| t.name).collect();
         assert_eq!(risky, ["send_file", "run_command"]);
     }

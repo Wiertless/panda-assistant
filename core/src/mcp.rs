@@ -496,7 +496,7 @@ mod tests {
     use crate::tool::Context;
 
     fn server_script() -> String {
-        concat!(env!("CARGO_MANIFEST_DIR"), "/../tests/fake_mcp_server.py").to_string()
+        concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fake_mcp_server.py").to_string()
     }
 
     fn write_config(servers: Value) {
@@ -544,5 +544,108 @@ mod tests {
         assert_eq!((tools[0].run)(&ctx, &missing).unwrap_err().0, "No such note");
         assert_eq!((tools[1].summary)(&Map::new()), "Notes: add.note");
         hub.stop_all();
+    }
+}
+
+// -- editing the configuration (the window's Connections page) -------------------------
+
+impl ServerConfig {
+    fn to_json(&self) -> Value {
+        let mut out = Map::new();
+        if !self.url.is_empty() {
+            out.insert("url".into(), json!(self.url));
+            if !self.headers.is_empty() {
+                out.insert("headers".into(), json!(self.headers));
+            }
+        } else {
+            out.insert("command".into(), json!(self.command));
+            if !self.args.is_empty() {
+                out.insert("args".into(), json!(self.args));
+            }
+            if !self.env.is_empty() {
+                out.insert("env".into(), json!(self.env));
+            }
+        }
+        if self.disabled {
+            out.insert("disabled".into(), json!(true));
+        }
+        if self.trust {
+            out.insert("trust".into(), json!(true));
+        }
+        Value::Object(out)
+    }
+}
+
+/// Write the servers back, keeping anything else in the file; private (headers may hold tokens).
+pub fn save_config(servers: &[ServerConfig]) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    let path = config_path();
+    let mut raw: Value = fs::read_to_string(&path).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(json!({}));
+    if !raw.is_object() {
+        raw = json!({});
+    }
+    raw["mcpServers"] = Value::Object(servers.iter().map(|s| (s.name.clone(), s.to_json())).collect());
+    crate::store::write_atomic(&path, &(serde_json::to_string_pretty(&raw).unwrap_or_default() + "\n")).map_err(|e| e.to_string())?;
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).map_err(|e| e.to_string())
+}
+
+/// A config from what the user typed: a command line or a URL.
+pub fn parse_server(name: &str, command_or_url: &str) -> Result<ServerConfig, String> {
+    let (name, text) = (name.trim(), command_or_url.trim());
+    if name.is_empty() || text.is_empty() {
+        return Err("give the server a name and a command or URL".into());
+    }
+    if text.starts_with("http://") || text.starts_with("https://") {
+        return Ok(ServerConfig { name: name.into(), url: text.into(), ..Default::default() });
+    }
+    let parts = shell_words(text)?;
+    Ok(ServerConfig { name: name.into(), command: parts[0].clone(), args: parts[1..].to_vec(), ..Default::default() })
+}
+
+/// Split a command line like a shell would (quotes and backslashes), without running one.
+fn shell_words(text: &str) -> Result<Vec<String>, String> {
+    let (mut words, mut cur, mut quote, mut has) = (vec![], String::new(), None::<char>, false);
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        match (quote, c) {
+            (None, '\'' | '"') => { quote = Some(c); has = true; }
+            (Some(q), c) if c == q => quote = None,
+            (Some('\''), c) => cur.push(c),
+            (_, '\\') => match chars.next() { Some(n) => { cur.push(n); has = true; } None => return Err("couldn't read the command: ends with \\".into()) },
+            (None, c) if c.is_whitespace() => if has { words.push(std::mem::take(&mut cur)); has = false; },
+            (_, c) => { cur.push(c); has = true; }
+        }
+    }
+    if quote.is_some() {
+        return Err("couldn't read the command: a quote isn't closed".into());
+    }
+    if has {
+        words.push(cur);
+    }
+    if words.is_empty() { Err("no command given".into()) } else { Ok(words) }
+}
+
+#[cfg(test)]
+mod edit_tests {
+    use super::*;
+    use crate::store::testenv::temp_home;
+
+    #[test]
+    fn parse_and_save() {
+        let _h = temp_home();
+        let s = parse_server("notes", r#"toolbox run -c zed npx -y "@scope/server x" --dir 'a b'"#).unwrap();
+        assert_eq!(s.command, "toolbox");
+        assert_eq!(s.args, ["run", "-c", "zed", "npx", "-y", "@scope/server x", "--dir", "a b"]);
+        assert_eq!(parse_server("home", "https://h.local/mcp").unwrap().url, "https://h.local/mcp");
+        assert!(parse_server("", "x").is_err());
+        assert!(parse_server("x", "a 'b").is_err());
+        let mut off = parse_server("web", "http://x/mcp").unwrap();
+        off.disabled = true;
+        save_config(&[s.clone(), off]).unwrap();
+        let back = load_config().unwrap();
+        assert_eq!(back.len(), 2);
+        assert!(back.iter().any(|c| c.name == "web" && c.disabled));
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(fs::metadata(config_path()).unwrap().permissions().mode() & 0o777, 0o600);
     }
 }

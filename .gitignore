@@ -1,4 +1,3 @@
-__pycache__/
-*.pyc
+/target
 *.tar.gz
 dist-tmp/

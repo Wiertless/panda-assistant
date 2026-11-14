@@ -15,7 +15,7 @@ Shown simply as **Assistant** on the desktop. A local AI assistant for GNOME tha
     - `search_file_contents` searches inside your files with GNOME's own index (LocalSearch, the one Files and the overview use), including PDFs and office documents, inside your home folder and never hidden files.
     - `read_document` reads the text LocalSearch extracted from a PDF or document (or uses `pdftotext`).
     - `get_events` reads your calendars and `find_contact` your address books, both from Evolution Data Server, so everything set up in Online Accounts, GNOME Calendar or Contacts is included.
-  - **App intents:** `list_app_actions` / `run_app_action` use the actions apps publish (the same as their right-click menu in the dash: "New Private Window", "Compose New Message"…). `media_control` plays, pauses, skips or tells what's playing in any MPRIS player (Spotify, Firefox, Celluloid…).
+  - **App intents:** `show_in_files` opens a file's folder with it selected, using the default file manager for the freedesktop `org.freedesktop.FileManager1` intent (from `intentapps.list` and apps' `Implements=` keys, per the Application Intents Specification); "files" opens that same app. `list_app_actions` / `run_app_action` use the actions apps publish (the same as their right-click menu in the dash: "New Private Window", "Compose New Message"…). `media_control` plays, pauses, skips or tells what's playing in any MPRIS player (Spotify, Firefox, Celluloid…).
   - **Networks and Bluetooth:** connect to saved Wi-Fi networks, wired connections and VPNs, and to paired Bluetooth devices by everyday name ("connect my AirPods"). Bluetooth is turned on first if needed. Disconnecting a network asks first.
   - **Screen and images:** with a model that can see (Gemma 4, Qwen 3.5, Qwen3-VL…), Panda can take a screenshot through the desktop portal and look at image files. Attach pictures to a message with the paperclip, by pasting, or by dropping them on the window. Pictures are downscaled to 1024 px, kept for one turn only, and never saved with the chat. If the chosen model can't see, the turn goes to one that can.
   - **Commands:** `run_command` runs a shell command in the `zed` toolbox (created on first use by SilverPanda's `zed-toolbox-setup`), always after you press **Allow**, with the exact command shown. Commands time out after 2 minutes. The toolbox shares your home folder, so the Allow card is the safety net: read it.
@@ -90,17 +90,17 @@ A server you started yourself is used as it is and never stopped. Set `PANDA_FLM
 
 ## How it fits together
 
-- **`assistantd`** (Rust, `core/`) is the assistant itself. It runs the model through FastFlowLM, runs the agent loop and all tools, connects MCP servers, keeps memory, skills and chats, and decides when to load and unload models. It reads window text over AT-SPI, file contents from LocalSearch (TinySPARQL, loaded at run time), the calendar from GNOME Shell's calendar service and contacts from Evolution Data Server, all without Python. It is a D-Bus service (`io.github.wiertless.PandaAssistant.Core`) that the session bus starts on first use. It exits after 10 idle minutes with nothing loaded. It holds the model, so the window can come and go without reloading it.
-- **The window** (Python, GTK 4 + libadwaita, to be ported to Rust) is a client. It sends questions over D-Bus, shows the answer as it streams back as signals, and answers Allow/Cancel requests. Opening a chat the service is still answering shows the rest of it.
+- **`assistantd`** (Rust, `core/`) is the assistant itself. It runs the model through FastFlowLM, runs the agent loop and all tools, connects MCP servers, keeps memory, skills and chats, and decides when to load and unload models. It reads window text over AT-SPI, file contents from LocalSearch (TinySPARQL, loaded at run time), the calendar from GNOME Shell's calendar service and contacts from Evolution Data Server, all through D-Bus or GNOME's own libraries. It is a D-Bus service (`io.github.wiertless.PandaAssistant.Core`) that the session bus starts on first use. It exits after 10 idle minutes with nothing loaded. It holds the model, so the window can come and go without reloading it.
+- **The window** (`app/`, Rust with GTK 4 and libadwaita) is a client. It sends questions over D-Bus, shows the answer as it streams back as signals, and answers Allow/Cancel requests. Opening a chat the service is still answering shows the rest of it.
 
 Settings are shared through `~/.config/panda-assistant/config.json`; after changing them, the window tells the service to re-read them.
 
 ## Install
 
-Requires Python 3, PyGObject, GTK 4, libadwaita (1.4+), and FastFlowLM; building the service needs Rust and the GLib and gdk-pixbuf development files. `wpctl` and `nmcli` are used for volume and Wi-Fi.
+Needs GTK 4, libadwaita (1.5+) and FastFlowLM. `wpctl`, `nmcli`, `tailscale` and `toolbox` are used when present. There is no Python. Building needs Rust and the GTK 4, libadwaita, GLib and gdk-pixbuf development files.
 
 ```sh
-cargo build --release --manifest-path core/Cargo.toml   # release tarballs already include it
+make build                  # release tarballs already include both binaries (core-bin/)
 sudo ./install.sh /usr      # or: make install PREFIX=/usr
 ```
 
@@ -109,14 +109,14 @@ sudo ./install.sh /usr      # or: make install PREFIX=/usr
 ## Development
 
 ```sh
-make test                                     # Python tests, fake FLM server
-(cd core && cargo test && cargo clippy --all-targets)
-PYTHONPATH=src python3 -m panda_assistant     # run the window from the checkout
+make test                   # Rust tests, with a fake FastFlowLM and a fake MCP server
+make lint                   # clippy, warnings as errors
+cargo run -p panda-assistant
 ```
 
-The window needs the service on the session bus: install it, or run `core/target/debug/assistantd` in a terminal first.
+The window needs the service on the session bus: install it, or run `target/debug/assistantd` in a terminal first. On systems with libadwaita older than 1.8, build without the `adw-1-8` feature (`make build FEATURES=`). The window then uses a flow box for suggestions and the older shortcuts window.
 
-Releases: bump `VERSION` in `src/panda_assistant/__init__.py` and the AppStream `<release>`, then run the **ci** workflow on `main` (Actions → ci → Run workflow) or push a `vX.Y.Z` tag. CI tests both parts, builds the service and `panda-assistant-X.Y.Z.tar.gz` (sources plus the prebuilt `core-bin/assistantd`) with a `.sha256`, and publishes a GitHub release. Keep `version` in `core/Cargo.toml` in step.
+Releases: bump `version` in `app/Cargo.toml` and `core/Cargo.toml` (CI checks they match) and add the AppStream `<release>`. Then run the **ci** workflow on `main` (Actions → ci → Run workflow) or push a `vX.Y.Z` tag. CI lints, tests and builds in a Fedora container, so the binaries match the libraries in SilverPanda's image. It then publishes `panda-assistant-X.Y.Z.tar.gz` (sources plus `core-bin/`) with a `.sha256` as a GitHub release.
 
 ## License
 

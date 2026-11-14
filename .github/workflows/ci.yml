@@ -4,70 +4,67 @@ on:
     branches: [main]
     tags: ["v*"]
   pull_request:
-  workflow_dispatch: # release the version in src/panda_assistant/__init__.py from main
+  workflow_dispatch: # release the version in app/Cargo.toml from main
 
 permissions:
   contents: read
 
+# Built on the Fedora release SilverPanda uses, so the binaries link against
+# exactly the GTK, libadwaita and GLib the image ships.
+env:
+  FEDORA: "45"
+
 jobs:
   test:
     runs-on: ubuntu-24.04
+    container: registry.fedoraproject.org/fedora:45
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Install test dependencies
+      - name: Install build dependencies
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq python3-gi gir1.2-glib-2.0 desktop-file-utils appstream \
-            gsettings-desktop-schemas gnome-settings-daemon-common
-      - name: Unit tests
-        run: make test PYTHON=/usr/bin/python3
+          dnf -y -q install git cargo rust clippy gtk4-devel libadwaita-devel glib2-devel gdk-pixbuf2-devel \
+            tinysparql python3 desktop-file-utils appstream
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Lint
+        run: make lint
+      - name: Test
+        run: make test
       - name: Validate desktop and AppStream files
         run: |
           desktop-file-validate data/*.desktop
           appstreamcli validate --no-net data/*.metainfo.xml
 
-  core:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq libglib2.0-dev libgdk-pixbuf-2.0-dev libtracker-sparql-3.0-0
-      - name: Lint and test the Rust service
-        working-directory: core
-        run: |
-          cargo clippy --all-targets -- -D warnings
-          cargo test
-
   release:
     if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
-    needs: [test, core]
+    needs: test
     runs-on: ubuntu-24.04
+    container: registry.fedoraproject.org/fedora:45
     permissions:
       contents: write
     steps:
+      - name: Install build dependencies
+        run: |
+          dnf -y -q install git cargo rust gtk4-devel libadwaita-devel glib2-devel gdk-pixbuf2-devel gh
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Work out the version
         id: ver
         run: |
-          v=$(sed -n 's/^VERSION = "\(.*\)"/\1/p' src/panda_assistant/__init__.py)
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          v=$(sed -n 's/^version = "\(.*\)"/\1/p' app/Cargo.toml | head -1)
+          c=$(sed -n 's/^version = "\(.*\)"/\1/p' core/Cargo.toml | head -1)
+          if [ "$v" != "$c" ]; then echo "app $v != core $c" >&2; exit 1; fi
           if [ "$GITHUB_REF_TYPE" = tag ] && [ "v$v" != "$GITHUB_REF_NAME" ]; then
-            echo "tag $GITHUB_REF_NAME != VERSION $v" >&2; exit 1
+            echo "tag $GITHUB_REF_NAME != version $v" >&2; exit 1
           fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
-      - name: Build the service
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq libglib2.0-dev libgdk-pixbuf-2.0-dev
-          cargo build --release --locked --manifest-path core/Cargo.toml
       - name: Build and publish the release tarball
         env:
           GH_TOKEN: ${{ github.token }}
           V: ${{ steps.ver.outputs.version }}
         run: |
+          make build
           make dist VERSION="$V"
           sha256sum "panda-assistant-$V.tar.gz" | tee "panda-assistant-$V.tar.gz.sha256"
           # Creates the v$V tag on this commit when it doesn't exist yet.
-          gh release create "v$V" --target "$GITHUB_SHA" "panda-assistant-$V.tar.gz" "panda-assistant-$V.tar.gz.sha256" \
-            --title "Panda $V" --notes "Install: \`./install.sh /usr\` from the extracted tarball."
+          gh release create "v$V" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            "panda-assistant-$V.tar.gz" "panda-assistant-$V.tar.gz.sha256" \
+            --title "Assistant $V" --notes "Install: \`./install.sh /usr\` from the extracted tarball (prebuilt for Fedora $FEDORA)."

@@ -1,0 +1,22 @@
+[package]
+name = "panda-assistant"
+version = "0.12.0"
+edition = "2024"
+license = "MIT"
+description = "Assistant: a local AI assistant for GNOME on your NPU (the window)"
+publish = false
+
+[dependencies]
+assistant-core = { path = "../core" }
+gtk = { package = "gtk4", version = "0.10", features = ["v4_14"] }
+adw = { package = "libadwaita", version = "0.8", features = ["v1_5"] }
+gio = "0.21"
+glib = "0.21"
+serde_json = "1"
+regex = "1"
+
+[features]
+# Newer widgets where the system has them (Fedora): flowing suggestion chips
+# (Adw.WrapBox), Adw.Spinner and Adw.ShortcutsDialog.
+adw-1-8 = ["adw/v1_8"]
+

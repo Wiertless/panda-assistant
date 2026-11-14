@@ -21,6 +21,16 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.12.0" date="2026-11-15">
+      <description>
+        <ul>
+          <li>The window is now Rust too: no Python at all, and a faster start</li>
+          <li>Shows a file in Files with it selected, using the freedesktop file manager intent</li>
+          <li>Replies no longer show an avatar</li>
+          <li>Fixed a first question failing right after the service started</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.11.0" date="2026-11-14">
       <description>
         <ul>
