@@ -2,10 +2,13 @@
 //! and keeps memory, skills and chats. `assistantd` exposes it over D-Bus.
 
 pub mod agent;
+pub mod context;
 pub mod flm;
 pub mod paths;
+pub mod service;
 pub mod store;
 pub mod tool;
+pub mod tools;
 
 #[cfg(test)]
 mod fake_flm;

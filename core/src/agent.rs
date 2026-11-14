@@ -411,11 +411,10 @@ impl Agent {
             if calls.is_empty() || self.cancelled() {
                 return Ok(());
             }
-            if self.can_escalate() {
-                if let Some(call) = calls.iter().find(|c| c.name == ESCALATE) {
+            if self.can_escalate()
+                && let Some(call) = calls.iter().find(|c| c.name == ESCALATE) {
                     return self.escalate(call, text, cb);
                 }
-            }
             for call in &calls {
                 let result = self.run_call(call, cb);
                 self.messages.push(json!({"role": "tool", "tool_call_id": call.id, "content": result}));

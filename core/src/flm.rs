@@ -138,13 +138,11 @@ pub fn pick_vision_model(models: &[Model], current: &str, ram_gib: Option<f64>) 
 
 fn find_model_list() -> Option<PathBuf> {
     let mut candidates = Vec::new();
-    if let Some(flm) = which("flm") {
-        if let Ok(real) = fs::canonicalize(&flm) {
-            if let Some(dir) = real.parent() {
+    if let Some(flm) = which("flm")
+        && let Ok(real) = fs::canonicalize(&flm)
+            && let Some(dir) = real.parent() {
                 candidates.push(dir.join("model_list.json"));
             }
-        }
-    }
     for dir in ["/usr/share/flm", "/usr/share/fastflowlm", "/usr/lib64/flm", "/usr/lib/flm", "/usr/lib64/fastflowlm",
                 "/usr/lib/fastflowlm", "/opt/fastflowlm", "/opt/flm"] {
         candidates.push(Path::new(dir).join("model_list.json"));
@@ -417,11 +415,10 @@ impl FlmClient {
     /// A server this service started with another context length is restarted.
     pub fn ensure_server(&self, model: &str, ctx_len: Option<u32>, wait: Duration) -> Result<bool, FlmError> {
         let mut guard = self.server.lock().unwrap();
-        if let Some(s) = guard.as_mut() {
-            if s.ctx != ctx_len && matches!(s.child.try_wait(), Ok(None)) {
+        if let Some(s) = guard.as_mut()
+            && s.ctx != ctx_len && matches!(s.child.try_wait(), Ok(None)) {
                 stop_child(guard.take().unwrap().child);
             }
-        }
         if self.is_up() {
             return Ok(false);
         }

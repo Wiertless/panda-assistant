@@ -33,11 +33,12 @@ pub enum Risk {
 }
 
 type Hook = Arc<dyn Fn() + Send + Sync>;
+type Clipboard = Arc<dyn Fn(&str) + Send + Sync>;
 
 /// What tools may need from the app around them.
 #[derive(Default, Clone)]
 pub struct Context {
-    pub copy_to_clipboard: Option<Arc<dyn Fn(&str) + Send + Sync>>,
+    pub copy_to_clipboard: Option<Clipboard>,
     /// Step the assistant's window aside (and back) around a screenshot or window read.
     pub hide_window: Option<Hook>,
     pub show_window: Option<Hook>,
