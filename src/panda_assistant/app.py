@@ -505,7 +505,7 @@ class App(Adw.Application):
 
     def show_about(self):
         kwargs = dict(application_name=APP_NAME, application_icon=APP_ID, version=VERSION,
-                      developer_name="Wiertless", website=REPO_URL, issue_url=REPO_URL + "/issues",
+                      developer_name="Wiertless", website=REPO_URL, license_type=Gtk.License.MIT_X11, issue_url=REPO_URL + "/issues",
                       comments="A local assistant that runs on your NPU with FastFlowLM "
                                "and can act on your desktop.")
         if hasattr(Adw, "AboutDialog"):  # libadwaita 1.5+

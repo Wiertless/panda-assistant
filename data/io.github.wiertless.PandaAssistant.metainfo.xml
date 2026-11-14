@@ -4,6 +4,7 @@
   <name>Panda</name>
   <summary>Local AI assistant on your NPU</summary>
   <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
   <developer id="io.github.wiertless">
     <name>Wiertless</name>
   </developer>
@@ -20,6 +21,9 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.1.1" date="2026-11-14">
+      <description><p>Licensed under the MIT license.</p></description>
+    </release>
     <release version="0.1.0" date="2026-11-14"/>
   </releases>
 </component>

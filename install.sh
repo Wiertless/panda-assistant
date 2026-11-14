@@ -15,6 +15,7 @@ install -D -m 0755 bin/panda-assistant "$DESTDIR$BINDIR/panda-assistant"
 sed -i "s|@LIBDIR@|$LIBDIR|" "$DESTDIR$BINDIR/panda-assistant"
 install -D -m 0644 "data/$APP_ID.desktop" "$DESTDIR$DATADIR/applications/$APP_ID.desktop"
 install -D -m 0644 "data/$APP_ID.metainfo.xml" "$DESTDIR$DATADIR/metainfo/$APP_ID.metainfo.xml"
+install -D -m 0644 LICENSE "$DESTDIR$DATADIR/licenses/panda-assistant/LICENSE"
 install -D -m 0644 "data/$APP_ID.svg" "$DESTDIR$DATADIR/icons/hicolor/scalable/apps/$APP_ID.svg"
 install -D -m 0644 "data/$APP_ID.search-provider.ini" \
   "$DESTDIR$DATADIR/gnome-shell/search-providers/$APP_ID.search-provider.ini"
