@@ -109,7 +109,7 @@ class ToolsTest(unittest.TestCase):
 
     def test_only_connectivity_needs_confirmation(self):
         risky = {t.name for t in T.TOOLS if t.risk == T.CONFIRM}
-        self.assertEqual(risky, {"set_wifi", "set_bluetooth"})
+        self.assertEqual(risky, {"set_wifi", "set_bluetooth", "change_setting"})
 
     def test_datetime_and_battery_run(self):
         self.assertTrue(T.run_tool(T.Context(), "get_datetime", {}))

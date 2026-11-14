@@ -221,6 +221,22 @@ def get_status(ctx: Context, args: dict) -> str:
     return "; ".join(out) or "No status available."
 
 
+def web_search(ctx: Context, args: dict) -> str:
+    from . import web
+    try:
+        return web.web_search(str(args.get("query", "")))
+    except web.WebError as e:
+        raise ToolError(str(e)) from None
+
+
+def read_web_page(ctx: Context, args: dict) -> str:
+    from . import web
+    try:
+        return web.read_web_page(check_url(str(args.get("url", ""))))
+    except web.WebError as e:
+        raise ToolError(str(e)) from None
+
+
 def copy_to_clipboard(ctx: Context, args: dict) -> str:
     text = str(args.get("text", ""))
     if not text:
@@ -296,6 +312,127 @@ def set_wifi(ctx: Context, args: dict) -> str:
     return f"Wi-Fi {'on' if on else 'off'}."
 
 
+POWER_MODES = {"power-saver": "Power Saver", "balanced": "Balanced", "performance": "Performance"}
+
+
+def set_power_mode(ctx: Context, args: dict) -> str:
+    from gi.repository import GLib
+    mode = str(args.get("mode", "")).strip().lower().replace(" ", "-")
+    if mode not in POWER_MODES:
+        raise ToolError("mode must be power-saver, balanced or performance")
+    bus = _gio().bus_get_sync(_gio().BusType.SYSTEM, None)
+    last = None
+    # tuned-ppd and power-profiles-daemon both serve the new and the legacy name.
+    for name, path in (("org.freedesktop.UPower.PowerProfiles", "/org/freedesktop/UPower/PowerProfiles"),
+                       ("net.hadess.PowerProfiles", "/net/hadess/PowerProfiles")):
+        try:
+            bus.call_sync(name, path, "org.freedesktop.DBus.Properties", "Set",
+                          GLib.Variant("(ssv)", (name, "ActiveProfile", GLib.Variant("s", mode))),
+                          None, _gio().DBusCallFlags.NONE, 5000, None)
+            return f"Power mode set to {POWER_MODES[mode]}."
+        except GLib.Error as e:
+            last = e
+    raise ToolError(f"couldn't change the power mode: {last.message if last else 'no power profile service'}")
+
+
+def set_night_light(ctx: Context, args: dict) -> str:
+    on = _bool(args, "enabled")
+    _gsettings_set("org.gnome.settings-daemon.plugins.color", "night-light-enabled", on)
+    return f"Night Light {'on' if on else 'off'}."
+
+
+# Generic GNOME settings. Only desktop schemas, and never the keys that load
+# code (extensions) or lock the user out (lockdown, screensaver lock).
+SETTINGS_PREFIXES = ("org.gnome.desktop.", "org.gnome.settings-daemon.plugins.", "org.gnome.mutter",
+                     "org.gnome.shell.keybindings", "org.gnome.nautilus.")
+BLOCKED_KEYS = {"enabled-extensions", "disabled-extensions", "disable-user-extensions", "development-tools",
+                "allow-extension-installation"}
+BLOCKED_SCHEMAS = ("org.gnome.desktop.lockdown", "org.gnome.desktop.screensaver")
+
+
+def _schema(name: str):
+    name = name.strip()
+    if not name.startswith(SETTINGS_PREFIXES) or name.startswith(BLOCKED_SCHEMAS):
+        raise ToolError(f"{name or 'that schema'} isn't a desktop setting Panda may use")
+    src = _gio().SettingsSchemaSource.get_default()
+    schema = src.lookup(name, True) if src else None
+    if schema is None:
+        raise ToolError(f"there is no settings schema called {name}")
+    return schema
+
+
+def _key(schema, key: str):
+    key = key.strip()
+    if key in BLOCKED_KEYS:
+        raise ToolError(f"{key} can't be changed by Panda")
+    if not schema.has_key(key):
+        raise ToolError(f"{schema.get_id()} has no key {key}")
+    return schema.get_key(key)
+
+
+def find_settings(ctx: Context, args: dict) -> str:
+    words = [w for w in str(args.get("query", "")).lower().split() if w]
+    if not words:
+        raise ToolError("say what to look for, e.g. 'font scaling'")
+    src = _gio().SettingsSchemaSource.get_default()
+    hits = []
+    for sid in sorted(src.list_schemas(True)[0]):
+        if not sid.startswith(SETTINGS_PREFIXES) or sid.startswith(BLOCKED_SCHEMAS):
+            continue
+        schema = src.lookup(sid, True)
+        for key in schema.list_keys():
+            k = schema.get_key(key)
+            text = f"{sid} {key} {k.get_summary() or ''}".lower()
+            if all(w in text for w in words) and key not in BLOCKED_KEYS:
+                hits.append(f"{sid} {key}: {k.get_summary() or ''}")
+    return "\n".join(hits[:12]) if hits else "No matching settings."
+
+
+def get_setting(ctx: Context, args: dict) -> str:
+    schema = _schema(str(args.get("schema", "")))
+    key = _key(schema, str(args.get("key", ""))).get_name()
+    value = _gio().Settings.new_full(schema, None, None).get_value(key)
+    return f"{schema.get_id()} {key} = {value.print_(False)}"
+
+
+def change_setting(ctx: Context, args: dict) -> str:
+    from gi.repository import GLib
+    schema = _schema(str(args.get("schema", "")))
+    key = _key(schema, str(args.get("key", "")))
+    raw = str(args.get("value", "")).strip()
+    vtype = key.get_value_type()
+    try:
+        value = GLib.Variant.parse(vtype, raw, None, None)
+    except GLib.Error:
+        if vtype.dup_string() == "s":
+            value = GLib.Variant("s", raw.strip("'\""))
+        else:
+            raise ToolError(f"{raw} isn't a valid {vtype.dup_string()} value") from None
+    if not key.range_check(value):
+        raise ToolError(f"{raw} isn't an allowed value for {key.get_name()}")
+    settings = _gio().Settings.new_full(schema, None, None)
+    settings.set_value(key.get_name(), value)
+    _gio().Settings.sync()
+    return f"Set {schema.get_id()} {key.get_name()} to {value.print_(False)}."
+
+
+SETTINGS_PANELS = {"wifi", "network", "bluetooth", "display", "sound", "power", "background", "appearance",
+                   "notifications", "search", "multitasking", "applications", "privacy", "online-accounts",
+                   "sharing", "mouse", "keyboard", "printers", "color", "accessibility", "system", "users",
+                   "datetime", "region", "wacom", "about"}
+
+
+def open_settings(ctx: Context, args: dict) -> str:
+    panel = str(args.get("panel", "")).strip().lower()
+    if panel not in SETTINGS_PANELS:
+        raise ToolError("unknown Settings page; one of: " + ", ".join(sorted(SETTINGS_PANELS)))
+    if not shutil.which("gnome-control-center"):
+        raise ToolError("GNOME Settings isn't installed")
+    subprocess.Popen(["gnome-control-center", panel], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL, start_new_session=True)
+    return f"Opened Settings at {panel}."
+
+
 def set_bluetooth(ctx: Context, args: dict) -> str:
     from gi.repository import GLib
     on = _bool(args, "enabled")
@@ -336,6 +473,12 @@ TOOLS: list[Tool] = [
          lambda a: "Read the time"),
     Tool("get_status", "Get dark mode, Do Not Disturb, Wi-Fi, volume and brightness state.", _obj(), SAFE,
          get_status, lambda a: "Read settings"),
+    Tool("web_search", "Search the web for current information, facts, news, prices or how-tos. "
+         "Returns titles, links and short snippets.",
+         _obj({"query": {"type": "string", "description": "What to search for"}}, ["query"]), SAFE, web_search,
+         lambda a: f"Search the web for “{a.get('query', '')}”"),
+    Tool("read_web_page", "Read the text of a web page, e.g. a search result, to answer from it.",
+         _obj({"url": {"type": "string"}}, ["url"]), SAFE, read_web_page, lambda a: f"Read {a.get('url', 'a page')}"),
     Tool("copy_to_clipboard", "Copy text to the clipboard.", _obj({"text": {"type": "string"}}, ["text"]),
          SAFE, copy_to_clipboard, lambda a: "Copy to clipboard"),
     Tool("set_dark_mode", "Turn the dark style on or off.", ENABLED, SAFE, set_dark_mode,
@@ -350,6 +493,26 @@ TOOLS: list[Tool] = [
     Tool("set_brightness", "Set the screen brightness in percent (1-100).",
          _obj({"percent": {"type": "integer", "minimum": 1, "maximum": 100}}, ["percent"]), SAFE, set_brightness,
          lambda a: f"Set brightness to {a.get('percent')}%"),
+    Tool("set_power_mode", "Set the power mode: power-saver, balanced or performance.",
+         _obj({"mode": {"type": "string", "enum": list(POWER_MODES)}}, ["mode"]), SAFE, set_power_mode,
+         lambda a: f"Set power mode to {POWER_MODES.get(str(a.get('mode')), a.get('mode'))}"),
+    Tool("set_night_light", "Turn Night Light (warmer screen colors) on or off.", ENABLED, SAFE, set_night_light,
+         _onoff("enabled", "Night Light")),
+    Tool("find_settings", "Find GNOME settings by words, e.g. 'text scaling' or 'touchpad tap'. "
+         "Returns schema and key names to use with get_setting and change_setting.",
+         _obj({"query": {"type": "string"}}, ["query"]), SAFE, find_settings,
+         lambda a: f"Look up settings for “{a.get('query', '')}”"),
+    Tool("get_setting", "Read the current value of a GNOME setting.",
+         _obj({"schema": {"type": "string"}, "key": {"type": "string"}}, ["schema", "key"]), SAFE, get_setting,
+         lambda a: f"Read {a.get('key', 'a setting')}"),
+    Tool("change_setting", "Change a GNOME desktop setting. value is in GVariant text form, "
+         "e.g. true, 1.25, 'prefer-dark', 300.",
+         _obj({"schema": {"type": "string"}, "key": {"type": "string"}, "value": {"type": "string"}},
+              ["schema", "key", "value"]), CONFIRM, change_setting,
+         lambda a: f"Set {a.get('key', 'a setting')} to {a.get('value')}"),
+    Tool("open_settings", "Open GNOME Settings at a page, e.g. display, power, keyboard, sound.",
+         _obj({"panel": {"type": "string"}}, ["panel"]), SAFE, open_settings,
+         lambda a: f"Open Settings: {a.get('panel', '')}"),
     Tool("set_wifi", "Turn Wi-Fi on or off. Turning it off disconnects the network.", ENABLED, CONFIRM, set_wifi,
          _onoff("enabled", "Wi-Fi")),
     Tool("set_bluetooth", "Turn Bluetooth on or off. Turning it off disconnects Bluetooth devices.", ENABLED,
@@ -357,10 +520,11 @@ TOOLS: list[Tool] = [
 ]
 
 BY_NAME = {t.name: t for t in TOOLS}
+WEB_TOOLS = {"web_search", "read_web_page"}
 
 
-def schemas() -> list[dict]:
-    return [t.schema() for t in TOOLS]
+def schemas(exclude: set[str] | frozenset = frozenset()) -> list[dict]:
+    return [t.schema() for t in TOOLS if t.name not in exclude]
 
 
 def summarize(name: str, args: dict) -> str:

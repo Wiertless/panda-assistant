@@ -4,7 +4,14 @@ A local AI assistant for GNOME that runs on an AMD Ryzen AI NPU through [FastFlo
 
 - **Chat window** built with GTK 4 and libadwaita, following the GNOME HIG: model as the window subtitle, model picker, Keyboard Shortcuts and About in the primary menu, toasts, a banner for chat-only models, and a notification when an answer finishes in the background.
 - **GNOME search:** type anything (3+ characters) in the overview and pick **Ask: …** to send it to Panda. The search provider only echoes your text back; the model runs only when you pick the result.
-- **Desktop actions** through the model's tool calls: open apps, files in your home folder and web pages; read battery, system info, time and settings; copy to the clipboard; switch dark mode, Do Not Disturb, volume, mute and brightness. Turning Wi-Fi or Bluetooth on or off asks first, because it can disconnect you. Nothing runs through a shell, and every argument is validated.
+- **Desktop actions** through the model's tool calls:
+  - **Web:** search (DuckDuckGo, falling back to Wikipedia's API) and read pages, with results trimmed to fit small contexts.
+  - **Open:** apps, files in your home folder, web pages and pages of GNOME Settings.
+  - **Read:** battery, system info, time and current settings.
+  - **Change directly:** dark mode, Night Light, power mode, Do Not Disturb, volume, mute, brightness and the clipboard.
+  - **Ask first:** Wi-Fi and Bluetooth (they can disconnect you), and any other GNOME desktop setting (`find_settings` / `get_setting` / `change_setting`). Changes are limited to `org.gnome.desktop.*`, settings-daemon plugins, mutter, shell keybindings and Files. Extension, lockdown and screensaver keys are blocked.
+  - Nothing runs through a shell, and every argument is validated.
+- **Knows the computer:** each chat's system prompt names the laptop, CPU, memory (total and free), NPU, OS, battery and date, so it doesn't need a tool call for those.
 
 ## Models
 

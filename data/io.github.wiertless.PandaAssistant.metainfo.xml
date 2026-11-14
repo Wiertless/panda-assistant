@@ -10,7 +10,7 @@
   </developer>
   <description>
     <p>Panda chats with a model running on your AMD Ryzen AI NPU through FastFlowLM. Nothing leaves your computer.</p>
-    <p>It can open apps, files and websites, switch dark mode, Do Not Disturb, volume, brightness, Wi-Fi and Bluetooth, and read battery and system information. Actions that could disconnect you ask first.</p>
+    <p>It can search the web, open apps, files and websites, change settings such as dark mode, power mode, Night Light, volume, brightness, Wi-Fi and Bluetooth, and read battery and system information. Changes that could disconnect you, and general desktop settings, ask first.</p>
     <p>Type a question in the GNOME overview search and pick “Ask:” to send it to Panda.</p>
   </description>
   <launchable type="desktop-id">io.github.wiertless.PandaAssistant.desktop</launchable>
@@ -21,6 +21,16 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.4.0" date="2026-11-14">
+      <description>
+        <ul>
+          <li>Searches the web (DuckDuckGo, with Wikipedia as a fallback) and reads web pages</li>
+          <li>Knows this computer: model, CPU, memory, NPU, OS</li>
+          <li>Changes more settings: power mode, Night Light, and any GNOME desktop setting (asks first)</li>
+          <li>Opens the right page of GNOME Settings</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.0" date="2026-11-14">
       <description>
         <ul>

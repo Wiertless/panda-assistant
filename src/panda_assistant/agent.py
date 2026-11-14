@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from . import tools as T
+from .context import system_context
 from .flm import FlmClient, FlmError, strip_think
 
 MAX_ROUNDS = 6
@@ -17,6 +18,9 @@ SYSTEM_PROMPT = """You are Panda, an assistant running locally on the user's lap
 to do something on the computer, or asks about its state, call a tool instead of \
 describing how to do it. Only call tools the request needs. Never invent tool results; \
 if a tool fails, say what failed. Answer in the user's language."""
+
+WEB_PROMPT = """ For anything recent or that you aren't sure of, use web_search and read the \
+most relevant result with read_web_page, then answer briefly and name the source."""
 
 ESCALATE = "ask_smarter_model"
 ESCALATE_PROMPT = """ If a request needs more than you can do well (careful reasoning, \
@@ -57,21 +61,32 @@ class Agent:
     messages: list[dict] = field(default_factory=list)
     cancel: threading.Event = field(default_factory=threading.Event)
     smarter_model: str | None = None
+    web_enabled: bool = True
+    machine: str | None = None  # system_context(), taken once per chat
 
     def reset(self) -> None:
         self.messages = []
+        self.machine = None
 
     def _can_escalate(self) -> bool:
         return bool(self.use_tools and self.smarter_model and self.smarter_model != self.model)
 
     def _conversation(self) -> list[dict]:
-        system = SYSTEM_PROMPT + (ESCALATE_PROMPT if self._can_escalate() else "")
-        return [{"role": "system", "content": system}] + self.messages
+        if self.machine is None:
+            self.machine = system_context()
+        system = SYSTEM_PROMPT
+        if self.use_tools and self.web_enabled:
+            system += WEB_PROMPT
+        if self._can_escalate():
+            system += ESCALATE_PROMPT
+        # The machine description goes last and stays the same for the whole
+        # chat, so the server can reuse the cached prompt between turns.
+        return [{"role": "system", "content": system + "\n\n" + self.machine}] + self.messages
 
     def _tool_schemas(self):
         if not self.use_tools:
             return None
-        schemas = T.schemas()
+        schemas = T.schemas(exclude=set() if self.web_enabled else T.WEB_TOOLS)
         if self._can_escalate():
             schemas.append(escalate_schema(self.smarter_model))
         return schemas
@@ -123,7 +138,8 @@ class Agent:
         except (ValueError, json.JSONDecodeError):
             task = ""
         cb.handoff(self.smarter_model)
-        helper = Agent(self.client, self.smarter_model, use_tools=True, ctx=self.ctx, cancel=self.cancel)
+        helper = Agent(self.client, self.smarter_model, use_tools=True, ctx=self.ctx, cancel=self.cancel,
+                       web_enabled=self.web_enabled, machine=self.machine)
         # Earlier turns as plain text; tool traffic belongs to the other model.
         helper.messages = [{"role": m["role"], "content": m["content"]} for m in self.messages[:-2]
                            if m["role"] in ("user", "assistant") and m.get("content")]

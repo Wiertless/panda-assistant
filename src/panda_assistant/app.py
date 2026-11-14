@@ -84,6 +84,7 @@ class Window(Adw.ApplicationWindow):
         self.busy = False
         self.agent = Agent(self.client, self.cfg.get("model", DEFAULT_MODEL),
                            ctx=T.Context(copy_to_clipboard=self.copy_text))
+        self.agent.web_enabled = bool(self.cfg.get("web_search", True))
         self.smarter_choice = self.cfg.get("smarter_model", "auto")  # "auto", "off" or a model
         self._apply_smarter()  # "auto" is resolved again once the model list has loaded
         self.ctx_len = int(self.cfg.get("ctx_len", DEFAULT_CTX_LEN))
@@ -117,8 +118,8 @@ class Window(Adw.ApplicationWindow):
         clamp = Adw.Clamp(maximum_size=720, tightening_threshold=560, child=self.messages)
         self.scroller = Gtk.ScrolledWindow(child=clamp, vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER)
         self.empty = Adw.StatusPage(icon_name=APP_ID, title="Ask Panda", vexpand=True,
-                                    description="Runs privately on your NPU. Panda can open apps, files "
-                                                "and websites, change settings and check your system.")
+                                    description="Runs privately on your NPU. Panda can search the web, open apps, "
+                                                "files and websites, change settings and check your system.")
         self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE)
         self.stack.add_named(self.empty, "empty")
         self.stack.add_named(self.scroller, "chat")
@@ -322,6 +323,18 @@ class Window(Adw.ApplicationWindow):
             save_config(self.cfg)
             self._schedule_idle()
 
+        abilities = Adw.PreferencesGroup(title="Abilities")
+        web_row = Adw.SwitchRow(title="Search the Web", active=self.agent.web_enabled,
+                                subtitle="Lets Panda look things up with DuckDuckGo and read web pages")
+
+        def on_web(row, _p):
+            self.agent.web_enabled = row.get_active()
+            self.cfg["web_search"] = self.agent.web_enabled
+            save_config(self.cfg)
+
+        web_row.connect("notify::active", on_web)
+        abilities.add(web_row)
+
         smart_group = Adw.PreferencesGroup(
             title="Smarter Model",
             description="When a request is too hard, the model can hand it to a bigger one. "
@@ -347,6 +360,7 @@ class Window(Adw.ApplicationWindow):
         idle_row.connect("notify::selected", on_idle)
         group.add(ctx_row)
         group.add(idle_row)
+        page.add(abilities)
         page.add(smart_group)
         page.add(group)
         if hasattr(Adw, "PreferencesDialog"):  # libadwaita 1.5+
