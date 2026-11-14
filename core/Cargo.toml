@@ -1,0 +1,29 @@
+[package]
+name = "assistant-core"
+version = "0.10.0"
+edition = "2024"
+license = "MIT"
+description = "Background service for the Assistant app: model, tools, memory, MCP"
+publish = false
+
+[[bin]]
+name = "assistantd"
+path = "src/main.rs"
+
+[dependencies]
+gio = "0.21"
+glib = "0.21"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = { version = "3", default-features = false }
+regex = "1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
