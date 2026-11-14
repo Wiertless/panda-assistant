@@ -39,4 +39,4 @@ make test                                     # unit tests, fake FLM server
 PYTHONPATH=src python3 -m panda_assistant     # run from the checkout
 ```
 
-Releases: bump `VERSION` in `src/panda_assistant/__init__.py` and the AppStream `<release>`, then push a `vX.Y.Z` tag. CI tests, builds `panda-assistant-X.Y.Z.tar.gz` with a `.sha256`, and publishes a GitHub release.
+Releases: bump `VERSION` in `src/panda_assistant/__init__.py` and the AppStream `<release>`, then run the **ci** workflow on `main` (Actions → ci → Run workflow) or push a `vX.Y.Z` tag. CI tests, builds `panda-assistant-X.Y.Z.tar.gz` with a `.sha256`, and publishes a GitHub release.
