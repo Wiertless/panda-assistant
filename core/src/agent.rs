@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 use crate::flm::{FlmClient, FlmError, StreamEvent, ToolCall, strip_think};
 use crate::store;
 use crate::tool::{Context, Risk, Tool};
+use crate::tools::groups;
 
 pub const MAX_ROUNDS: usize = 6;
 
@@ -153,6 +154,10 @@ pub struct Agent {
     /// Compaction: messages before `compacted` are replaced by `summary`.
     pub summary: String,
     pub compacted: usize,
+    /// Tool routing: only core tools plus these groups go with a request (see
+    /// tools::groups). Off for the bigger hand-off model, which gets everything.
+    pub route_tools: bool,
+    pub active_groups: HashSet<String>,
 }
 
 impl Agent {
@@ -178,6 +183,8 @@ impl Agent {
             ctx_tokens: 8192,
             summary: String::new(),
             compacted: 0,
+            route_tools: true,
+            active_groups: HashSet::new(),
         }
     }
 
@@ -187,6 +194,7 @@ impl Agent {
         self.notes = None;
         self.summary.clear();
         self.compacted = 0;
+        self.active_groups.clear();
     }
 
     fn sees_now(&self) -> bool {
@@ -269,11 +277,26 @@ impl Agent {
             .collect()
     }
 
+    fn routed(&self, tool: &Tool) -> bool {
+        let g = groups::group_of(&tool.name);
+        !self.route_tools || g == groups::CORE || self.active_groups.contains(g)
+    }
+
     fn tool_schemas(&self) -> Option<Vec<Value>> {
         if !self.use_tools {
             return None;
         }
-        let mut schemas: Vec<Value> = self.available_tools().iter().map(Tool::schema).collect();
+        let all = self.available_tools();
+        let mut schemas: Vec<Value> = all.iter().filter(|t| self.routed(t)).map(Tool::schema).collect();
+        if self.route_tools {
+            let mut missing: Vec<&str> = all.iter().map(|t| groups::group_of(&t.name))
+                .filter(|g| *g != groups::CORE && !self.active_groups.contains(*g)).collect();
+            missing.sort();
+            missing.dedup();
+            if !missing.is_empty() {
+                schemas.push(groups::more_tools_schema(&missing));
+            }
+        }
         if self.can_escalate() {
             schemas.push(escalate_schema(self.smarter_model.as_deref().unwrap()));
         }
@@ -364,6 +387,7 @@ impl Agent {
 
     fn helper(&self, model: &str) -> Agent {
         let mut h = self.clone();
+        h.route_tools = false; // the bigger model has room for every tool
         h.model = model.into();
         h.use_tools = true;
         h.messages = vec![];
@@ -387,6 +411,7 @@ impl Agent {
             cb.notice(&format!("{} can't see images, so they were left out.", self.model));
             images.clear();
         }
+        self.active_groups.extend(groups::groups_for(text).into_iter().map(String::from));
         self.messages.push(json!({"role": "user", "content": with_images(text, &images)}));
         for _ in 0..MAX_ROUNDS {
             if self.cancelled() {
@@ -416,6 +441,11 @@ impl Agent {
                     return self.escalate(call, text, cb);
                 }
             for call in &calls {
+                if call.name == groups::MORE_TOOLS {
+                    let result = self.add_groups(call);
+                    self.messages.push(json!({"role": "tool", "tool_call_id": call.id, "content": result}));
+                    continue;
+                }
                 let result = self.run_call(call, cb);
                 self.messages.push(json!({"role": "tool", "tool_call_id": call.id, "content": result}));
             }
@@ -427,6 +457,23 @@ impl Agent {
         }
         cb.notice("Stopped after too many tool calls in a row.");
         Ok(())
+    }
+
+    /// The model asked for more tool groups: they come with the next request.
+    fn add_groups(&mut self, call: &ToolCall) -> String {
+        let args = call.parsed_arguments().unwrap_or_default();
+        let wanted: Vec<String> = match args.get("groups") {
+            Some(Value::Array(a)) => a.iter().filter_map(|v| v.as_str().map(String::from)).collect(),
+            Some(Value::String(s)) => s.split([',', ' ']).filter(|s| !s.is_empty()).map(String::from).collect(),
+            _ => vec![],
+        };
+        let known: Vec<&str> = groups::GROUPS.iter().map(|(g, _, _)| *g).collect();
+        let added: Vec<String> = wanted.into_iter().filter(|g| known.contains(&g.as_str())).collect();
+        if added.is_empty() {
+            return format!("Error: name one or more groups: {}", known.join(", "));
+        }
+        self.active_groups.extend(added.iter().cloned());
+        format!("Added the {} tools. Use them now.", added.join(", "))
     }
 
     /// The smarter model finishes this turn; its answer is the reply.
@@ -757,6 +804,36 @@ mod tests {
         assert!(a.compacted > 0);
         assert_eq!(a.messages.len(), 14);
         assert!(Agent::tokens(msgs) < 3000 - REPLY_RESERVE);
+    }
+
+    #[test]
+    fn tools_are_routed_by_message_and_more_tools() {
+        let _h = temp_home();
+        let names = |req: &Value| -> Vec<String> {
+            req["tools"].as_array().unwrap().iter().map(|t| t["function"]["name"].as_str().unwrap().to_string()).collect()
+        };
+        let flm = FakeFlm::start(vec![
+            (200, text_reply("Hi.")),
+            (200, tool_reply(groups::MORE_TOOLS, r#"{"groups": ["devices"]}"#, "c1")),
+            (200, tool_reply("send_file", r#"{"path": "a.txt"}"#, "c2")), (200, text_reply("Sent.")),
+            (200, text_reply("Louder.")),
+        ]);
+        let mut a = agent(&flm);
+        a.ask("hello", &Rec::default(), &[]).unwrap();
+        a.ask("give it to Marek", &Rec { allow: true, ..Default::default() }, &[]).unwrap();
+        a.ask("turn the volume up", &Rec::default(), &[]).unwrap();
+        let reqs = flm.requests();
+        // Core tools and the meta tool only.
+        let first = names(&reqs[0]);
+        assert!(first.contains(&"get_datetime".to_string()) && first.contains(&groups::MORE_TOOLS.to_string()));
+        assert!(!first.contains(&"send_file".to_string()) && !first.contains(&"set_volume".to_string()));
+        // After more_tools, the devices group comes along (and stays).
+        assert!(names(&reqs[2]).contains(&"send_file".to_string()));
+        assert_eq!(reqs[2]["messages"].as_array().unwrap().iter().rev().nth(1).unwrap()["tool_calls"][0]["function"]["name"], groups::MORE_TOOLS);
+        // A message about volume brings the settings group by its words.
+        let last = names(&reqs[4]);
+        assert!(last.contains(&"set_volume".to_string()) && last.contains(&"send_file".to_string()));
+        assert!(a.active_groups.contains("devices") && a.active_groups.contains("settings"));
     }
 
     #[test]

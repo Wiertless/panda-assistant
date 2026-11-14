@@ -21,6 +21,15 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.13.0" date="2026-11-15">
+      <description>
+        <ul>
+          <li>Sends only the tools a message needs, leaving the small model a third of the context it used to spend on them</li>
+          <li>Searches inside your apps like the overview does: sums, emoji, weather, contacts and more</li>
+          <li>Opens a terminal in a folder, using the freedesktop terminal intent when available</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.12.0" date="2026-11-15">
       <description>
         <ul>

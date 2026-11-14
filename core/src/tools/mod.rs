@@ -13,6 +13,7 @@ pub mod apps;
 pub mod brains;
 pub mod connect;
 pub mod files;
+pub mod groups;
 pub mod intents;
 pub mod localsearch;
 pub mod personal;
@@ -103,6 +104,17 @@ folder, start with ~, or start with a folder name like Downloads or Documents.",
                   text("path", |p| format!("Open {}", or(p, "a file")))),
         Tool::new("show_in_files", "Show a file or folder in the file manager (opens its folder with it selected).",
                   path(), Safe, intents::show_in_files, text("path", |p| format!("Show {} in Files", or(p, "it")))),
+        Tool::new("search_apps", "Search inside the user's apps, like the GNOME overview does: Calculator for sums, \
+Characters for emoji, Weather, Settings pages, Files, Contacts and more.",
+                  obj(json!({"query": {"type": "string"}}), &["query"]), Safe, intents::search_apps,
+                  text("query", |q| format!("Search apps for “{q}”"))),
+        Tool::new("open_search_result", "Open one of search_apps' results in its app.",
+                  obj(json!({"app": {"type": "string", "description": "The app's id from search_apps"},
+                             "id": {"type": "string"}, "query": {"type": "string", "description": "The search used"}}), &["app", "id"]),
+                  Safe, intents::open_search_result, |_| "Open the result".into()),
+        Tool::new("open_terminal", "Open the user's terminal app in a folder (default: home).",
+                  obj(json!({"folder": {"type": "string"}}), &[]), Safe, intents::open_terminal,
+                  text("folder", |f| format!("Open a terminal in {}", or(f, "your home folder")))),
         Tool::new("list_folder", "List what's in a folder (default: the home folder).",
                   obj(json!({"path": {"type": "string", "description": "e.g. Downloads, Documents/work, ~"}}), &[]),
                   Safe, files::list_folder, text("path", |p| format!("Look in {}", or(p, "your home folder")))),
@@ -262,7 +274,7 @@ mod tests {
     #[test]
     fn same_tools_and_risks_as_the_python_app() {
         let names: Vec<String> = all().into_iter().map(|t| t.name).collect();
-        assert_eq!(names.len(), 50, "{names:?}");
+        assert_eq!(names.len(), 53, "{names:?}");
         let risky: Vec<String> = all().into_iter().filter(|t| t.risk == Risk::Confirm).map(|t| t.name).collect();
         assert_eq!(risky, ["send_file", "run_command"]);
     }
