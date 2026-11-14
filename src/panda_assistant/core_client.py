@@ -112,6 +112,14 @@ class Core:
     def models(self, done: Callable[[list[dict] | None, str | None], None]) -> None:
         self._call_async("Models", None, "(s)", lambda v, err: done(json.loads(v) if v else None, err))
 
+    def pending(self, chat_id: str) -> list[dict]:
+        """Allow/Cancel questions waiting in this chat."""
+        return json.loads(self._call("Pending", GLib.Variant("(s)", (chat_id,)), "(s)")[0])
+
+    def watch(self, chat_id: str, turn: Turn) -> None:
+        """Follow a turn the service is already running (e.g. one started from search)."""
+        self.turns[chat_id] = turn
+
     def connections(self) -> dict:
         return json.loads(self._call("Connections", None, "(s)")[0])
 

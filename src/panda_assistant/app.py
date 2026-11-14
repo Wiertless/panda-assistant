@@ -498,8 +498,28 @@ class Window(Adw.ApplicationWindow):
         self.agent.messages = data["messages"]
         self._render_history(data["messages"], data.get("model") or self.agent.model)
         self.stack.set_visible_child_name("chat")
+        self._follow_running_turn()
         self.split.set_show_content(True)
         self._refresh_chats()
+
+    def _follow_running_turn(self):
+        """If the service is still answering in this chat (asked from search),
+        show the rest of the answer here, and any Allow/Cancel it waits on."""
+        try:
+            status = self.core.status()
+            if not status.get("busy") or status.get("chat_id") != self.chat_id:
+                return
+            pending = self.core.pending(self.chat_id)
+        except CoreError:
+            return
+        self._set_busy(True)
+        self.stack.set_visible_child_name("chat")
+        if status.get("question"):
+            self._add_user(_shown_user_text(status["question"]))
+        self.reply = Reply(self)
+        self.core.watch(self.chat_id, self.reply)
+        for p in pending:
+            self.reply.on_confirm(p["request"], p["name"], p["summary"], p["detail"], p["can_always"])
 
     def _render_history(self, messages: list[dict], model: str):
         """Draw a saved chat: user bubbles, answers and finished action pills."""

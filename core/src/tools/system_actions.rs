@@ -55,7 +55,7 @@ pub fn take_screenshot() -> Result<PathBuf, ToolError> {
         options.insert("handle_token", &token);
         options.insert("interactive", false);
         let call = bus.call_sync(Some("org.freedesktop.portal.Desktop"), "/org/freedesktop/portal/desktop",
-            "org.freedesktop.portal.Screenshot", "Screenshot", Some(&("", options.end()).to_variant()),
+            "org.freedesktop.portal.Screenshot", "Screenshot", Some(&glib::Variant::tuple_from_iter(["".to_variant(), options.end()])),
             None, gio::DBusCallFlags::NONE, 10000, None::<&gio::Cancellable>);
         if let Err(e) = call {
             bus.signal_unsubscribe(sub);

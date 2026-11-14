@@ -18,6 +18,7 @@ use serde_json::{Value, json};
 use crate::agent::{Agent, Callbacks};
 use crate::flm::{self, FlmClient, Model};
 use crate::mcp::Hub;
+use crate::search;
 use crate::tool::Context;
 use crate::{paths, store, tools};
 
@@ -29,6 +30,8 @@ const BIG_MODEL_IDLE: Duration = Duration::from_secs(60);
 /// With no model loaded and nothing to do, the service exits after this long
 /// (D-Bus starts it again on the next call).
 const EXIT_WHEN_IDLE: Duration = Duration::from_secs(600);
+/// A question from GNOME search after this long starts a new chat.
+const STALE_CHAT: Duration = Duration::from_secs(30 * 60);
 
 pub const INTROSPECTION: &str = r#"
 <node>
@@ -50,6 +53,10 @@ pub const INTROSPECTION: &str = r#"
     <method name="Unload"/>
     <method name="Load"/>
     <method name="Connections"><arg type="s" name="json" direction="out"/></method>
+    <method name="Pending">
+      <arg type="s" name="chat_id" direction="in"/>
+      <arg type="s" name="json" direction="out"/>
+    </method>
     <signal name="Text"><arg type="s" name="chat_id"/><arg type="s" name="text"/></signal>
     <signal name="Reasoning"><arg type="s" name="chat_id"/><arg type="s" name="text"/></signal>
     <signal name="ToolStarted"><arg type="s" name="chat_id"/><arg type="s" name="name"/><arg type="s" name="summary"/></signal>
@@ -105,6 +112,8 @@ struct SignalCallbacks {
     conn: gio::DBusConnection,
     chat_id: String,
     service: Arc<Shared>,
+    /// Asked from GNOME search with no window: tell the user by notification.
+    background: bool,
 }
 
 impl SignalCallbacks {
@@ -136,9 +145,13 @@ impl Callbacks for SignalCallbacks {
         self.emit("Compacting", (self.chat_id.as_str(),).to_variant());
     }
     fn confirm(&self, name: &str, summary: &str, detail: &str) -> bool {
-        let (id, rx) = self.service.new_request();
         let can_always = !tools::ALWAYS_ASK.contains(&name);
+        let (id, rx) = self.service.new_request(json!({"chat_id": self.chat_id, "name": name, "summary": summary,
+                                                       "detail": detail, "can_always": can_always}));
         self.emit("ConfirmRequest", (self.chat_id.as_str(), id, name, summary, detail, can_always).to_variant());
+        if self.background && !search::app_running(&self.conn) {
+            search::notify(&self.conn, "Assistant needs your OK", &format!("{summary}?"), &self.chat_id, "Review");
+        }
         let answer = loop {
             match rx.recv_timeout(Duration::from_millis(200)) {
                 Ok(a) => break a,
@@ -165,8 +178,10 @@ pub struct Shared {
     pub cancel: Arc<AtomicBool>,
     pub always_allow: Arc<Mutex<HashSet<String>>>,
     next_request: AtomicU32,
-    pending: Mutex<HashMap<u32, Sender<String>>>,
+    pending: Mutex<HashMap<u32, (Sender<String>, Value)>>,
     pub state: Mutex<String>,
+    /// The question being answered right now (a window following the turn shows it).
+    pub question: Mutex<String>,
     pub mcp: Arc<Hub>,
     /// What tools may ask of the window: clipboard, stepping aside.
     pub tool_ctx: Mutex<Context>,
@@ -187,23 +202,33 @@ impl Shared {
             next_request: AtomicU32::new(1),
             pending: Mutex::new(HashMap::new()),
             state: Mutex::new("Not loaded".into()),
+            question: Mutex::new(String::new()),
             mcp: Hub::new(),
             tool_ctx: Mutex::new(Context::default()),
         })
     }
 
-    fn new_request(&self) -> (u32, Receiver<String>) {
+    fn new_request(&self, info: Value) -> (u32, Receiver<String>) {
         let id = self.next_request.fetch_add(1, Ordering::SeqCst);
         let (tx, rx) = channel();
-        self.pending.lock().unwrap().insert(id, tx);
+        self.pending.lock().unwrap().insert(id, (tx, info));
         (id, rx)
     }
 
     pub fn answer(&self, id: u32, answer: &str) -> bool {
         match self.pending.lock().unwrap().get(&id) {
-            Some(tx) => tx.send(answer.to_string()).is_ok(),
+            Some((tx, _)) => tx.send(answer.to_string()).is_ok(),
             None => false,
         }
+    }
+
+    /// Questions waiting for the user in this chat (a window opening it shows them).
+    pub fn pending_for(&self, chat_id: &str) -> Value {
+        let list: Vec<Value> = self.pending.lock().unwrap().iter()
+            .filter(|(_, (_, info))| info["chat_id"] == chat_id)
+            .map(|(id, (_, info))| { let mut i = info.clone(); i["request"] = json!(id); i })
+            .collect();
+        Value::Array(list)
     }
 
     fn allow_always(&self, name: &str) {
@@ -290,6 +315,9 @@ pub struct Service {
     idle: Mutex<Option<glib::SourceId>>,
     last_activity: Mutex<std::time::Instant>,
     loading: AtomicBool,
+    /// When the last answer finished (a question from search after a long
+    /// pause starts a new chat).
+    last_turn: Mutex<Option<std::time::Instant>>,
 }
 
 impl Service {
@@ -309,7 +337,7 @@ impl Service {
             ctx.show_window = Some(Arc::new(emit(&conn, "StepBack", None)));
         }
         Arc::new(Self { shared, conn, idle: Mutex::new(None), last_activity: Mutex::new(std::time::Instant::now()),
-                        loading: AtomicBool::new(false) })
+                        loading: AtomicBool::new(false), last_turn: Mutex::new(None) })
     }
 
     pub fn shared(&self) -> Arc<Shared> {
@@ -354,7 +382,7 @@ impl Service {
         json!({"servers": servers, "config_error": *self.shared.mcp.config_error.lock().unwrap(), "max_tools": crate::mcp::MAX_TOOLS})
     }
 
-    fn touch(&self) {
+    pub fn touch(&self) {
         *self.last_activity.lock().unwrap() = std::time::Instant::now();
     }
 
@@ -377,11 +405,41 @@ impl Service {
         let cfg = self.shared.config.lock().unwrap();
         json!({"model": cfg.model, "state": *self.shared.state.lock().unwrap(),
                "busy": self.shared.busy.load(Ordering::SeqCst), "chat_id": *self.shared.chat_id.lock().unwrap(),
+               "question": *self.shared.question.lock().unwrap(),
                "version": env!("CARGO_PKG_VERSION")})
+    }
+
+    /// A question from GNOME search with no window open: answer it here and
+    /// say so by notification. After 30 quiet minutes it starts a new chat.
+    pub fn ask_in_background(self: &Arc<Self>, text: &str) {
+        if self.shared.busy.load(Ordering::SeqCst) {
+            let id = self.shared.chat_id.lock().unwrap().clone();
+            search::notify(&self.conn, "Assistant is busy", "Still working on the last question.", &id, "Open Chat");
+            return;
+        }
+        let fresh = self.last_turn.lock().unwrap().is_some_and(|t| t.elapsed() < STALE_CHAT);
+        let current = self.shared.chat_id.lock().unwrap().clone();
+        let chat_id = if fresh && !current.is_empty() { current } else { store::new_chat_id() };
+        // "/name details" runs a saved skill, as in the window.
+        let prompt = match text.strip_prefix('/') {
+            Some(rest) => {
+                let (name, details) = rest.split_once(' ').unwrap_or((rest, ""));
+                store::find_skill(name).map(|s| store::skill_prompt(&s, details)).unwrap_or_else(|| text.to_string())
+            }
+            None => text.to_string(),
+        };
+        search::notify(&self.conn, "Asking Assistant…", text, &chat_id, "Open Chat");
+        if let Err(e) = self.start_turn(&chat_id, &prompt, vec![], true) {
+            search::notify(&self.conn, "Assistant couldn't answer", &e, &chat_id, "Open Chat");
+        }
     }
 
     /// Start a turn on a worker thread; returns its chat id at once.
     pub fn ask(self: &Arc<Self>, chat_id: &str, text: &str, images: Vec<String>) -> Result<String, String> {
+        self.start_turn(chat_id, text, images, false)
+    }
+
+    fn start_turn(self: &Arc<Self>, chat_id: &str, text: &str, images: Vec<String>, background: bool) -> Result<String, String> {
         if self.shared.busy.swap(true, Ordering::SeqCst) {
             return Err("busy with another question".into());
         }
@@ -389,13 +447,14 @@ impl Service {
         let (chat_id, mut agent) = self.shared.agent_for(chat_id);
         *self.shared.chat_id.lock().unwrap() = chat_id.clone();
         self.shared.cancel.store(false, Ordering::SeqCst);
+        *self.shared.question.lock().unwrap() = text.to_string();
         let me = self.clone();
         let text = text.to_string();
         let id = chat_id.clone();
         std::thread::spawn(move || {
             let shared = me.shared.clone();
             let cfg = shared.config.lock().unwrap().clone();
-            let cb = SignalCallbacks { conn: me.conn.clone(), chat_id: id.clone(), service: shared.clone() };
+            let cb = SignalCallbacks { conn: me.conn.clone(), chat_id: id.clone(), service: shared.clone(), background };
             if *shared.state.lock().unwrap() != "Loaded" {
                 me.set_state("Loading…");
             }
@@ -414,9 +473,19 @@ impl Service {
                 me.set_state("Not loaded");
             }
             let _ = store::save_chat(&id, &agent.messages, &agent.model, &agent.summary, agent.compacted);
+            let answer = agent.messages.last().filter(|m| m["role"] == "assistant")
+                .and_then(|m| m["content"].as_str()).unwrap_or("").to_string();
             *shared.agent.lock().unwrap() = Some(agent);
             shared.busy.store(false, Ordering::SeqCst);
+            *me.last_turn.lock().unwrap() = Some(std::time::Instant::now());
             me.touch();
+            if background && !search::app_running(&me.conn) {
+                if !error.is_empty() {
+                    search::notify(&me.conn, "Assistant couldn't answer", &error, &id, "Open Chat");
+                } else if !answer.trim().is_empty() {
+                    search::notify(&me.conn, "Assistant", &search::plain(&answer, 400), &id, "Open Chat");
+                }
+            }
             cb.emit("Finished", (id.as_str(), error.as_str()).to_variant());
             let me2 = me.clone();
             glib::MainContext::default().invoke(move || me2.schedule_idle());
@@ -556,6 +625,10 @@ impl Service {
                 reply(None)
             }
             "Connections" => reply(Some((self.connections().to_string(),).to_variant())),
+            "Pending" => {
+                let (chat_id,): (String,) = params.get().unwrap_or_default();
+                reply(Some((self.shared.pending_for(&chat_id).to_string(),).to_variant()))
+            }
             "Reload" => {
                 self.reload();
                 reply(None)
@@ -592,9 +665,19 @@ pub fn run() -> ControlFlow {
         }
     };
     let service = Service::new(conn.clone(), Arc::new(FlmClient::from_env()));
+    // One service per session: if another one has the name, leave.
+    if request_name(&conn, BUS_NAME) != Some(1) {
+        return ControlFlow::Continue;
+    }
     if let Err(e) = service.register() {
         eprintln!("assistantd: can't export the service: {e}");
         return ControlFlow::Break;
+    }
+    match search::register(&service, &conn) {
+        Ok(_) => {
+            request_name(&conn, search::BUS_NAME);
+        }
+        Err(e) => eprintln!("assistantd: no GNOME search: {e}"),
     }
     service.load_models();
     let main_loop = glib::MainLoop::new(None, false);
@@ -606,22 +689,20 @@ pub fn run() -> ControlFlow {
         }
         ControlFlow::Continue
     });
-    // Own the name with the plain C call: gio-rs's closure wrapper panics
-    // when the bus goes away (it gets no connection then). Losing the bus
-    // closes the connection, which ends the loop below.
-    {
-        use glib::translate::ToGlibPtr;
-        // SAFETY: valid connection and name; no callbacks or user data.
-        unsafe {
-            gio::ffi::g_bus_own_name_on_connection(conn.to_glib_none().0, BUS_NAME.to_glib_none().0,
-                                                   gio::ffi::G_BUS_NAME_OWNER_FLAGS_NONE, None, None,
-                                                   std::ptr::null_mut(), None);
-        }
-    }
+    // Losing the bus closes the connection, which ends the loop below.
     let quit = main_loop.clone();
     conn.connect_closed(move |_, _, _| quit.quit());
     main_loop.run();
     service.shared().mcp.stop_all();
     service.shared().client.stop_server();
     ControlFlow::Continue
+}
+
+/// Ask the bus for a name without queueing: 1 means we have it.
+fn request_name(conn: &gio::DBusConnection, name: &str) -> Option<u32> {
+    const DO_NOT_QUEUE: u32 = 4;
+    conn.call_sync(Some("org.freedesktop.DBus"), "/org/freedesktop/DBus", "org.freedesktop.DBus", "RequestName",
+                   Some(&(name, DO_NOT_QUEUE).to_variant()), Some(glib::VariantTy::new("(u)").unwrap()),
+                   gio::DBusCallFlags::NONE, 5000, None::<&gio::Cancellable>)
+        .ok().and_then(|v| v.child_value(0).get::<u32>())
 }

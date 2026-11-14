@@ -6,6 +6,7 @@ pub mod context;
 pub mod flm;
 pub mod mcp;
 pub mod paths;
+pub mod search;
 pub mod service;
 pub mod store;
 pub mod tool;
