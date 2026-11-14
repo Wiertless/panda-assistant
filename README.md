@@ -10,6 +10,12 @@ A local AI assistant for GNOME that runs on an AMD Ryzen AI NPU through [FastFlo
 
 Panda lists the models FastFlowLM has downloaded (`flm list`). Only models labelled **tool-calling** can take actions; others are marked "chat only". Flash models are single-turn and can't use tools. The default is `gemma4-it:e2b`; the choice is saved in `~/.config/panda-assistant/config.json`.
 
+## Smarter model
+
+The fast model can hand a request it can't do well to a bigger local model by calling `ask_smarter_model`. The bigger model gets the conversation and the same desktop actions, and its reply is the answer, so there's no second model swap. FLM keeps one model loaded, so a hand-off takes a few seconds while it loads.
+
+**Preferences → Smarter Model** picks it. **Automatic** chooses the biggest downloaded tool-calling model that should fit in memory (about 0.75 × RAM in billions of parameters: 12B on 16 GB). It can also be a specific model, or **Off**.
+
 ## Memory
 
 The model only takes memory while it's loaded, which the window subtitle shows (**Loaded** / **Not loaded**).

@@ -21,6 +21,15 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.3.0" date="2026-11-14">
+      <description>
+        <ul>
+          <li>Hard requests can be handed to a bigger local model (Preferences → Smarter Model)</li>
+          <li>Fixed: FastFlowLM 1.0.9 was never detected as started</li>
+          <li>Startup errors show the end of FastFlowLM's log</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.2.0" date="2026-11-14">
       <description>
         <p>Uses much less memory:</p>

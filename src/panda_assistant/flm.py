@@ -22,6 +22,8 @@ from typing import Iterator
 
 DEFAULT_URL = os.environ.get("PANDA_FLM_URL", "http://127.0.0.1:52625")
 DEFAULT_CTX_LEN = 8192
+# FLM is local: never send its requests through an http_proxy from the environment.
+_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 # Qwen3.5/3.6 keep earlier prompts in a host-memory prefix cache (FLM default
 # limit 4096 MiB). Panda's prompts are short, so a smaller limit is plenty.
 PREFIX_CACHE_MB = 1024
@@ -59,6 +61,44 @@ class Model:
     @property
     def single_turn(self) -> bool:
         return "single-turn" in self.labels
+
+    @property
+    def size_b(self) -> float:
+        """Rough parameter count in billions from the tag ("e4b" -> 4, "35b-a3b" -> 35)."""
+        m = re.match(r"e?(\d+(?:\.\d+)?)([bm])", self.name.partition(":")[2])
+        if not m:
+            return 0.0
+        return float(m.group(1)) / (1000 if m.group(2) == "m" else 1)
+
+
+def total_ram_gib() -> float:
+    try:
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            if line.startswith("MemTotal:"):
+                return int(line.split()[1]) / 2**20
+    except (OSError, ValueError, IndexError):
+        pass
+    return 0.0
+
+
+def pick_smarter_model(models: list["Model"], current: str, ram_gib: float | None = None) -> str | None:
+    """The biggest installed tool-calling model that should fit in RAM.
+
+    4-bit weights take roughly 0.6 GiB per billion parameters; leave room for
+    the desktop by allowing models up to 3/4 of RAM in billions (12B on 16 GiB).
+    """
+    ram = total_ram_gib() if ram_gib is None else ram_gib
+    limit = ram * 0.75 if ram else 12
+    cur = next((m for m in models if m.name == current), None)
+    best = None
+    for m in models:
+        if not (m.installed and m.can_use_tools and not m.single_turn) or m.name == current:
+            continue
+        if m.size_b > limit or (cur and m.size_b <= cur.size_b):
+            continue
+        if best is None or m.size_b > best.size_b:
+            best = m
+    return best.name if best else None
 
 
 @dataclass
@@ -165,6 +205,15 @@ def model_labels() -> dict[str, list[str]]:
     return labels
 
 
+def _log_tail(path: Path, lines: int = 6) -> str:
+    """The end of FLM's log, to put in an error message."""
+    try:
+        tail = [ln for ln in path.read_text(errors="replace").splitlines() if ln.strip()][-lines:]
+    except OSError:
+        return ""
+    return ("\n\nLast lines of " + str(path) + ":\n" + "\n".join(tail)) if tail else ""
+
+
 _LIST_RE = re.compile(r"^\s*-\s*(\S+)\s*(.*)$")
 
 
@@ -188,18 +237,27 @@ class FlmClient:
 
     # -- server ------------------------------------------------------------
     def is_up(self) -> bool:
-        try:
-            with urllib.request.urlopen(self.base_url + "/api/version", timeout=2) as r:
-                return r.status == 200
-        except (OSError, urllib.error.URLError):
-            return False
+        """True once something answers HTTP on the server port.
+
+        Any answer counts, error statuses included: older FLM releases don't
+        serve every endpoint, and a server that replies at all is listening.
+        """
+        for path in ("/api/version", "/v1/models"):
+            try:
+                with _OPENER.open(self.base_url + path, timeout=3):
+                    return True
+            except urllib.error.HTTPError:
+                return True
+            except (OSError, urllib.error.URLError):
+                continue
+        return False
 
     @property
     def owns_server(self) -> bool:
         """True while a server this app started is running."""
         return self._server is not None and self._server.poll() is None
 
-    def ensure_server(self, model: str, ctx_len: int | None = DEFAULT_CTX_LEN, wait: float = 120) -> bool:
+    def ensure_server(self, model: str, ctx_len: int | None = DEFAULT_CTX_LEN, wait: float = 300) -> bool:
         """Start `flm serve` unless one is listening. True if this call started it.
 
         A server someone else started is used as it is. One Panda started with
@@ -224,12 +282,14 @@ class FlmClient:
                 if self._server.poll() is not None:
                     code = self._server.returncode
                     self._server = None
-                    raise FlmError(f"flm serve exited ({code}); see {log_dir / 'flm-serve.log'}")
+                    raise FlmError(f"FastFlowLM stopped while starting (exit code {code})."
+                                   + _log_tail(log_dir / "flm-serve.log"))
                 if self.is_up():
                     return True
                 time.sleep(0.25)
             self._stop_locked()
-            raise FlmError("FastFlowLM didn't start within two minutes.")
+            raise FlmError(f"FastFlowLM didn't start within {int(wait // 60)} minutes."
+                           + _log_tail(log_dir / "flm-serve.log"))
 
     def stop_server(self) -> bool:
         """Stop the server only if this app started it. True if one was stopped."""
@@ -272,7 +332,7 @@ class FlmClient:
         req = urllib.request.Request(self.base_url + "/v1/chat/completions", data=json.dumps(body).encode(),
                                      headers={"Content-Type": "application/json", "Authorization": "Bearer flm"})
         try:
-            resp = urllib.request.urlopen(req, timeout=self.timeout)
+            resp = _OPENER.open(req, timeout=self.timeout)
         except urllib.error.HTTPError as e:
             detail = e.read().decode(errors="replace")[:500]
             raise FlmError(f"FLM returned {e.code}: {detail}", e.code) from None

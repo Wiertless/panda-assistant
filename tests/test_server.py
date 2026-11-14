@@ -107,3 +107,42 @@ class ServerLifecycleTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReadinessTest(unittest.TestCase):
+    def test_any_http_answer_counts_as_up(self):
+        import threading
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+
+        class NotFound(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                self.send_response(404)
+                self.end_headers()
+
+        srv = HTTPServer(("127.0.0.1", 0), NotFound)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            self.assertTrue(FlmClient(f"http://127.0.0.1:{srv.server_port}").is_up())
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+    def test_nothing_listening(self):
+        self.assertFalse(FlmClient(f"http://127.0.0.1:{free_port()}").is_up())
+
+
+class StartupFailureTest(ServerLifecycleTest):
+    def test_error_includes_log_tail(self):
+        flm = Path(self.tmp.name) / "flm"
+        flm.write_text(f"#!{sys.executable}\nimport sys\nprint('NPU device busy', flush=True)\nsys.exit(3)\n")
+        from panda_assistant.flm import FlmError
+        with self.assertRaises(FlmError) as err:
+            self.client.ensure_server("gemma4-it:e2b", 8192, wait=10)
+        self.assertIn("exit code 3", str(err.exception))
+        self.assertIn("NPU device busy", str(err.exception))
+
+    test_start_reuse_restart_and_unload = None
+    test_server_started_elsewhere_is_left_alone = None

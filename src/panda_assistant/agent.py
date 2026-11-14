@@ -18,6 +18,21 @@ to do something on the computer, or asks about its state, call a tool instead of
 describing how to do it. Only call tools the request needs. Never invent tool results; \
 if a tool fails, say what failed. Answer in the user's language."""
 
+ESCALATE = "ask_smarter_model"
+ESCALATE_PROMPT = """ If a request needs more than you can do well (careful reasoning, \
+longer writing, code, several steps, or you're unsure), call ask_smarter_model instead \
+of guessing. It hands the task to a bigger local model, which answers the user directly."""
+
+
+def escalate_schema(model: str) -> dict:
+    return {"type": "function", "function": {
+        "name": ESCALATE,
+        "description": f"Hand this request to {model}, a bigger and smarter local model that can also "
+                       "use the tools. Use it for hard requests; it answers the user itself.",
+        "parameters": {"type": "object", "properties": {
+            "task": {"type": "string", "description": "What the user wants, and anything you found out"}},
+            "required": ["task"]}}}
+
 
 @dataclass
 class Callbacks:
@@ -28,6 +43,7 @@ class Callbacks:
     tool_started: Callable[[str, str], None] = lambda name, summary: None
     tool_finished: Callable[[str, str, bool], None] = lambda name, result, ok: None
     notice: Callable[[str], None] = lambda s: None
+    handoff: Callable[[str], None] = lambda model: None
     # Blocks until the user answers; True means run it.
     confirm: Callable[[str, str], bool] = lambda name, summary: False
 
@@ -40,12 +56,25 @@ class Agent:
     ctx: T.Context = field(default_factory=T.Context)
     messages: list[dict] = field(default_factory=list)
     cancel: threading.Event = field(default_factory=threading.Event)
+    smarter_model: str | None = None
 
     def reset(self) -> None:
         self.messages = []
 
+    def _can_escalate(self) -> bool:
+        return bool(self.use_tools and self.smarter_model and self.smarter_model != self.model)
+
     def _conversation(self) -> list[dict]:
-        return [{"role": "system", "content": SYSTEM_PROMPT}] + self.messages
+        system = SYSTEM_PROMPT + (ESCALATE_PROMPT if self._can_escalate() else "")
+        return [{"role": "system", "content": system}] + self.messages
+
+    def _tool_schemas(self):
+        if not self.use_tools:
+            return None
+        schemas = T.schemas()
+        if self._can_escalate():
+            schemas.append(escalate_schema(self.smarter_model))
+        return schemas
 
     def ask(self, text: str, cb: Callbacks) -> None:
         """Run one user turn to completion. Blocking; call it from a thread."""
@@ -54,7 +83,7 @@ class Agent:
         for _ in range(MAX_ROUNDS):
             if self.cancel.is_set():
                 return
-            tool_schemas = T.schemas() if self.use_tools else None
+            tool_schemas = self._tool_schemas()
             try:
                 content, calls = self._stream(tool_schemas, cb)
             except FlmError as e:
@@ -72,10 +101,39 @@ class Agent:
             self.messages.append(assistant)
             if not calls or self.cancel.is_set():
                 return
+            escalation = next((c for c in calls if c.name == ESCALATE), None) if self._can_escalate() else None
+            if escalation:
+                self._escalate(escalation, text, cb)
+                return
             for call in calls:
                 self.messages.append({"role": "tool", "tool_call_id": call.id,
                                       "content": self._run_call(call, cb)})
         cb.notice("Stopped after too many tool calls in a row.")
+
+    def _escalate(self, call, request: str, cb: Callbacks) -> None:
+        """Let the smarter model finish this turn, then end it there.
+
+        FLM keeps one model loaded, so going back to the small model for a
+        closing sentence would mean loading it again; the big model's answer
+        is the reply. The exchange is recorded as a tool result plus that
+        answer, so the next turn's history stays valid.
+        """
+        try:
+            task = str(call.parsed_arguments().get("task", "")).strip()
+        except (ValueError, json.JSONDecodeError):
+            task = ""
+        cb.handoff(self.smarter_model)
+        helper = Agent(self.client, self.smarter_model, use_tools=True, ctx=self.ctx, cancel=self.cancel)
+        # Earlier turns as plain text; tool traffic belongs to the other model.
+        helper.messages = [{"role": m["role"], "content": m["content"]} for m in self.messages[:-2]
+                           if m["role"] in ("user", "assistant") and m.get("content")]
+        note = f"\n\n(A smaller assistant handed this to you. Its notes: {task})" if task else ""
+        helper.ask(request + note, cb)
+        answer = next((m["content"] for m in reversed(helper.messages)
+                       if m["role"] == "assistant" and m.get("content")), "")
+        self.messages.append({"role": "tool", "tool_call_id": call.id,
+                              "content": f"{self.smarter_model} answered the user directly:\n{answer}"})
+        self.messages.append({"role": "assistant", "content": answer})
 
     def _stream(self, tool_schemas, cb: Callbacks):
         content = []

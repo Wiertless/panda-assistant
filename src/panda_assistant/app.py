@@ -16,7 +16,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 from . import APP_ID, APP_NAME, DEFAULT_MODEL, VERSION  # noqa: E402
 from . import tools as T  # noqa: E402
 from .agent import Agent, Callbacks  # noqa: E402
-from .flm import DEFAULT_CTX_LEN, FlmClient, FlmError, Model  # noqa: E402
+from .flm import DEFAULT_CTX_LEN, FlmClient, FlmError, Model, pick_smarter_model  # noqa: E402
 from .markup import to_pango  # noqa: E402
 
 CONFIG = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "panda-assistant" / "config.json"
@@ -84,6 +84,8 @@ class Window(Adw.ApplicationWindow):
         self.busy = False
         self.agent = Agent(self.client, self.cfg.get("model", DEFAULT_MODEL),
                            ctx=T.Context(copy_to_clipboard=self.copy_text))
+        self.smarter_choice = self.cfg.get("smarter_model", "auto")  # "auto", "off" or a model
+        self._apply_smarter()  # "auto" is resolved again once the model list has loaded
         self.ctx_len = int(self.cfg.get("ctx_len", DEFAULT_CTX_LEN))
         self.unload_after = int(self.cfg.get("unload_after_minutes", 5))
         self.state = "Not loaded"
@@ -198,6 +200,16 @@ class Window(Adw.ApplicationWindow):
         self._apply_model()
         return GLib.SOURCE_REMOVE
 
+    def _apply_smarter(self):
+        if not hasattr(self, "models"):
+            self.models = []
+        if self.smarter_choice == "off":
+            self.agent.smarter_model = None
+        elif self.smarter_choice == "auto":
+            self.agent.smarter_model = pick_smarter_model(self.models, self.agent.model)
+        else:
+            self.agent.smarter_model = self.smarter_choice
+
     def _on_model(self, action, value):
         name = value.unpack()
         if self.busy or name == self.agent.model:
@@ -212,6 +224,7 @@ class Window(Adw.ApplicationWindow):
 
     def _apply_model(self):
         self._show_state()
+        self._apply_smarter()
         model = next((m for m in self.models if m.name == self.agent.model), None)
         self.agent.use_tools = True
         self.banner.set_revealed(False)
@@ -309,10 +322,32 @@ class Window(Adw.ApplicationWindow):
             save_config(self.cfg)
             self._schedule_idle()
 
+        smart_group = Adw.PreferencesGroup(
+            title="Smarter Model",
+            description="When a request is too hard, the model can hand it to a bigger one. "
+                        "Only one model is loaded at a time, so the hand-off takes a moment.")
+        candidates = [m.name for m in self.models
+                      if m.installed and m.can_use_tools and not m.single_turn and m.name != self.agent.model]
+        auto_pick = pick_smarter_model(self.models, self.agent.model)
+        smart_values = ["auto", "off"] + candidates
+        smart_labels = [f"Automatic ({auto_pick})" if auto_pick else "Automatic (none available)", "Off"] + candidates
+        smart_row = Adw.ComboRow(title="Hand Hard Requests To", model=Gtk.StringList.new(smart_labels))
+        smart_row.set_selected(smart_values.index(self.smarter_choice) if self.smarter_choice in smart_values else 0)
+
+        def on_smart(row, _p):
+            self.smarter_choice = smart_values[row.get_selected()]
+            self.cfg["smarter_model"] = self.smarter_choice
+            save_config(self.cfg)
+            self._apply_smarter()
+
+        smart_row.connect("notify::selected", on_smart)
+        smart_group.add(smart_row)
+
         ctx_row.connect("notify::selected", on_ctx)
         idle_row.connect("notify::selected", on_idle)
         group.add(ctx_row)
         group.add(idle_row)
+        page.add(smart_group)
         page.add(group)
         if hasattr(Adw, "PreferencesDialog"):  # libadwaita 1.5+
             dialog = Adw.PreferencesDialog()
@@ -471,6 +506,7 @@ class Reply:
             tool_started=lambda n, s: None,
             tool_finished=lambda n, r, ok: idle(self._action, n, r, ok),
             notice=lambda s: idle(self.win.toast, s),
+            handoff=lambda model: idle(self._handoff, model),
             confirm=self._confirm,
         )
 
@@ -511,6 +547,17 @@ class Reply:
         self._before_spinner(row)
         self.label = None  # text after an action starts a new message
         self.answer += "\n"
+        self.win.scroll_down()
+        return GLib.SOURCE_REMOVE
+
+    def _handoff(self, model: str):
+        row = Gtk.Box(spacing=8)
+        row.add_css_class("action-row")
+        row.append(Gtk.Image(icon_name="go-next-symbolic"))
+        row.append(Gtk.Label(label=f"Handed to {model}", xalign=0, hexpand=True))
+        self._before_spinner(row)
+        self.label = None
+        self.answer = ""  # the bigger model's reply is the answer
         self.win.scroll_down()
         return GLib.SOURCE_REMOVE
 
