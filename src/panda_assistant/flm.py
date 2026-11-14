@@ -63,6 +63,10 @@ class Model:
         return "single-turn" in self.labels
 
     @property
+    def can_see(self) -> bool:
+        return "vision" in self.labels
+
+    @property
     def size_b(self) -> float:
         """Rough parameter count in billions from the tag ("e4b" -> 4, "35b-a3b" -> 35)."""
         m = re.match(r"e?(\d+(?:\.\d+)?)([bm])", self.name.partition(":")[2])
@@ -99,6 +103,21 @@ def pick_smarter_model(models: list["Model"], current: str, ram_gib: float | Non
         if best is None or m.size_b > best.size_b:
             best = m
     return best.name if best else None
+
+
+def pick_vision_model(models: list["Model"], current: str, ram_gib: float | None = None) -> str | None:
+    """A model to hand pictures to when the current one can't see them.
+
+    Prefers one that can also use tools and keep a conversation, then the
+    smallest such model, since it is loaded only for that turn.
+    """
+    ram = total_ram_gib() if ram_gib is None else ram_gib
+    limit = ram * 0.75 if ram else 12
+    fits = [m for m in models if m.installed and m.can_see and m.name != current and m.size_b <= limit]
+    if not fits:
+        return None
+    fits.sort(key=lambda m: (not m.can_use_tools, m.single_turn, m.size_b))
+    return fits[0].name
 
 
 @dataclass

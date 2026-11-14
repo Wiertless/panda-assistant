@@ -14,7 +14,7 @@ class Recorder(Callbacks):
         self.text = lambda s: self.log.append(("text", s))
         self.tool_finished = lambda n, r, ok: self.log.append(("tool", n, ok, r))
         self.notice = lambda s: self.log.append(("notice", s))
-        self.confirm = lambda n, s: self.log.append(("confirm", n, s)) or allow
+        self.confirm = lambda n, s, d="": self.log.append(("confirm", n, s)) or allow
 
 
 class AgentTest(unittest.TestCase):
@@ -109,7 +109,8 @@ class ToolsTest(unittest.TestCase):
 
     def test_only_connectivity_needs_confirmation(self):
         risky = {t.name for t in T.TOOLS if t.risk == T.CONFIRM}
-        self.assertEqual(risky, {"set_wifi", "set_bluetooth", "change_setting", "send_file"})
+        self.assertEqual(risky, {"set_wifi", "set_bluetooth", "change_setting", "send_file",
+                                 "disconnect_network", "run_command"})
 
     def test_datetime_and_battery_run(self):
         self.assertTrue(T.run_tool(T.Context(), "get_datetime", {}))

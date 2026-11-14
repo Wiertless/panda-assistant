@@ -8,12 +8,41 @@ A local AI assistant for GNOME that runs on an AMD Ryzen AI NPU through [FastFlo
   - **Web:** search (DuckDuckGo, falling back to Wikipedia's API) and read pages, with results trimmed to fit small contexts.
   - **Open:** apps, files in your home folder, web pages and pages of GNOME Settings. Kinds of apps ("email", "files", "browser", "calendar", "music", "photos", "text editor", "terminal"…) open your default app for them, as set in GNOME Settings → Apps → Default Apps, and apps also match on their generic name and keywords.
   - **Files:** list folders, find files by name (newest first), read text files. Paths may be absolute, start with `~`, be relative to home, or start with a folder name such as "Downloads", which maps to the real folder in any language (e.g. `~/Pobrane`). Everything stays inside the home folder, and hidden files and folders (`.ssh`, keyrings, browser profiles) are off-limits, so a web page can't talk Panda into reading or leaking them.
+  - **Networks and Bluetooth:** connect to saved Wi-Fi networks, wired connections and VPNs, and to paired Bluetooth devices by everyday name ("connect my AirPods"). Bluetooth is turned on first if needed. Disconnecting a network asks first.
+  - **Screen and images:** with a model that can see (Gemma 4, Qwen 3.5, Qwen3-VL…), Panda can take a screenshot through the desktop portal and look at image files. Attach pictures to a message with the paperclip, by pasting, or by dropping them on the window. Pictures are downscaled to 1024 px, kept for one turn only, and never saved with the chat. If the chosen model can't see, the turn goes to one that can.
+  - **Commands:** `run_command` runs a shell command in the `zed` toolbox (created on first use by SilverPanda's `zed-toolbox-setup`), always after you press **Allow**, with the exact command shown. Commands time out after 2 minutes. The toolbox shares your home folder, so the Allow card is the safety net: read it.
   - **Taildrop:** list your Tailscale devices and send a file to one (asks first). Needs `sudo tailscale set --operator=$USER` once.
   - **Read:** battery, system info, time and current settings.
   - **Change directly:** dark mode, Night Light, power mode, Do Not Disturb, volume, mute, brightness and the clipboard.
   - **Ask first:** Wi-Fi and Bluetooth (they can disconnect you), and any other GNOME desktop setting (`find_settings` / `get_setting` / `change_setting`). Changes are limited to `org.gnome.desktop.*`, settings-daemon plugins, mutter, shell keybindings and Files. Extension, lockdown and screensaver keys are blocked.
   - Nothing runs through a shell, and every argument is validated.
 - **Knows the computer:** each chat's system prompt names the laptop, CPU, memory (total and free), NPU, OS, battery and date, so it doesn't need a tool call for those.
+
+## Memory, skills and history
+
+Everything lives in `~/.local/share/panda-assistant` as plain files you can read, edit or back up.
+
+- **Memory** (`memory.md`): tell Panda something lasting ("remember I prefer metric units") and it's added to every new chat's prompt. See, add and forget facts in **Preferences → Memory**, or turn memory off.
+- **Skills** (`skills/*.md`): saved workflows. Ask "save that as a skill called morning" or write a Markdown file: a `# Title`, an optional one-line description, then steps. Run one by typing `/morning` (anything after the name is passed along), or just ask for it. Manage them in **Preferences → Skills**.
+- **Chat history** (`chats/*.json`): every chat is saved after each answer. **F9** shows the list, **Ctrl+F** searches it. The last 200 chats are kept.
+
+## Other apps (MCP)
+
+Panda is a [Model Context Protocol](https://modelcontextprotocol.io) client, so it can use tools that other apps and services expose. Add servers in **Preferences → Connections**, or in `~/.config/panda-assistant/mcp.json` in the usual format:
+
+```json
+{
+  "mcpServers": {
+    "memory": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-memory"]},
+    "home": {"url": "http://homeassistant.local:8123/api/mcp", "headers": {"Authorization": "Bearer …"}}
+  }
+}
+```
+
+- Local servers (stdio) and remote ones (Streamable HTTP) work. Servers start with your first message and stop when the model unloads. Logs go to `~/.local/state/panda-assistant/mcp-<name>.log`.
+- Tools a server marks read-only run straight away; everything else asks first. Add `"trust": true` to a server to skip asking, or `"disabled": true` to turn it off.
+- Each tool's description takes room in the small model's context, so at most 16 MCP tools are offered at once. Turn off servers you don't need.
+- On Silverblue, servers that need Node or Python packages can run inside a toolbox: `"command": "toolbox", "args": ["run", "-c", "zed", "npx", "-y", "…"]`.
 
 ## Models
 
@@ -42,6 +71,9 @@ A server you started yourself is used as it is and never stopped. Set `PANDA_FLM
 | --- | --- |
 | Ctrl+N | New chat |
 | Ctrl+L | Focus the message field |
+| F9 | Show or hide chats |
+| Ctrl+F | Search chats |
+| Ctrl+Shift+A | Attach an image |
 | Esc | Stop the answer |
 | Ctrl+, | Preferences |
 | Ctrl+? | Keyboard shortcuts |

@@ -21,6 +21,19 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.7.0" date="2026-11-14">
+      <description>
+        <ul>
+          <li>Remembers facts and preferences you tell it, across chats</li>
+          <li>Skills: save a workflow once and run it again with /name</li>
+          <li>Chat history in a sidebar, with search</li>
+          <li>Looks at your screen and at images you attach, paste or drop</li>
+          <li>Runs commands in your zed toolbox, always after you allow them</li>
+          <li>Connects to saved Wi-Fi networks, VPNs and paired Bluetooth devices</li>
+          <li>Uses tools from other apps and services over MCP</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.6.0" date="2026-11-14">
       <description>
         <ul>

@@ -7,6 +7,7 @@ import threading
 from dataclasses import dataclass, field
 from typing import Callable
 
+from . import store
 from . import tools as T
 from .context import system_context
 from .flm import FlmClient, FlmError, strip_think
@@ -21,6 +22,17 @@ if a tool fails, say what failed. Answer in the user's language."""
 
 WEB_PROMPT = """ For anything recent or that you aren't sure of, use web_search and read the \
 most relevant result with read_web_page, then answer briefly and name the source."""
+
+MEMORY_PROMPT = """ When the user tells you a lasting preference or fact about themselves, or asks you \
+to remember something, call remember. Use what you remember without mentioning it."""
+
+SKILL_PROMPT = """ The user's saved skills are listed below; when a request matches one, call use_skill \
+and follow its steps. When the user asks to save a workflow, call save_skill."""
+
+VISION_PROMPT = """ You can see images. Use look_at_screen when the user asks about what's on their \
+screen, and look_at_image for image files."""
+
+IMAGE_MARKER = "[image]"
 
 ESCALATE = "ask_smarter_model"
 ESCALATE_PROMPT = """ If a request needs more than you can do well (careful reasoning, \
@@ -38,6 +50,13 @@ def escalate_schema(model: str) -> dict:
             "required": ["task"]}}}
 
 
+def with_images(text: str, images: list[str] | None):
+    """Message content: plain text, or text plus pictures (OpenAI format)."""
+    if not images:
+        return text
+    return [{"type": "text", "text": text}] + [{"type": "image_url", "image_url": {"url": url}} for url in images]
+
+
 @dataclass
 class Callbacks:
     """How the agent talks to the UI. Called from the worker thread."""
@@ -48,8 +67,9 @@ class Callbacks:
     tool_finished: Callable[[str, str, bool], None] = lambda name, result, ok: None
     notice: Callable[[str], None] = lambda s: None
     handoff: Callable[[str], None] = lambda model: None
-    # Blocks until the user answers; True means run it.
-    confirm: Callable[[str, str], bool] = lambda name, summary: False
+    # Blocks until the user answers; True means run it. detail is the exact
+    # command or value, shown to the user (may be empty).
+    confirm: Callable[[str, str, str], bool] = lambda name, summary, detail: False
 
 
 @dataclass
@@ -63,10 +83,35 @@ class Agent:
     smarter_model: str | None = None
     web_enabled: bool = True
     machine: str | None = None  # system_context(), taken once per chat
+    memory_enabled: bool = True
+    # Which models can look at images, and one to hand images to otherwise.
+    sees: Callable[[str], bool] = lambda model: False
+    vision_model: str | None = None
+    notes: str | None = None  # memory and skills, taken once per chat
+    # Tools from other apps (MCP servers), looked up at each request.
+    extra_tools: Callable[[], list] = lambda: []
 
     def reset(self) -> None:
         self.messages = []
         self.machine = None
+        self.notes = None
+
+    def _sees(self) -> bool:
+        return bool(self.sees(self.model))
+
+    def _notes(self) -> str:
+        """Remembered facts and saved skills, for the end of the system prompt."""
+        parts = []
+        if self.memory_enabled:
+            facts = store.facts()
+            if facts:
+                parts.append("What you remember about the user:\n" + "\n".join(f"- {f}" for f in facts))
+        if self.use_tools:
+            skills = store.skills()
+            if skills:
+                parts.append("Saved skills:\n" + "\n".join(
+                    f"- {s.title}" + (f": {s.description}" if s.description else "") for s in skills[:20]))
+        return "\n\n".join(parts)
 
     def _can_escalate(self) -> bool:
         return bool(self.use_tools and self.smarter_model and self.smarter_model != self.model)
@@ -74,27 +119,53 @@ class Agent:
     def _conversation(self) -> list[dict]:
         if self.machine is None:
             self.machine = system_context()
+        if self.notes is None:
+            self.notes = self._notes()
         system = SYSTEM_PROMPT
         if self.use_tools and self.web_enabled:
             system += WEB_PROMPT
+        if self.use_tools and self.memory_enabled:
+            system += MEMORY_PROMPT
+        if self.use_tools:
+            system += SKILL_PROMPT
+        if self.use_tools and self._sees():
+            system += VISION_PROMPT
         if self._can_escalate():
             system += ESCALATE_PROMPT
-        # The machine description goes last and stays the same for the whole
-        # chat, so the server can reuse the cached prompt between turns.
-        return [{"role": "system", "content": system + "\n\n" + self.machine}] + self.messages
+        # The machine description and notes go last and stay the same for the
+        # whole chat, so the server can reuse the cached prompt between turns.
+        tail = "\n\n".join(p for p in (self.machine, self.notes) if p)
+        return [{"role": "system", "content": system + "\n\n" + tail}] + self.messages
 
     def _tool_schemas(self):
         if not self.use_tools:
             return None
-        schemas = T.schemas(exclude=set() if self.web_enabled else T.WEB_TOOLS)
+        exclude = set()
+        if not self.web_enabled:
+            exclude |= T.WEB_TOOLS
+        if not self.memory_enabled:
+            exclude |= T.MEMORY_TOOLS
+        if not self._sees():
+            exclude |= T.VISION_TOOLS
+        schemas = T.schemas(exclude=exclude) + [t.schema() for t in self.extra_tools()]
         if self._can_escalate():
             schemas.append(escalate_schema(self.smarter_model))
         return schemas
 
-    def ask(self, text: str, cb: Callbacks) -> None:
-        """Run one user turn to completion. Blocking; call it from a thread."""
+    def ask(self, text: str, cb: Callbacks, images: list[str] | None = None) -> None:
+        """Run one user turn to completion. Blocking; call it from a thread.
+
+        images are data: URLs attached to the message.
+        """
         self.cancel.clear()
-        self.messages.append({"role": "user", "content": text})
+        self._drop_old_images()
+        if images and not self._sees():
+            if self.vision_model and self.vision_model != self.model:
+                self._hand_images(text, images, cb)
+                return
+            cb.notice(f"{self.model} can't see images, so they were left out.")
+            images = None
+        self.messages.append({"role": "user", "content": with_images(text, images)})
         for _ in range(MAX_ROUNDS):
             if self.cancel.is_set():
                 return
@@ -123,7 +194,33 @@ class Agent:
             for call in calls:
                 self.messages.append({"role": "tool", "tool_call_id": call.id,
                                       "content": self._run_call(call, cb)})
+            if self.ctx.images:
+                # Tool results are text only, so pictures a tool took (a
+                # screenshot) follow as a message of their own.
+                shots, self.ctx.images[:] = list(self.ctx.images), []
+                if self._sees():
+                    self.messages.append({"role": "user", "content": with_images("(Image from the tool.)", shots)})
         cb.notice("Stopped after too many tool calls in a row.")
+
+    def _drop_old_images(self) -> None:
+        """Earlier pictures cost hundreds of tokens each; keep a marker only."""
+        for m in self.messages:
+            if isinstance(m.get("content"), list):
+                m["content"] = store.plain_text(m["content"])
+
+    def _hand_images(self, text: str, images: list[str], cb: Callbacks) -> None:
+        """This model is blind: let the vision model answer this turn."""
+        cb.handoff(self.vision_model)
+        helper = Agent(self.client, self.vision_model, use_tools=self.use_tools, ctx=self.ctx, cancel=self.cancel,
+                       web_enabled=self.web_enabled, machine=self.machine, memory_enabled=self.memory_enabled,
+                       sees=lambda m: True, notes=self.notes, extra_tools=self.extra_tools)
+        helper.messages = [{"role": m["role"], "content": m["content"]} for m in self.messages
+                           if m["role"] in ("user", "assistant") and m.get("content")]
+        helper.ask(text, cb, images)
+        answer = next((m["content"] for m in reversed(helper.messages)
+                       if m["role"] == "assistant" and m.get("content")), "")
+        self.messages.append({"role": "user", "content": f"{text}\n{IMAGE_MARKER * len(images)}".strip()})
+        self.messages.append({"role": "assistant", "content": answer})
 
     def _escalate(self, call, request: str, cb: Callbacks) -> None:
         """Let the smarter model finish this turn, then end it there.
@@ -139,9 +236,10 @@ class Agent:
             task = ""
         cb.handoff(self.smarter_model)
         helper = Agent(self.client, self.smarter_model, use_tools=True, ctx=self.ctx, cancel=self.cancel,
-                       web_enabled=self.web_enabled, machine=self.machine)
+                       web_enabled=self.web_enabled, machine=self.machine, memory_enabled=self.memory_enabled,
+                       sees=self.sees, notes=self.notes, extra_tools=self.extra_tools)
         # Earlier turns as plain text; tool traffic belongs to the other model.
-        helper.messages = [{"role": m["role"], "content": m["content"]} for m in self.messages[:-2]
+        helper.messages = [{"role": m["role"], "content": store.plain_text(m["content"])} for m in self.messages[:-2]
                            if m["role"] in ("user", "assistant") and m.get("content")]
         note = f"\n\n(A smaller assistant handed this to you. Its notes: {task})" if task else ""
         helper.ask(request + note, cb)
@@ -178,19 +276,20 @@ class Agent:
             result = f"Error: arguments for {call.name} were not valid JSON."
             cb.tool_finished(call.name, result, False)
             return result
-        tool = T.BY_NAME.get(call.name)
-        summary = T.summarize(call.name, args)
+        tool = T.BY_NAME.get(call.name) or next((t for t in self.extra_tools() if t.name == call.name), None)
         if tool is None:
             result = f"Error: there is no tool named {call.name}."
             cb.tool_finished(call.name, result, False)
             return result
-        if tool.risk == T.CONFIRM and not cb.confirm(call.name, summary):
+        summary = tool.summary(args)
+        detail = tool.detail(args) if tool.detail else T.detail(call.name, args)
+        if tool.risk == T.CONFIRM and not cb.confirm(call.name, summary, detail):
             result = "The user declined this action."
             cb.tool_finished(call.name, "Cancelled", False)
             return result
         cb.tool_started(call.name, summary)
         try:
-            result = T.run_tool(self.ctx, call.name, args)
+            result = tool.run(self.ctx, args)
             cb.tool_finished(call.name, result, True)
             return result
         except T.ToolError as e:

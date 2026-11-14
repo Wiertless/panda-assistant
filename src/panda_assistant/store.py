@@ -190,7 +190,7 @@ def new_chat_id() -> str:
     return time.strftime("%Y%m%d-%H%M%S") + f"-{time.time_ns() % 1000000:06d}"
 
 
-def _plain(content) -> str:
+def plain_text(content) -> str:
     """Message content as text; images are kept as a marker only."""
     if isinstance(content, list):
         parts = []
@@ -205,7 +205,7 @@ def _plain(content) -> str:
 
 def chat_title(messages: list[dict]) -> str:
     first = next((m for m in messages if m.get("role") == "user"), None)
-    text = re.sub(r"\s+", " ", _plain(first["content"]) if first else "").strip()
+    text = re.sub(r"\s+", " ", plain_text(first["content"]) if first else "").strip()
     if text.startswith("Follow my saved skill “"):
         text = text.split("”", 1)[0].replace("Follow my saved skill “", "Skill: ")
     return (text[:57] + "…") if len(text) > 60 else (text or "New Chat")
@@ -218,7 +218,7 @@ def save_chat(chat_id: str, messages: list[dict], model: str) -> None:
     for m in messages:
         m = dict(m)
         if isinstance(m.get("content"), list):
-            m["content"] = _plain(m["content"])  # don't keep screenshots on disk
+            m["content"] = plain_text(m["content"])  # don't keep screenshots on disk
         stored.append(m)
     data = {"id": chat_id, "title": chat_title(messages), "model": model,
             "updated": time.time(), "messages": stored}
@@ -251,7 +251,7 @@ def list_chats(query: str = "") -> list[ChatInfo]:
         except (OSError, ValueError):
             continue
         if key:
-            text = " ".join(_plain(m.get("content")) for m in data.get("messages", [])
+            text = " ".join(plain_text(m.get("content")) for m in data.get("messages", [])
                             if m.get("role") in ("user", "assistant"))
             if key not in _norm(data.get("title", "") + " " + text):
                 continue

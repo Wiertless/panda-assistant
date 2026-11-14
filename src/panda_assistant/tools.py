@@ -14,6 +14,7 @@ import platform
 import re
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -47,6 +48,7 @@ class Tool:
     risk: str
     run: Callable[[Context, dict], str]
     summary: Callable[[dict], str]
+    detail: Callable[[dict], str] | None = None  # shown on the Allow/Cancel card
 
     def schema(self) -> dict:
         return {"type": "function", "function": {
@@ -690,6 +692,351 @@ def set_bluetooth(ctx: Context, args: dict) -> str:
     return f"Bluetooth {'on' if on else 'off'}."
 
 
+# -- picking a thing by its everyday name ---------------------------------------
+
+_FILLER = re.compile(r"^(my|the|a|an|to|moje?|m[oó]j)\s+", re.I)
+
+
+def _norm_name(text: str) -> str:
+    text = re.sub(r"[’'`]s\b", "", text.casefold())
+    return re.sub(r"[^\w]+", " ", text).strip()
+
+
+def pick(query: str, names: list[str], what: str) -> str:
+    """The one name in names that query means: exact, then prefix, then words."""
+    q = _norm_name(_FILLER.sub("", query.strip()))
+    if not q:
+        raise ToolError(f"say which {what}")
+    normed = [(n, _norm_name(n)) for n in names]
+    for test in (lambda n: n == q, lambda n: n.startswith(q), lambda n: q in n,
+                 lambda n: all(w in n for w in q.split())):
+        hits = list(dict.fromkeys(name for name, n in normed if test(n)))
+        if len(hits) == 1:
+            return hits[0]
+        if len(hits) > 1:
+            raise ToolError(f"more than one {what} matches '{query}': " + ", ".join(hits[:8]))
+    known = ", ".join(names[:12]) or "none"
+    raise ToolError(f"no {what} called '{query}' (known: {known})")
+
+
+# -- networks (NetworkManager's saved connections) -------------------------------
+
+NM_KINDS = {"802-11-wireless": "Wi-Fi", "802-3-ethernet": "Wired", "vpn": "VPN", "wireguard": "VPN",
+            "gsm": "Mobile", "bluetooth": "Bluetooth tethering"}
+
+
+def _nm_fields(line: str) -> list[str]:
+    """Split one line of `nmcli -t` output: ':' separated, backslash escapes."""
+    out, cur, esc = [], [], False
+    for ch in line:
+        if esc:
+            cur.append(ch)
+            esc = False
+        elif ch == "\\":
+            esc = True
+        elif ch == ":":
+            out.append("".join(cur))
+            cur = []
+        else:
+            cur.append(ch)
+    out.append("".join(cur))
+    return out
+
+
+def _saved_networks() -> list[dict]:
+    rows = []
+    for line in _run(["nmcli", "-t", "-f", "NAME,TYPE,DEVICE", "connection", "show"]).splitlines():
+        name, kind, device = (_nm_fields(line) + ["", "", ""])[:3]
+        if kind in NM_KINDS and name:
+            rows.append({"name": name, "kind": NM_KINDS[kind], "active": bool(device)})
+    return rows
+
+
+def _visible_ssids() -> set[str]:
+    try:
+        out = _run(["nmcli", "-t", "-f", "SSID", "device", "wifi", "list", "--rescan", "no"])
+    except ToolError:
+        return set()
+    return {_nm_fields(line)[0] for line in out.splitlines() if line.strip()}
+
+
+def list_networks(ctx: Context, args: dict) -> str:
+    saved = _saved_networks()
+    if not saved:
+        return "No saved networks."
+    near = _visible_ssids()
+    lines = []
+    for n in sorted(saved, key=lambda n: (not n["active"], n["kind"], n["name"].lower())):
+        state = "connected" if n["active"] else ("in range" if n["kind"] == "Wi-Fi" and n["name"] in near else "")
+        lines.append(f"{n['name']} ({n['kind']}{', ' + state if state else ''})")
+    return "\n".join(lines)
+
+
+def connect_network(ctx: Context, args: dict) -> str:
+    saved = _saved_networks()
+    name = pick(str(args.get("name", "")), [n["name"] for n in saved], "saved network")
+    if next(n for n in saved if n["name"] == name)["active"]:
+        return f"Already connected to {name}."
+    _run(["nmcli", "--wait", "40", "connection", "up", "id", name], timeout=50)
+    return f"Connected to {name}."
+
+
+def disconnect_network(ctx: Context, args: dict) -> str:
+    saved = [n for n in _saved_networks() if n["active"]]
+    name = pick(str(args.get("name", "")), [n["name"] for n in saved], "connected network")
+    _run(["nmcli", "connection", "down", "id", name], timeout=30)
+    return f"Disconnected from {name}."
+
+
+# -- Bluetooth (BlueZ over D-Bus) --------------------------------------------------
+
+def _bluez_objects() -> dict:
+    from gi.repository import GLib
+    bus = _gio().bus_get_sync(_gio().BusType.SYSTEM, None)
+    try:
+        reply = bus.call_sync("org.bluez", "/", "org.freedesktop.DBus.ObjectManager", "GetManagedObjects",
+                              None, GLib.VariantType.new("(a{oa{sa{sv}}})"), _gio().DBusCallFlags.NONE,
+                              5000, None)
+    except GLib.Error:
+        raise ToolError("Bluetooth isn't available (BlueZ isn't running)") from None
+    return reply.unpack()[0]
+
+
+def _bt_devices() -> tuple[list[dict], bool]:
+    """Paired devices, and whether any adapter is powered."""
+    objects = _bluez_objects()
+    powered = any(i.get("org.bluez.Adapter1", {}).get("Powered") for i in objects.values())
+    devices = []
+    for path, ifaces in objects.items():
+        dev = ifaces.get("org.bluez.Device1")
+        if dev and (dev.get("Paired") or dev.get("Bonded")):
+            devices.append({"path": path, "name": dev.get("Alias") or dev.get("Name") or dev.get("Address", "?"),
+                            "connected": bool(dev.get("Connected")), "kind": dev.get("Icon", "")})
+    return devices, powered
+
+
+def _bt_call(path: str, method: str) -> None:
+    from gi.repository import GLib
+    bus = _gio().bus_get_sync(_gio().BusType.SYSTEM, None)
+    try:
+        bus.call_sync("org.bluez", path, "org.bluez.Device1", method, None, None,
+                      _gio().DBusCallFlags.NONE, 30000, None)
+    except GLib.Error as e:
+        msg = e.message.split(":", 2)[-1].strip() if e.message else str(e)
+        if "page-timeout" in msg or "Host is down" in msg or "not available" in msg.lower():
+            raise ToolError("the device didn't answer; make sure it's on and nearby "
+                            "(for earbuds, open the case)") from None
+        raise ToolError(msg or f"{method} failed") from None
+
+
+def _bt_power_on() -> None:
+    set_bluetooth(Context(), {"enabled": True})
+    for _ in range(20):
+        if _bt_devices()[1]:
+            return
+        time.sleep(0.25)
+    raise ToolError("couldn't turn Bluetooth on")
+
+
+def list_bluetooth(ctx: Context, args: dict) -> str:
+    devices, powered = _bt_devices()
+    if not devices:
+        return "No paired Bluetooth devices."
+    head = "" if powered else "Bluetooth is off.\n"
+    return head + "\n".join(f"{d['name']} ({'connected' if d['connected'] else 'not connected'})"
+                            for d in sorted(devices, key=lambda d: (not d["connected"], d["name"].lower())))
+
+
+def connect_bluetooth(ctx: Context, args: dict) -> str:
+    devices, powered = _bt_devices()
+    name = pick(str(args.get("device", "")), [d["name"] for d in devices], "paired device")
+    dev = next(d for d in devices if d["name"] == name)
+    if dev["connected"]:
+        return f"{name} is already connected."
+    if not powered:
+        _bt_power_on()
+    _bt_call(dev["path"], "Connect")
+    return f"Connected {name}."
+
+
+def disconnect_bluetooth(ctx: Context, args: dict) -> str:
+    devices, _ = _bt_devices()
+    name = pick(str(args.get("device", "")), [d["name"] for d in devices if d["connected"]], "connected device")
+    _bt_call(next(d for d in devices if d["name"] == name)["path"], "Disconnect")
+    return f"Disconnected {name}."
+
+
+# -- memory and skills -------------------------------------------------------------
+
+def remember(ctx: Context, args: dict) -> str:
+    from . import store
+    try:
+        return store.remember(str(args.get("fact", "")))
+    except ValueError as e:
+        raise ToolError(str(e)) from None
+
+
+def forget(ctx: Context, args: dict) -> str:
+    from . import store
+    gone = store.forget(str(args.get("fact", "")))
+    if not gone:
+        raise ToolError("nothing remembered matches that")
+    return "Forgot: " + "; ".join(gone)
+
+
+def use_skill(ctx: Context, args: dict) -> str:
+    from . import store
+    skill = store.find_skill(str(args.get("name", "")))
+    if skill is None:
+        names = ", ".join(s.title for s in store.skills()) or "none saved"
+        raise ToolError(f"no skill called '{args.get('name', '')}' (skills: {names})")
+    return f"Skill “{skill.title}”. Do these steps now, using tools:\n{skill.steps}"
+
+
+def save_skill(ctx: Context, args: dict) -> str:
+    from . import store
+    try:
+        skill = store.save_skill(str(args.get("name", "")), str(args.get("steps", "")),
+                                 str(args.get("description", "")))
+    except ValueError as e:
+        raise ToolError(str(e)) from None
+    return f"Saved the skill “{skill.title}”. Run it any time with /{skill.slug}."
+
+
+# -- seeing the screen -------------------------------------------------------------
+
+def image_data_url(path: Path, max_side: int = 1024) -> str:
+    """A downscaled JPEG of an image file, as a data: URL for the model."""
+    import base64
+    import gi
+    gi.require_version("GdkPixbuf", "2.0")
+    from gi.repository import GdkPixbuf, GLib
+    try:
+        pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(str(path), max_side, max_side, True)
+        if pixbuf.get_has_alpha():  # JPEG has no alpha: flatten onto white
+            flat = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, pixbuf.get_width(),
+                                        pixbuf.get_height())
+            flat.fill(0xFFFFFFFF)
+            pixbuf.composite(flat, 0, 0, pixbuf.get_width(), pixbuf.get_height(), 0, 0, 1, 1,
+                             GdkPixbuf.InterpType.BILINEAR, 255)
+            pixbuf = flat
+        ok, data = pixbuf.save_to_bufferv("jpeg", ["quality"], ["85"])
+    except GLib.Error as e:
+        raise ToolError(f"couldn't read the image: {e.message}") from None
+    return "data:image/jpeg;base64," + base64.b64encode(data).decode()
+
+
+def take_screenshot() -> Path:
+    """Screenshot of the whole screen through the desktop portal; returns the file."""
+    import secrets
+    from gi.repository import GLib
+    Gio = _gio()
+    bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+    token = "panda" + secrets.token_hex(6)
+    sender = bus.get_unique_name()[1:].replace(".", "_")
+    handle = f"/org/freedesktop/portal/desktop/request/{sender}/{token}"
+    context = GLib.MainContext.new()
+    context.push_thread_default()
+    loop = GLib.MainLoop.new(context, False)
+    result: dict = {}
+
+    def on_response(_conn, _sender, _path, _iface, _signal, params):
+        code, res = params.unpack()
+        result.update(code=code, uri=res.get("uri"))
+        loop.quit()
+
+    sub = bus.signal_subscribe("org.freedesktop.portal.Desktop", "org.freedesktop.portal.Request", "Response",
+                               handle, None, Gio.DBusSignalFlags.NO_MATCH_RULE, on_response)
+    try:
+        bus.call_sync("org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop",
+                      "org.freedesktop.portal.Screenshot", "Screenshot",
+                      GLib.Variant("(sa{sv})", ("", {"handle_token": GLib.Variant("s", token),
+                                                     "interactive": GLib.Variant("b", False)})),
+                      GLib.VariantType.new("(o)"), Gio.DBusCallFlags.NONE, 10000, None)
+        timeout = GLib.timeout_source_new_seconds(60)
+        timeout.set_callback(lambda *_: (loop.quit(), False)[1])
+        timeout.attach(context)
+        loop.run()
+        timeout.destroy()
+    except GLib.Error as e:
+        raise ToolError(f"the screenshot portal isn't available: {e.message}") from None
+    finally:
+        bus.signal_unsubscribe(sub)
+        context.pop_thread_default()
+    if result.get("code") != 0 or not result.get("uri"):
+        raise ToolError("the screenshot was cancelled or not allowed")
+    return Path(Gio.File.new_for_uri(result["uri"]).get_path())
+
+
+def look_at_screen(ctx: Context, args: dict) -> str:
+    if ctx.hide_window:
+        ctx.hide_window()
+        time.sleep(0.5)  # let the window animate away
+    try:
+        path = take_screenshot()
+    finally:
+        if ctx.show_window:
+            ctx.show_window()
+    try:
+        ctx.images.append(image_data_url(path))
+    finally:
+        # The portal saved a file just for this; don't leave it behind.
+        if path.name.lower().startswith("screenshot") and time.time() - path.stat().st_mtime < 120:
+            path.unlink(missing_ok=True)
+    return "Took a screenshot of the screen; it's attached to the next message. Describe what's relevant."
+
+
+def look_at_image(ctx: Context, args: dict) -> str:
+    path = _home_path(str(args.get("path", "")))
+    if not path.is_file():
+        raise ToolError(f"{_short(path)} isn't a file")
+    ctx.images.append(image_data_url(path))
+    return f"Opened {path.name}; it's attached to the next message."
+
+
+# -- commands, only inside the zed toolbox ---------------------------------------------
+
+TOOLBOX = "zed"
+TOOLBOX_SETUP = "/usr/libexec/silverpanda/zed-toolbox-setup"
+COMMAND_TIMEOUT = 120
+MAX_OUTPUT = 3000
+
+
+def _toolbox_ready() -> None:
+    if not shutil.which("toolbox"):
+        raise ToolError("toolbox isn't installed")
+    exists = subprocess.run(["podman", "container", "exists", TOOLBOX], capture_output=True).returncode == 0
+    if exists:
+        return
+    if not os.access(TOOLBOX_SETUP, os.X_OK):
+        raise ToolError(f"there's no '{TOOLBOX}' toolbox; create one with: toolbox create {TOOLBOX}")
+    proc = subprocess.run([TOOLBOX_SETUP], capture_output=True, text=True, timeout=1200)
+    if proc.returncode != 0:
+        raise ToolError(f"couldn't set up the {TOOLBOX} toolbox: {(proc.stderr or proc.stdout).strip()[-300:]}")
+
+
+def run_command(ctx: Context, args: dict) -> str:
+    command = str(args.get("command", "")).strip()
+    if not command:
+        raise ToolError("no command given")
+    if len(command) > 2000:
+        raise ToolError("the command is too long")
+    folder = _home_path(str(args.get("folder") or "~"))
+    if not folder.is_dir():
+        raise ToolError(f"{_short(folder)} isn't a folder")
+    _toolbox_ready()
+    try:
+        proc = subprocess.run(["toolbox", "run", "--container", TOOLBOX, "bash", "-lc", command],
+                              cwd=folder, capture_output=True, text=True, timeout=COMMAND_TIMEOUT,
+                              stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired:
+        raise ToolError(f"still running after {COMMAND_TIMEOUT} seconds, so it was stopped") from None
+    out = "\n".join(part.strip("\n") for part in (proc.stdout, proc.stderr) if part.strip()).strip()
+    if len(out) > MAX_OUTPUT:
+        out = "…" + out[-MAX_OUTPUT:]
+    return f"Exit code {proc.returncode}." + (f"\n{out}" if out else " No output.")
+
+
 def _onoff(key: str, what: str) -> Callable[[dict], str]:
     def summary(args: dict) -> str:
         try:
@@ -778,10 +1125,51 @@ TOOLS: list[Tool] = [
          _onoff("enabled", "Wi-Fi")),
     Tool("set_bluetooth", "Turn Bluetooth on or off. Turning it off disconnects Bluetooth devices.", ENABLED,
          CONFIRM, set_bluetooth, _onoff("enabled", "Bluetooth")),
+    Tool("list_networks", "List saved networks (Wi-Fi, wired, VPN) and which are connected or in range.",
+         _obj(), SAFE, list_networks, lambda a: "List saved networks"),
+    Tool("connect_network", "Connect to a saved Wi-Fi network, wired connection or VPN by name.",
+         _obj({"name": {"type": "string"}}, ["name"]), SAFE, connect_network,
+         lambda a: f"Connect to {a.get('name', 'a network')}"),
+    Tool("disconnect_network", "Disconnect a connected network or VPN by name.",
+         _obj({"name": {"type": "string"}}, ["name"]), CONFIRM, disconnect_network,
+         lambda a: f"Disconnect {a.get('name', 'a network')}"),
+    Tool("list_bluetooth", "List paired Bluetooth devices (headphones, mice…) and which are connected.",
+         _obj(), SAFE, list_bluetooth, lambda a: "List Bluetooth devices"),
+    Tool("connect_bluetooth", "Connect a paired Bluetooth device by name, e.g. 'AirPods'. "
+         "Turns Bluetooth on if needed.",
+         _obj({"device": {"type": "string"}}, ["device"]), SAFE, connect_bluetooth,
+         lambda a: f"Connect {a.get('device', 'a device')}"),
+    Tool("disconnect_bluetooth", "Disconnect a connected Bluetooth device by name.",
+         _obj({"device": {"type": "string"}}, ["device"]), SAFE, disconnect_bluetooth,
+         lambda a: f"Disconnect {a.get('device', 'a device')}"),
+    Tool("remember", "Save a lasting fact or preference about the user for future chats "
+         "(e.g. 'Prefers metric units'). Only when the user asks or it's clearly useful later.",
+         _obj({"fact": {"type": "string"}}, ["fact"]), SAFE, remember, lambda a: "Remember this"),
+    Tool("forget", "Forget a remembered fact.", _obj({"fact": {"type": "string"}}, ["fact"]), SAFE, forget,
+         lambda a: "Forget this"),
+    Tool("use_skill", "Get the steps of one of the user's saved skills, then follow them.",
+         _obj({"name": {"type": "string"}}, ["name"]), SAFE, use_skill,
+         lambda a: f"Use the skill {a.get('name', '')}"),
+    Tool("save_skill", "Save a reusable workflow as a skill the user can run again by name. "
+         "steps: short numbered steps.",
+         _obj({"name": {"type": "string"}, "steps": {"type": "string"},
+               "description": {"type": "string", "description": "One line, optional"}}, ["name", "steps"]),
+         SAFE, save_skill, lambda a: f"Save the skill {a.get('name', '')}"),
+    Tool("look_at_screen", "Take a screenshot to see what's on the user's screen right now.", _obj(), SAFE,
+         look_at_screen, lambda a: "Look at the screen"),
+    Tool("look_at_image", "Look at an image file (photo, screenshot, picture).",
+         _obj({"path": {"type": "string"}}, ["path"]), SAFE, look_at_image,
+         lambda a: f"Look at {a.get('path', 'an image')}"),
+    Tool("run_command", "Run a shell command inside the user's 'zed' toolbox container (Fedora with dev "
+         "tools; the home folder is shared). For building, compiling, git, scripts. Output is returned.",
+         _obj({"command": {"type": "string"}, "folder": {"type": "string", "description": "Working folder"}},
+              ["command"]), CONFIRM, run_command, lambda a: "Run a command in the zed toolbox"),
 ]
 
 BY_NAME = {t.name: t for t in TOOLS}
 WEB_TOOLS = {"web_search", "read_web_page"}
+MEMORY_TOOLS = {"remember", "forget"}
+VISION_TOOLS = {"look_at_screen", "look_at_image"}
 
 
 def schemas(exclude: set[str] | frozenset = frozenset()) -> list[dict]:
@@ -791,6 +1179,16 @@ def schemas(exclude: set[str] | frozenset = frozenset()) -> list[dict]:
 def summarize(name: str, args: dict) -> str:
     tool = BY_NAME.get(name)
     return tool.summary(args) if tool else name
+
+
+def detail(name: str, args: dict) -> str:
+    """Exactly what a confirmed action will do, shown under its summary."""
+    if name == "run_command":
+        folder = str(args.get("folder") or "").strip()
+        return str(args.get("command", "")) + (f"\n(in {folder})" if folder else "")
+    if name == "change_setting":
+        return f"{args.get('schema', '')} {args.get('key', '')} = {args.get('value', '')}"
+    return ""
 
 
 def run_tool(ctx: Context, name: str, args: dict) -> str:
