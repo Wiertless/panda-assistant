@@ -44,6 +44,8 @@ pub struct Context {
     pub show_window: Option<Hook>,
     /// Pictures a tool produced (data: URLs) for the agent to show the model.
     pub images: Arc<Mutex<Vec<String>>>,
+    /// The process of the window that asked (so reading "the window" skips it).
+    pub client_pid: Arc<std::sync::atomic::AtomicU32>,
 }
 
 pub type RunFn = Arc<dyn Fn(&Context, &Args) -> ToolResult + Send + Sync>;

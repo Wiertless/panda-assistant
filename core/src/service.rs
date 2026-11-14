@@ -512,6 +512,14 @@ impl Service {
         match method {
             "Ask" => {
                 let (chat_id, text, images): (String, String, Vec<String>) = params.get().unwrap_or_default();
+                // Remember who asked: reading "the window" skips the asking window.
+                if let Some(sender) = invocation.sender() {
+                    let pid = self.conn.call_sync(Some("org.freedesktop.DBus"), "/org/freedesktop/DBus", "org.freedesktop.DBus",
+                        "GetConnectionUnixProcessID", Some(&(sender.as_str(),).to_variant()),
+                        Some(glib::VariantTy::new("(u)").unwrap()), gio::DBusCallFlags::NONE, 1000, None::<&gio::Cancellable>)
+                        .ok().and_then(|v| v.child_value(0).get::<u32>()).unwrap_or(0);
+                    self.shared.tool_ctx.lock().unwrap().client_pid.store(pid, Ordering::SeqCst);
+                }
                 match self.ask(&chat_id, &text, images) {
                     Ok(id) => reply(Some((id,).to_variant())),
                     Err(e) => invocation.return_dbus_error("io.github.wiertless.PandaAssistant.Error.Busy", &e),

@@ -13,8 +13,10 @@ pub mod apps;
 pub mod brains;
 pub mod connect;
 pub mod files;
-pub mod helper;
+pub mod localsearch;
+pub mod personal;
 pub mod run;
+pub mod screen;
 pub mod settings;
 pub mod system;
 pub mod system_actions;
@@ -207,17 +209,17 @@ Turns Bluetooth on if needed.", obj(json!({"device": {"type": "string"}}), &["de
         Tool::new("read_window", "Read the text of the focused window (web page, document, email…) and what's selected \
 in it. Use it when the user says this, here, or asks about what they're looking at.",
                   obj(json!({"app": {"type": "string", "description": "Only to pick a window other than the focused one"}}), &[]),
-                  Safe, helper::read_window, text("app", |a| format!("Read {}", or(a, "the window")))),
+                  Safe, screen::read_window, text("app", |a| format!("Read {}", or(a, "the window")))),
         Tool::new("search_file_contents", "Search inside the user's files (documents, PDFs, notes) for words, \
 using GNOME's file index. Returns files and matching snippets.", obj(json!({"query": {"type": "string"}}), &["query"]),
-                  Safe, helper::search_file_contents, text("query", |q| format!("Search files for “{q}”"))),
+                  Safe, localsearch::search_file_contents, text("query", |q| format!("Search files for “{q}”"))),
         Tool::new("read_document", "Read the text of a PDF, office document or other file that read_file can't.", path(),
-                  Safe, helper::read_document, text("path", |p| format!("Read {}", base_name(&or(p, "a document"))))),
+                  Safe, localsearch::read_document, text("path", |p| format!("Read {}", base_name(&or(p, "a document"))))),
         Tool::new("get_events", "Get calendar events. when: today, tomorrow, this week, next week, a weekday or a \
-date like 2026-11-20.", obj(json!({"when": {"type": "string"}}), &[]), Safe, helper::get_events,
+date like 2026-11-20.", obj(json!({"when": {"type": "string"}}), &[]), Safe, personal::get_events,
                   text("when", |w| format!("Check the calendar ({})", or(w, "today")))),
         Tool::new("find_contact", "Find a contact's email addresses and phone numbers by name.",
-                  obj(json!({"name": {"type": "string"}}), &["name"]), Safe, helper::find_contact,
+                  obj(json!({"name": {"type": "string"}}), &["name"]), Safe, personal::find_contact,
                   text("name", |n| format!("Look up {}", or(n, "a contact")))),
         Tool::new("media_control", "Control music and video players: play, pause, play_pause, next, previous, stop, \
 or status (what's playing).", obj(json!({"action": {"type": "string", "enum": ["play", "pause", "play_pause", "next",

@@ -18,6 +18,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ureq = { version = "3", default-features = false, features = ["rustls", "platform-verifier", "gzip"] }
 regex = "1"
+libloading = "0.8"
 
 [dev-dependencies]
 tempfile = "3"

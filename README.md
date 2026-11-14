@@ -90,9 +90,8 @@ A server you started yourself is used as it is and never stopped. Set `PANDA_FLM
 
 ## How it fits together
 
-- **`assistantd`** (Rust, `core/`) is the assistant itself. It runs the model through FastFlowLM, runs the agent loop and all tools, connects MCP servers, keeps memory, skills and chats, and decides when to load and unload models. It is a D-Bus service (`io.github.wiertless.PandaAssistant.Core`) that the session bus starts on first use. It exits after 10 idle minutes with nothing loaded. It holds the model, so the window can come and go without reloading it.
+- **`assistantd`** (Rust, `core/`) is the assistant itself. It runs the model through FastFlowLM, runs the agent loop and all tools, connects MCP servers, keeps memory, skills and chats, and decides when to load and unload models. It reads window text over AT-SPI, file contents from LocalSearch (TinySPARQL, loaded at run time), the calendar from GNOME Shell's calendar service and contacts from Evolution Data Server, all without Python. It is a D-Bus service (`io.github.wiertless.PandaAssistant.Core`) that the session bus starts on first use. It exits after 10 idle minutes with nothing loaded. It holds the model, so the window can come and go without reloading it.
 - **The window** (Python, GTK 4 + libadwaita) is a client. It sends questions over D-Bus, shows the answer as it streams back as signals, and answers Allow/Cancel requests. After answering a question from GNOME search without showing a window, its process quits 30 seconds later, while the model stays loaded in the service.
-- **`panda_assistant.helper`**: the service still borrows four tools from the Python code: window text (AT-SPI), file contents (LocalSearch), calendar and contacts (Evolution Data Server). Those GNOME libraries have only GObject-introspection bindings.
 
 Settings are shared through `~/.config/panda-assistant/config.json`; after changing them, the window tells the service to re-read them.
 
@@ -115,7 +114,7 @@ make test                                     # Python tests, fake FLM server
 PYTHONPATH=src python3 -m panda_assistant     # run the window from the checkout
 ```
 
-The window needs the service on the session bus: install it, or run `core/target/debug/assistantd` in a terminal first (set `PANDA_PYTHONPATH=$PWD/src` so it finds the Python helper).
+The window needs the service on the session bus: install it, or run `core/target/debug/assistantd` in a terminal first.
 
 Releases: bump `VERSION` in `src/panda_assistant/__init__.py` and the AppStream `<release>`, then run the **ci** workflow on `main` (Actions → ci → Run workflow) or push a `vX.Y.Z` tag. CI tests both parts, builds the service and `panda-assistant-X.Y.Z.tar.gz` (sources plus the prebuilt `core-bin/assistantd`) with a `.sha256`, and publishes a GitHub release. Keep `version` in `core/Cargo.toml` in step.
 
