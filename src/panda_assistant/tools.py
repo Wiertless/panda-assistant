@@ -1038,6 +1038,14 @@ def run_command(ctx: Context, args: dict) -> str:
     return f"Exit code {proc.returncode}." + (f"\n{out}" if out else " No output.")
 
 
+def _lazy(module: str, name: str) -> Callable[[Context, dict], str]:
+    """A tool that lives in another module, imported on first use."""
+    def run(ctx: Context, args: dict) -> str:
+        import importlib
+        return getattr(importlib.import_module(f"panda_assistant.{module}"), name)(ctx, args)
+    return run
+
+
 def _onoff(key: str, what: str) -> Callable[[dict], str]:
     def summary(args: dict) -> str:
         try:
@@ -1161,6 +1169,36 @@ TOOLS: list[Tool] = [
     Tool("look_at_image", "Look at an image file (photo, screenshot, picture).",
          _obj({"path": {"type": "string"}}, ["path"]), SAFE, look_at_image,
          lambda a: f"Look at {a.get('path', 'an image')}"),
+    Tool("read_window", "Read the text of the focused window (web page, document, email…) and what's selected "
+         "in it. Use it when the user says this, here, or asks about what they're looking at.",
+         _obj({"app": {"type": "string", "description": "Only to pick a window other than the focused one"}}),
+         SAFE, _lazy("screen", "read_window"), lambda a: f"Read {a.get('app') or 'the window'}"),
+    Tool("search_file_contents", "Search inside the user's files (documents, PDFs, notes) for words, "
+         "using GNOME's file index. Returns files and matching snippets.",
+         _obj({"query": {"type": "string"}}, ["query"]), SAFE, _lazy("personal", "search_file_contents"),
+         lambda a: f"Search files for “{a.get('query', '')}”"),
+    Tool("read_document", "Read the text of a PDF, office document or other file that read_file can't.",
+         _obj({"path": {"type": "string"}}, ["path"]), SAFE, _lazy("personal", "read_document"),
+         lambda a: f"Read {Path(str(a.get('path', 'a document'))).name}"),
+    Tool("get_events", "Get calendar events. when: today, tomorrow, this week, next week, a weekday or a "
+         "date like 2026-11-20.",
+         _obj({"when": {"type": "string"}}), SAFE, _lazy("personal", "get_events"),
+         lambda a: f"Check the calendar ({a.get('when') or 'today'})"),
+    Tool("find_contact", "Find a contact's email addresses and phone numbers by name.",
+         _obj({"name": {"type": "string"}}, ["name"]), SAFE, _lazy("personal", "find_contact"),
+         lambda a: f"Look up {a.get('name', 'a contact')}"),
+    Tool("list_app_actions", "List the actions an app offers, e.g. New Private Window, Compose Message.",
+         _obj({"app": {"type": "string"}}, ["app"]), SAFE, _lazy("intents", "list_app_actions"),
+         lambda a: f"Look at what {a.get('app', 'the app')} can do"),
+    Tool("run_app_action", "Run one of an app's actions, e.g. app firefox, action New Private Window.",
+         _obj({"app": {"type": "string"}, "action": {"type": "string"}}, ["app", "action"]), SAFE,
+         _lazy("intents", "run_app_action"), lambda a: f"{a.get('app', 'App')}: {a.get('action', '')}"),
+    Tool("media_control", "Control music and video players: play, pause, play_pause, next, previous, stop, "
+         "or status (what's playing).",
+         _obj({"action": {"type": "string", "enum": ["play", "pause", "play_pause", "next", "previous", "stop",
+                                                     "status"]},
+               "player": {"type": "string", "description": "Optional, e.g. Spotify"}}, ["action"]), SAFE,
+         _lazy("intents", "media_control"), lambda a: f"Media: {str(a.get('action', '')).replace('_', '/')}"),
     Tool("run_command", "Run a shell command inside the user's 'zed' toolbox container (Fedora with dev "
          "tools; the home folder is shared). For building, compiling, git, scripts. Output is returned.",
          _obj({"command": {"type": "string"}, "folder": {"type": "string", "description": "Working folder"}},

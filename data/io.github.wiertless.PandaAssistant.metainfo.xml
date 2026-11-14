@@ -21,6 +21,18 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.9.0" date="2026-11-14">
+      <description>
+        <ul>
+          <li>Reads the focused window and selected text, so “summarize this” works</li>
+          <li>Searches inside your files with GNOME's file index and reads PDFs and documents</li>
+          <li>Knows your calendar events and contacts from your GNOME accounts</li>
+          <li>Runs apps' actions and controls music and video players</li>
+          <li>Long chats are summarized instead of cut off</li>
+          <li>The default model stays loaded; bigger models are dropped a minute after use</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.8.0" date="2026-11-14">
       <description>
         <ul>

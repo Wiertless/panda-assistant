@@ -253,6 +253,7 @@ class FlmClient:
         self._server: subprocess.Popen | None = None
         self._server_ctx: int | None = None
         self._lock = threading.Lock()
+        self.last_model: str | None = None  # what FLM most likely has loaded
 
     # -- server ------------------------------------------------------------
     def is_up(self) -> bool:
@@ -296,6 +297,7 @@ class FlmClient:
                 self._server = subprocess.Popen(serve_command(flm, model, ctx_len), stdin=subprocess.DEVNULL,
                                                 stdout=log, stderr=log, start_new_session=True)
             self._server_ctx = ctx_len
+            self.last_model = model
             deadline = time.monotonic() + wait
             while time.monotonic() < deadline:
                 if self._server.poll() is not None:
@@ -317,6 +319,7 @@ class FlmClient:
 
     def _stop_locked(self) -> bool:
         server, self._server = self._server, None
+        self.last_model = None
         if server is None or server.poll() is not None:
             return False
         server.terminate()
@@ -345,6 +348,7 @@ class FlmClient:
 
     # -- chat --------------------------------------------------------------
     def chat_stream(self, model: str, messages: list[dict], tools: list[dict] | None = None) -> Iterator[StreamEvent]:
+        self.last_model = model  # FLM swaps to the model each request names
         body = {"model": model, "messages": messages, "stream": True}
         if tools:
             body["tools"] = tools

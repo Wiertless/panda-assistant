@@ -26,6 +26,8 @@ from .markup import to_pango  # noqa: E402
 CONFIG = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "panda-assistant" / "config.json"
 REPO_URL = "https://github.com/Wiertless/panda-assistant"
 CTX_CHOICES = [(4096, "4K tokens"), (8192, "8K tokens"), (16384, "16K tokens"), (32768, "32K tokens")]
+# A bigger model (hand-off, pictures) is unloaded this soon after it's done.
+BIG_MODEL_IDLE_SECONDS = 60
 IDLE_CHOICES = [(1, "After 1 Minute"), (5, "After 5 Minutes"), (15, "After 15 Minutes"),
                 (30, "After 30 Minutes"), (0, "Never")]
 
@@ -81,6 +83,10 @@ TOOL_ICONS = {
     "look_at_image": "image-x-generic-symbolic", "run_command": "utilities-terminal-symbolic",
     "list_folder": "folder-symbolic", "find_files": "system-search-symbolic", "read_file": "text-x-generic-symbolic",
     "send_file": "send-to-symbolic", "list_devices": "network-workgroup-symbolic",
+    "read_window": "view-reveal-symbolic", "search_file_contents": "system-search-symbolic",
+    "read_document": "x-office-document-symbolic", "get_events": "x-office-calendar-symbolic",
+    "find_contact": "avatar-default-symbolic", "list_app_actions": "view-more-symbolic",
+    "run_app_action": "application-x-executable-symbolic", "media_control": "media-playback-start-symbolic",
 }
 IMAGE_TYPES = ("image/png", "image/jpeg", "image/webp", "image/gif", "image/bmp", "image/tiff")
 MAX_ATTACHMENTS = 4
@@ -179,8 +185,8 @@ class Window(Adw.ApplicationWindow):
         self.busy = False
         self.agent = Agent(self.client, self.cfg.get("model", DEFAULT_MODEL),
                            ctx=T.Context(copy_to_clipboard=self.copy_text,
-                                         hide_window=lambda: on_main(self.minimize),
-                                         show_window=lambda: on_main(self.present)))
+                                         hide_window=lambda: on_main(self._step_aside),
+                                         show_window=lambda: on_main(self._step_back)))
         self.agent.web_enabled = bool(self.cfg.get("web_search", True))
         self.agent.memory_enabled = bool(self.cfg.get("memory", True))
         self.agent.sees = self._model_sees
@@ -193,7 +199,9 @@ class Window(Adw.ApplicationWindow):
         self.smarter_choice = self.cfg.get("smarter_model", "auto")  # "auto", "off" or a model
         self._apply_smarter()  # "auto" is resolved again once the model list has loaded
         self.ctx_len = int(self.cfg.get("ctx_len", DEFAULT_CTX_LEN))
-        self.unload_after = int(self.cfg.get("unload_after_minutes", 5))
+        self.agent.ctx_tokens = self.ctx_len
+        # 0 = keep the default (small) model loaded for quick answers.
+        self.unload_after = int(self.cfg.get("unload_after_minutes", 0))
         self.state = "Not loaded"
         self._loading = False
         self._idle_id = 0
@@ -468,6 +476,8 @@ class Window(Adw.ApplicationWindow):
         self.new_chat()
         self.chat_id = chat_id
         self.agent.messages = data["messages"]
+        self.agent.summary = str(data.get("summary") or "")
+        self.agent.compacted = min(int(data.get("compacted") or 0), len(self.agent.messages))
         self._render_history(data["messages"], data.get("model") or self.agent.model)
         self.stack.set_visible_child_name("chat")
         self.split.set_show_content(True)
@@ -724,26 +734,52 @@ class Window(Adw.ApplicationWindow):
             GLib.source_remove(self._idle_id)
             self._idle_id = 0
 
+    def _big_model_loaded(self) -> bool:
+        return self.client.owns_server and self.client.last_model not in (None, self.agent.model)
+
     def _schedule_idle(self):
         self._cancel_idle()
         if self.busy:
             return GLib.SOURCE_REMOVE
-        if not self.get_visible():
-            # Answering from search with no window: quit once idle.
-            self._idle_id = GLib.timeout_add_seconds(max(self.unload_after, 1) * 60, self._on_idle)
-        elif self.unload_after > 0 and self.client.owns_server:
+        if self._big_model_loaded():
+            # A hand-off left a bigger model in memory; go back to the small one soon.
+            self._idle_id = GLib.timeout_add_seconds(BIG_MODEL_IDLE_SECONDS, self._on_idle)
+        elif self.unload_after > 0 and (self.client.owns_server or not self.get_visible()):
             self._idle_id = GLib.timeout_add_seconds(self.unload_after * 60, self._on_idle)
         return GLib.SOURCE_REMOVE
 
     def _on_idle(self):
         self._idle_id = 0
-        if not self.get_visible() and not self.busy:
+        if self.busy:
+            return GLib.SOURCE_REMOVE
+        if self._big_model_loaded():
+            self.swap_to_default()
+        elif not self.get_visible():
+            # Answering from search with no window, and unloading is on: quit.
             self.mcp.stop_all()
             self.client.stop_server()
             self.destroy()  # the last window: the app exits
-            return GLib.SOURCE_REMOVE
-        self.unload(manual=False)
+        else:
+            self.unload(manual=False)
         return GLib.SOURCE_REMOVE
+
+    def swap_to_default(self):
+        """Restart FLM with just the default model: frees the bigger model and its context."""
+        self._loading = True
+        self._set_state("Loading…")
+
+        def work():
+            try:
+                self.client.stop_server()
+                self.client.ensure_server(self.agent.model, self.ctx_len)
+                GLib.idle_add(self._set_state, "Loaded")
+            except FlmError as e:
+                GLib.idle_add(self._set_state, "Not loaded")
+                GLib.idle_add(self.toast, str(e))
+            finally:
+                self._loading = False
+                GLib.idle_add(self._schedule_idle)
+        threading.Thread(target=work, daemon=True).start()
 
     def unload(self, manual: bool):
         """Stop the server Panda started, which frees the model's memory."""
@@ -761,8 +797,8 @@ class Window(Adw.ApplicationWindow):
 
     def show_preferences(self):
         page = Adw.PreferencesPage(title="General", icon_name="preferences-system-symbolic")
-        group = Adw.PreferencesGroup(title="Memory", description="The model only uses memory while it's loaded. "
-                                     "It loads when you start typing and unloads when idle.")
+        group = Adw.PreferencesGroup(title="Memory", description="The default model stays loaded so answers start "
+                                     "quickly; set a timer to unload it when idle. Bigger models never stay.")
         ctx_row = Adw.ComboRow(title="Context Length", subtitle="Longer conversations need more memory",
                                model=Gtk.StringList.new([label for _, label in CTX_CHOICES]))
         ctx_values = [v for v, _ in CTX_CHOICES]
@@ -770,10 +806,11 @@ class Window(Adw.ApplicationWindow):
         idle_row = Adw.ComboRow(title="Unload Model", subtitle="Frees memory when the assistant isn't used",
                                 model=Gtk.StringList.new([label for _, label in IDLE_CHOICES]))
         idle_values = [v for v, _ in IDLE_CHOICES]
-        idle_row.set_selected(idle_values.index(self.unload_after) if self.unload_after in idle_values else 1)
+        idle_row.set_selected(idle_values.index(self.unload_after) if self.unload_after in idle_values else len(idle_values) - 1)
 
         def on_ctx(row, _p):
             self.ctx_len = ctx_values[row.get_selected()]
+            self.agent.ctx_tokens = self.ctx_len
             self.cfg["ctx_len"] = self.ctx_len
             save_config(self.cfg)
             if self.client.owns_server and not self.busy:
@@ -824,7 +861,9 @@ class Window(Adw.ApplicationWindow):
         smart_group = Adw.PreferencesGroup(
             title="Smarter Model",
             description="When a request is too hard, the model can hand it to a bigger one. "
-                        "Only one model is loaded at a time, so the hand-off takes a moment.")
+                        "Only one model is loaded at a time, so the hand-off takes a moment. "
+                        "A minute after it's done, the bigger model is unloaded and the default one "
+                        "is loaded again.")
         candidates = [m.name for m in self.models
                       if m.installed and m.can_use_tools and not m.single_turn and m.name != self.agent.model]
         auto_pick = pick_smarter_model(self.models, self.agent.model)
@@ -1160,7 +1199,8 @@ class Window(Adw.ApplicationWindow):
             GLib.idle_add(reply.error, f"{type(e).__name__}: {e}")
         finally:
             try:
-                store.save_chat(self.chat_id, self.agent.messages, self.agent.model)
+                store.save_chat(self.chat_id, self.agent.messages, self.agent.model,
+                                summary=self.agent.summary, compacted=self.agent.compacted)
             except OSError as e:
                 GLib.idle_add(self.toast, f"Couldn't save the chat: {e}")
             self.last_activity = time.time()
@@ -1214,6 +1254,17 @@ class Window(Adw.ApplicationWindow):
             adj.set_value(adj.get_upper() - adj.get_page_size())
             return GLib.SOURCE_REMOVE
         GLib.timeout_add(30, go)
+
+    def _step_aside(self):
+        """Minimize so the window behind becomes the focused one (screenshots, read_window)."""
+        self._stepped_aside = self.get_visible() and self.is_active()
+        if self._stepped_aside:
+            self.minimize()
+
+    def _step_back(self):
+        if getattr(self, "_stepped_aside", False):
+            self._stepped_aside = False
+            self.present()
 
     def allow_always(self, name: str):
         self.agent.always_allow.add(name)
@@ -1310,6 +1361,7 @@ class Reply:
             tool_finished=lambda n, r, ok: idle(self._action, n, r, ok),
             notice=lambda s: idle(self.win.toast, s),
             handoff=lambda model: idle(self._handoff, model),
+            compacting=lambda: idle(self.spin_label.set_label, "Summarizing older messages…"),
             confirm=self._confirm,
         )
 

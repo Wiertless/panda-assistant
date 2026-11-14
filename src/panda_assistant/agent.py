@@ -29,10 +29,47 @@ to remember something, call remember. Use what you remember without mentioning i
 SKILL_PROMPT = """ The user's saved skills are listed below; when a request matches one, call use_skill \
 and follow its steps. When the user asks to save a workflow, call save_skill."""
 
+SCREEN_PROMPT = """ When the user says this, here, or asks about what they're looking at, call \
+read_window first to read the window they mean."""
+
 VISION_PROMPT = """ You can see images. Use look_at_screen when the user asks about what's on their \
 screen, and look_at_image for image files."""
 
 IMAGE_MARKER = "[image]"
+REPLY_RESERVE = 1024  # tokens kept free for the answer
+COMPACT_AT = 0.75     # summarize once the chat fills this much of its room…
+COMPACT_TO = 0.4      # …keeping the newest turns that fit in this much
+COMPACT_PROMPT = ("Summarize the conversation above in under 150 words for your own later use: facts, names, "
+                  "numbers, file paths, decisions and anything still to do. Plain text, no preamble.")
+IMAGE_TOKENS = 300
+
+
+def render_transcript(messages: list[dict], limit: int) -> str:
+    """Messages as plain text for summarizing, newest kept if it's too long."""
+    lines = []
+    for m in messages:
+        role, content = m.get("role"), store.plain_text(m.get("content"))
+        if role == "user":
+            lines.append(f"User: {content[:1500]}")
+        elif role == "assistant":
+            for call in m.get("tool_calls") or []:
+                fn = call.get("function", {})
+                lines.append(f"(Action {fn.get('name')} {fn.get('arguments', '')[:200]})")
+            if content:
+                lines.append(f"Assistant: {content[:1500]}")
+        elif role == "tool":
+            lines.append(f"(Result: {content[:400]})")
+    text = "\n".join(lines)
+    return text[-limit:] if len(text) > limit else text
+
+
+def estimate_tokens(obj) -> int:
+    """Rough token count: about 3.5 characters per token, pictures counted flat."""
+    if isinstance(obj, dict) and isinstance(obj.get("content"), list):
+        images = sum(1 for p in obj["content"] if p.get("type") == "image_url")
+        text = sum(len(p.get("text", "")) for p in obj["content"] if p.get("type") == "text")
+        return int(text / 3.5) + images * IMAGE_TOKENS + 8
+    return int(len(json.dumps(obj, ensure_ascii=False)) / 3.5) + 4
 
 ESCALATE = "ask_smarter_model"
 ESCALATE_PROMPT = """ If a request needs more than you can do well (careful reasoning, \
@@ -66,6 +103,7 @@ class Callbacks:
     tool_started: Callable[[str, str], None] = lambda name, summary: None
     tool_finished: Callable[[str, str, bool], None] = lambda name, result, ok: None
     notice: Callable[[str], None] = lambda s: None
+    compacting: Callable[[], None] = lambda: None  # summarizing older messages
     handoff: Callable[[str], None] = lambda model: None
     # Blocks until the user answers; True means run it. detail is the exact
     # command or value, shown to the user (may be empty).
@@ -92,11 +130,17 @@ class Agent:
     extra_tools: Callable[[], list] = lambda: []
     # Tools the user chose "Always Allow" for (shared with the app).
     always_allow: set[str] = field(default_factory=set)
+    ctx_tokens: int = 8192  # the server's context length
+    # Compaction: messages before `compacted` are replaced by `summary`.
+    summary: str = ""
+    compacted: int = 0
 
     def reset(self) -> None:
         self.messages = []
         self.machine = None
         self.notes = None
+        self.summary = ""
+        self.compacted = 0
 
     def _sees(self) -> bool:
         return bool(self.sees(self.model))
@@ -129,15 +173,69 @@ class Agent:
         if self.use_tools and self.memory_enabled:
             system += MEMORY_PROMPT
         if self.use_tools:
-            system += SKILL_PROMPT
+            system += SKILL_PROMPT + SCREEN_PROMPT
         if self.use_tools and self._sees():
             system += VISION_PROMPT
         if self._can_escalate():
             system += ESCALATE_PROMPT
         # The machine description and notes go last and stay the same for the
         # whole chat, so the server can reuse the cached prompt between turns.
-        tail = "\n\n".join(p for p in (self.machine, self.notes) if p)
-        return [{"role": "system", "content": system + "\n\n" + tail}] + self.messages
+        earlier = f"Earlier in this chat (summary):\n{self.summary}" if self.summary else ""
+        tail = "\n\n".join(p for p in (self.machine, self.notes, earlier) if p)
+        head = {"role": "system", "content": system + "\n\n" + tail}
+        return [head] + self._recent(self._budget(head))
+
+    def _budget(self, head: dict) -> int:
+        """Tokens left for the conversation itself."""
+        return self.ctx_tokens - estimate_tokens(head) - estimate_tokens(self._tool_schemas() or []) - REPLY_RESERVE
+
+    def _turn_starts(self) -> list[int]:
+        return [i for i, m in enumerate(self.messages) if m.get("role") == "user" and i >= self.compacted]
+
+    def _recent(self, budget: int) -> list[dict]:
+        """The latest turns that fit in the context, leaving room for the reply.
+
+        Normally compaction keeps this within budget; as a fallback whole turns
+        are dropped from the start (a user message and everything after it up
+        to the next one), so tool calls keep their results.
+        """
+        live = self.messages[self.compacted:]
+        starts = self._turn_starts()
+        for start in starts or [self.compacted]:
+            kept = self.messages[start:]
+            if sum(estimate_tokens(m) for m in kept) <= budget:
+                return kept
+        return self.messages[starts[-1]:] if starts else live
+
+    def _maybe_compact(self, cb: "Callbacks") -> None:
+        """Summarize the oldest turns once the chat fills most of the context."""
+        head = self._conversation()[0]
+        budget = self._budget(head)
+        live = sum(estimate_tokens(m) for m in self.messages[self.compacted:])
+        starts = self._turn_starts()
+        if live <= budget * COMPACT_AT or len(starts) < 2:
+            return
+        # Keep the newest turns that fit in COMPACT_TO of the budget, and at
+        # least the current one; summarize everything before them.
+        cut = starts[-1]
+        for start in starts[1:]:
+            if sum(estimate_tokens(m) for m in self.messages[start:]) <= budget * COMPACT_TO:
+                cut = start
+                break
+        transcript = render_transcript(self.messages[self.compacted:cut],
+                                       limit=int((self.ctx_tokens - REPLY_RESERVE - 400) * 3))
+        prompt = [{"role": "system", "content": "You write short, factual summaries of conversations."},
+                  {"role": "user", "content": (f"Summary so far:\n{self.summary}\n\n" if self.summary else "")
+                   + f"Conversation:\n{transcript}\n\n" + COMPACT_PROMPT}]
+        cb.compacting()
+        try:
+            parts = [e.text for e in self.client.chat_stream(self.model, prompt, None) if e.kind == "text"]
+        except FlmError:
+            return  # turns get dropped instead
+        summary = strip_think("".join(parts)).strip()
+        if summary:
+            self.summary = summary[:2000]
+            self.compacted = cut
 
     def _tool_schemas(self):
         if not self.use_tools:
@@ -161,6 +259,8 @@ class Agent:
         """
         self.cancel.clear()
         self._drop_old_images()
+        if self.use_tools or self.messages:
+            self._maybe_compact(cb)
         if images and not self._sees():
             if self.vision_model and self.vision_model != self.model:
                 self._hand_images(text, images, cb)
@@ -216,8 +316,8 @@ class Agent:
         helper = Agent(self.client, self.vision_model, use_tools=self.use_tools, ctx=self.ctx, cancel=self.cancel,
                        web_enabled=self.web_enabled, machine=self.machine, memory_enabled=self.memory_enabled,
                        sees=lambda m: True, notes=self.notes, extra_tools=self.extra_tools,
-                       always_allow=self.always_allow)
-        helper.messages = [{"role": m["role"], "content": m["content"]} for m in self.messages
+                       always_allow=self.always_allow, ctx_tokens=self.ctx_tokens, summary=self.summary)
+        helper.messages = [{"role": m["role"], "content": m["content"]} for m in self.messages[self.compacted:]
                            if m["role"] in ("user", "assistant") and m.get("content")]
         helper.ask(text, cb, images)
         answer = next((m["content"] for m in reversed(helper.messages)
@@ -241,9 +341,9 @@ class Agent:
         helper = Agent(self.client, self.smarter_model, use_tools=True, ctx=self.ctx, cancel=self.cancel,
                        web_enabled=self.web_enabled, machine=self.machine, memory_enabled=self.memory_enabled,
                        sees=self.sees, notes=self.notes, extra_tools=self.extra_tools,
-                       always_allow=self.always_allow)
+                       always_allow=self.always_allow, ctx_tokens=self.ctx_tokens, summary=self.summary)
         # Earlier turns as plain text; tool traffic belongs to the other model.
-        helper.messages = [{"role": m["role"], "content": store.plain_text(m["content"])} for m in self.messages[:-2]
+        helper.messages = [{"role": m["role"], "content": store.plain_text(m["content"])} for m in self.messages[self.compacted:-2]
                            if m["role"] in ("user", "assistant") and m.get("content")]
         note = f"\n\n(A smaller assistant handed this to you. Its notes: {task})" if task else ""
         helper.ask(request + note, cb)

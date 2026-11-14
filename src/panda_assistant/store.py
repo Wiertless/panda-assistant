@@ -211,7 +211,7 @@ def chat_title(messages: list[dict]) -> str:
     return (text[:57] + "…") if len(text) > 60 else (text or "New Chat")
 
 
-def save_chat(chat_id: str, messages: list[dict], model: str) -> None:
+def save_chat(chat_id: str, messages: list[dict], model: str, summary: str = "", compacted: int = 0) -> None:
     if not any(m.get("role") == "user" for m in messages):
         return
     stored = []
@@ -222,6 +222,8 @@ def save_chat(chat_id: str, messages: list[dict], model: str) -> None:
         stored.append(m)
     data = {"id": chat_id, "title": chat_title(messages), "model": model,
             "updated": time.time(), "messages": stored}
+    if summary:
+        data["summary"], data["compacted"] = summary, compacted
     _write(chats_dir() / f"{chat_id}.json", json.dumps(data, ensure_ascii=False))
     _prune()
 

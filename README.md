@@ -10,6 +10,12 @@ Shown simply as **Assistant** on the desktop. A local AI assistant for GNOME tha
   - **Web:** search (DuckDuckGo, falling back to Wikipedia's API) and read pages, with results trimmed to fit small contexts.
   - **Open:** apps, files in your home folder, web pages and pages of GNOME Settings. Kinds of apps ("email", "files", "browser", "calendar", "music", "photos", "text editor", "terminal"…) open your default app for them, as set in GNOME Settings → Apps → Default Apps, and apps also match on their generic name and keywords.
   - **Files:** list folders, find files by name (newest first), read text files. Paths may be absolute, start with `~`, be relative to home, or start with a folder name such as "Downloads", which maps to the real folder in any language (e.g. `~/Pobrane`). Everything stays inside the home folder, and hidden files and folders (`.ssh`, keyrings, browser profiles) are off-limits, so a web page can't talk Panda into reading or leaking them.
+  - **On screen:** `read_window` reads the text of the focused window (a web page, document or email) and anything selected in it, through the accessibility tree. That suits small models better than a screenshot. When you ask from the assistant's own window, it steps aside for a moment so the window behind becomes the focused one. GTK, GNOME and Firefox apps share their text; some Electron and Chromium apps only do with accessibility turned on.
+  - **Personal context**, read on demand and never copied:
+    - `search_file_contents` searches inside your files with GNOME's own index (LocalSearch, the one Files and the overview use), including PDFs and office documents, inside your home folder and never hidden files.
+    - `read_document` reads the text LocalSearch extracted from a PDF or document (or uses `pdftotext`).
+    - `get_events` reads your calendars and `find_contact` your address books, both from Evolution Data Server, so everything set up in Online Accounts, GNOME Calendar or Contacts is included.
+  - **App intents:** `list_app_actions` / `run_app_action` use the actions apps publish (the same as their right-click menu in the dash: "New Private Window", "Compose New Message"…). `media_control` plays, pauses, skips or tells what's playing in any MPRIS player (Spotify, Firefox, Celluloid…).
   - **Networks and Bluetooth:** connect to saved Wi-Fi networks, wired connections and VPNs, and to paired Bluetooth devices by everyday name ("connect my AirPods"). Bluetooth is turned on first if needed. Disconnecting a network asks first.
   - **Screen and images:** with a model that can see (Gemma 4, Qwen 3.5, Qwen3-VL…), Panda can take a screenshot through the desktop portal and look at image files. Attach pictures to a message with the paperclip, by pasting, or by dropping them on the window. Pictures are downscaled to 1024 px, kept for one turn only, and never saved with the chat. If the chosen model can't see, the turn goes to one that can.
   - **Commands:** `run_command` runs a shell command in the `zed` toolbox (created on first use by SilverPanda's `zed-toolbox-setup`), always after you press **Allow**, with the exact command shown. Commands time out after 2 minutes. The toolbox shares your home folder, so the Allow card is the safety net: read it.
@@ -26,6 +32,7 @@ Everything lives in `~/.local/share/panda-assistant` as plain files you can read
 
 - **Memory** (`memory.md`): tell Panda something lasting ("remember I prefer metric units") and it's added to every new chat's prompt. See, add and forget facts in **Preferences → Memory**, or turn memory off.
 - **Skills** (`skills/*.md`): saved workflows. Ask "save that as a skill called morning" or write a Markdown file: a `# Title`, an optional one-line description, then steps. Run one by typing `/morning` (anything after the name is passed along), or just ask for it. Manage them in **Preferences → Skills**.
+- **Long chats:** when a chat fills about three quarters of the context, the oldest turns are summarized by the model (facts, names, numbers, decisions, open tasks) and replaced by that summary, which is saved with the chat. The full conversation stays on screen and on disk.
 - **Chat history** (`chats/*.json`): every chat is saved after each answer. **Ctrl+F** searches the list. The last 200 chats are kept.
 
 ## Other apps (MCP)
@@ -61,7 +68,7 @@ The fast model can hand a request it can't do well to a bigger local model by ca
 The model only takes memory while it's loaded, which the window subtitle shows (**Loaded** / **Not loaded**).
 
 - **Load on demand:** typing in the message field starts `flm serve` in the background, so it's usually ready by the time you press Enter.
-- **Unload when idle:** after 5 minutes without use (1, 5, 15, 30 minutes or never, in Preferences) Panda stops the server it started. **Unload Model** in the main menu does it immediately. Reloading is quick while Linux still has the model file in its page cache.
+- **Keep the small model, drop the big one:** the default model stays loaded so answers start right away (set **Unload Model** in Preferences to free it after 1–30 idle minutes). A bigger model loaded for a hand-off or a picture is dropped a minute after it's done: FastFlowLM restarts with just the default model, which frees the bigger model's weights and context. **Unload Model** in the main menu frees everything immediately.
 - **Short context:** the server starts with an 8K-token context (4K–32K in Preferences) instead of the model's default (64K for Gemma 4). FLM sizes its buffers for the context length, so this is the biggest saving.
 - **Prefix cache:** for Qwen 3.5/3.6, the prompt cache is capped at 1 GiB instead of FLM's 4 GiB.
 
