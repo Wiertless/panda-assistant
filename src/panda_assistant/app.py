@@ -26,11 +26,54 @@ IDLE_CHOICES = [(1, "After 1 Minute"), (5, "After 5 Minutes"), (15, "After 15 Mi
                 (30, "After 30 Minutes"), (0, "Never")]
 
 CSS = """
-.message { padding: 8px 12px; border-radius: 12px; }
-.message.user { background: alpha(@accent_bg_color, 0.15); }
-.action-row { padding: 6px 10px; border-radius: 9px; background: alpha(currentColor, 0.06); }
+.greeting { font-size: 24pt; font-weight: 800; }
+.suggestion { border-radius: 999px; padding: 6px 16px; font-weight: normal; }
+.composer {
+  background: @card_bg_color;
+  border-radius: 26px;
+  padding: 5px 5px 5px 18px;
+  box-shadow: 0 0 0 1px alpha(currentColor, 0.07), 0 2px 6px alpha(black, 0.08), 0 8px 24px alpha(black, 0.06);
+}
+.composer entry, .composer entry:focus-within { background: none; box-shadow: none; outline: none; min-height: 36px; }
+.bubble-user {
+  background: @accent_bg_color;
+  color: @accent_fg_color;
+  border-radius: 20px 20px 6px 20px;
+  padding: 9px 15px;
+}
+.bubble-user selection { background: alpha(white, 0.35); color: @accent_fg_color; }
+.assistant-name { font-weight: 700; }
+.assistant-text { padding: 2px 0; }
+.pill { border-radius: 999px; padding: 4px 12px 4px 9px; font-size: 0.92em; background: alpha(@accent_color, 0.10); }
+.pill.failed { background: alpha(@warning_color, 0.16); }
+.pill.quiet { background: alpha(currentColor, 0.06); }
+.pill image { color: @accent_color; }
+.pill.failed image { color: @warning_color; }
 .thought { font-size: 0.9em; }
+.confirm-card { padding: 6px; }
 """
+
+SUGGESTIONS = ["How much memory is free?", "Turn on Night Light", "Switch to power saver",
+               "Fedora 45 news", "Open Downloads", "Bigger text"]
+
+TOOL_ICONS = {
+    "web_search": "system-search-symbolic", "read_web_page": "web-browser-symbolic",
+    "open_url": "web-browser-symbolic", "open_app": "application-x-executable-symbolic",
+    "open_file": "folder-open-symbolic", "get_battery": "battery-good-symbolic",
+    "get_system_info": "computer-symbolic", "get_datetime": "preferences-system-time-symbolic",
+    "set_dark_mode": "weather-clear-night-symbolic", "set_night_light": "night-light-symbolic",
+    "set_power_mode": "power-profile-balanced-symbolic", "set_volume": "audio-volume-high-symbolic",
+    "set_mute": "audio-volume-muted-symbolic", "set_brightness": "display-brightness-symbolic",
+    "set_wifi": "network-wireless-symbolic", "set_bluetooth": "bluetooth-active-symbolic",
+    "set_do_not_disturb": "notifications-disabled-symbolic", "copy_to_clipboard": "edit-copy-symbolic",
+}
+
+
+def greeting() -> str:
+    from datetime import datetime
+    hour = datetime.now().hour
+    return ("Good morning" if 5 <= hour < 12 else "Good afternoon" if hour < 18
+            else "Good evening" if hour < 23 else "Hello, night owl")
 
 
 def load_config() -> dict:
@@ -113,19 +156,17 @@ class Window(Adw.ApplicationWindow):
                                        tooltip_text="Main Menu", primary=True))
 
         # Conversation.
-        self.messages = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12,
+        self.messages = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18,
                                 margin_top=18, margin_bottom=18, margin_start=12, margin_end=12)
         clamp = Adw.Clamp(maximum_size=720, tightening_threshold=560, child=self.messages)
         self.scroller = Gtk.ScrolledWindow(child=clamp, vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER)
-        self.empty = Adw.StatusPage(icon_name=APP_ID, title="Ask Panda", vexpand=True,
-                                    description="Runs privately on your NPU. Panda can search the web, open apps, "
-                                                "files and websites, change settings and check your system.")
+        self.empty = self._build_start_page()
         self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE)
         self.stack.add_named(self.empty, "empty")
         self.stack.add_named(self.scroller, "chat")
 
-        # Composer.
-        self.entry = Gtk.Entry(hexpand=True, placeholder_text="Ask anything…")
+        # Composer: a rounded floating bar.
+        self.entry = Gtk.Entry(hexpand=True, placeholder_text="Message Panda…")
         self.entry.connect("activate", lambda *_: self.send())
         # Start loading the model while the question is being typed.
         self.entry.connect("changed", lambda e: e.get_text().strip() and self.preload())
@@ -133,10 +174,12 @@ class Window(Adw.ApplicationWindow):
         self.send_btn.add_css_class("suggested-action")
         self.send_btn.add_css_class("circular")
         self.send_btn.connect("clicked", lambda *_: self.send_or_stop())
-        composer = Gtk.Box(spacing=6, margin_top=6, margin_bottom=12, margin_start=12, margin_end=12)
+        composer = Gtk.Box(spacing=6)
+        composer.add_css_class("composer")
         composer.append(self.entry)
         composer.append(self.send_btn)
-        composer_clamp = Adw.Clamp(maximum_size=720, tightening_threshold=560, child=composer)
+        composer_clamp = Adw.Clamp(maximum_size=720, tightening_threshold=560, child=composer,
+                                   margin_top=6, margin_bottom=16, margin_start=12, margin_end=12)
 
         self.banner = Adw.Banner(revealed=False)
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -145,6 +188,7 @@ class Window(Adw.ApplicationWindow):
         view = Adw.ToolbarView(content=content)
         view.add_top_bar(header)
         view.add_bottom_bar(composer_clamp)
+        view.set_bottom_bar_style(Adw.ToolbarStyle.FLAT)
         self.toasts = Adw.ToastOverlay(child=view)
         self.set_content(self.toasts)
 
@@ -163,6 +207,45 @@ class Window(Adw.ApplicationWindow):
         self.connect("close-request", self._on_close)
         self.entry.grab_focus()
         threading.Thread(target=self._load_models, daemon=True).start()
+
+    def _build_start_page(self) -> Gtk.Widget:
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, valign=Gtk.Align.CENTER,
+                      margin_start=24, margin_end=24, margin_top=24, margin_bottom=24)
+        box.append(Gtk.Image(icon_name=APP_ID, pixel_size=96, margin_bottom=12))
+        self.greeting = Gtk.Label(label=greeting(), wrap=True, justify=Gtk.Justification.CENTER)
+        self.greeting.add_css_class("greeting")
+        box.append(self.greeting)
+        sub = Gtk.Label(label="Ask anything. Panda runs privately on your NPU and can search the web, "
+                              "change settings and work with your apps and files.",
+                        wrap=True, justify=Gtk.Justification.CENTER, max_width_chars=46)
+        sub.add_css_class("dim-label")
+        box.append(sub)
+        if hasattr(Adw, "WrapBox"):  # libadwaita 1.7+: chips flow like words
+            chips = Adw.WrapBox(child_spacing=8, line_spacing=8, margin_top=22, halign=Gtk.Align.CENTER,
+                                justify=Adw.JustifyMode.NONE)
+            add = chips.append
+        else:
+            chips = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, min_children_per_line=2,
+                                max_children_per_line=3, column_spacing=8, row_spacing=8, margin_top=22)
+            add = chips.append
+        prompts = {"Fedora 45 news": "Search the web for Fedora 45 news", "Open Downloads": "Open my Downloads folder",
+                   "Bigger text": "Make the text a bit bigger"}
+        for text in SUGGESTIONS:
+            chip = Gtk.Button(label=text)
+            chip.add_css_class("suggestion")
+            chip.connect("clicked", lambda _b, t=prompts.get(text, text): self.ask(t))
+            add(chip)
+        box.append(chips)
+        clamp = Adw.Clamp(maximum_size=620, child=box, valign=Gtk.Align.CENTER)
+        return Gtk.ScrolledWindow(child=clamp, hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True)
+
+    def append_animated(self, widget: Gtk.Widget):
+        """Add a row to the conversation with a short slide-in."""
+        rev = Gtk.Revealer(child=widget, transition_type=Gtk.RevealerTransitionType.SLIDE_UP,
+                           transition_duration=220)
+        self.messages.append(rev)
+        GLib.idle_add(lambda: (rev.set_reveal_child(True), GLib.SOURCE_REMOVE)[1])
+        self.scroll_down()
 
     def _add_action(self, name, fn):
         action = Gio.SimpleAction.new(name, None)
@@ -382,6 +465,7 @@ class Window(Adw.ApplicationWindow):
             nxt = child.get_next_sibling()
             self.messages.remove(child)
             child = nxt
+        self.greeting.set_label(greeting())
         self.stack.set_visible_child_name("empty")
         self.entry.grab_focus()
 
@@ -444,11 +528,9 @@ class Window(Adw.ApplicationWindow):
 
     def _add_user(self, text: str):
         label = Gtk.Label(label=text, wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR, xalign=0,
-                          selectable=True, halign=Gtk.Align.END)
-        label.add_css_class("message")
-        label.add_css_class("user")
-        self.messages.append(label)
-        self.scroll_down()
+                          selectable=True, halign=Gtk.Align.END, max_width_chars=52, margin_start=48)
+        label.add_css_class("bubble-user")
+        self.append_animated(label)
 
     def scroll_down(self):
         def go():
@@ -498,26 +580,45 @@ class Reply:
 
     def __init__(self, win: Window):
         self.win = win
-        self.box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        self.summaries: dict[str, str] = {}
+        # Avatar on the left, name and the turn's content on the right.
+        row = Gtk.Box(spacing=12)
+        row.append(Gtk.Image(icon_name=APP_ID, pixel_size=32, valign=Gtk.Align.START))
+        self.box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, hexpand=True)
+        name = Gtk.Box(spacing=8)
+        title = Gtk.Label(label=APP_NAME, xalign=0)
+        title.add_css_class("assistant-name")
+        self.model_label = Gtk.Label(label=win.agent.model, xalign=0)
+        self.model_label.add_css_class("dim-label")
+        self.model_label.add_css_class("caption")
+        name.append(title)
+        name.append(self.model_label)
+        self.box.append(name)
+        row.append(self.box)
         self.thought = Gtk.Label(wrap=True, xalign=0, selectable=True)
         self.thought.add_css_class("dim-label")
         self.thought.add_css_class("thought")
         self.thinking = Gtk.Expander(label="Thinking…", child=self.thought, visible=False)
-        self.spin = spinner()
+        # The "working" pill: spinner + label, removed when the turn ends.
+        self.spin = Gtk.Box(spacing=8, halign=Gtk.Align.START)
+        self.spin.add_css_class("pill")
+        self.spin.add_css_class("quiet")
+        self.spin.append(spinner())
+        self.spin_label = Gtk.Label(label="Thinking…")
+        self.spin.append(self.spin_label)
         self.text = ""          # text of the current message label
         self.answer = ""        # everything the model said this turn
         self.label: Gtk.Label | None = None
         self.box.append(self.thinking)
         self.box.append(self.spin)
-        win.messages.append(self.box)
-        win.scroll_down()
+        win.append_animated(row)
 
     def callbacks(self) -> Callbacks:
         idle = GLib.idle_add
         return Callbacks(
             text=lambda s: idle(self._text, s),
             reasoning=lambda s: idle(self._reasoning, s),
-            tool_started=lambda n, s: None,
+            tool_started=lambda n, s: idle(self._tool_started, n, s),
             tool_finished=lambda n, r, ok: idle(self._action, n, r, ok),
             notice=lambda s: idle(self.win.toast, s),
             handoff=lambda model: idle(self._handoff, model),
@@ -530,10 +631,16 @@ class Reply:
         else:
             self.box.append(widget)
 
+    def _tool_started(self, name: str, summary: str):
+        self.summaries[name] = summary
+        self.spin_label.set_label(summary + "…")
+        return GLib.SOURCE_REMOVE
+
     def _text(self, s: str):
+        self.spin_label.set_label("Writing…")
         if self.label is None:
             self.label = Gtk.Label(wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR, xalign=0, selectable=True)
-            self.label.add_css_class("message")
+            self.label.add_css_class("assistant-text")
             self._before_spinner(self.label)
             self.text = ""
         self.text += s
@@ -547,29 +654,39 @@ class Reply:
 
     def _reasoning(self, s: str):
         self.thinking.set_visible(True)
+        self.spin_label.set_label("Thinking…")
         self.thought.set_text(self.thought.get_text() + s)
         return GLib.SOURCE_REMOVE
 
+    def _pill(self, icon: str, text: str, failed: bool = False, tooltip: str | None = None) -> Gtk.Widget:
+        pill = Gtk.Box(spacing=8, halign=Gtk.Align.START, tooltip_text=tooltip)
+        pill.add_css_class("pill")
+        if failed:
+            pill.add_css_class("failed")
+        pill.append(Gtk.Image(icon_name=icon))
+        pill.append(Gtk.Label(label=text, wrap=True, xalign=0))
+        return pill
+
     def _action(self, name: str, result: str, ok: bool):
-        row = Gtk.Box(spacing=8)
-        row.add_css_class("action-row")
-        icon = Gtk.Image(icon_name="emblem-ok-symbolic" if ok else "dialog-warning-symbolic")
-        if not ok:
-            icon.add_css_class("warning")
-        row.append(icon)
-        row.append(Gtk.Label(label=result, wrap=True, xalign=0, hexpand=True))
-        self._before_spinner(row)
+        short = len(result) <= 90 and "\n" not in result
+        if ok:
+            # Short confirmations ("Dark mode on.") read best; long results
+            # (search hits, page text) go in the tooltip, the model relays them.
+            text = result if short else self.summaries.get(name, name)
+            pill = self._pill(TOOL_ICONS.get(name, "emblem-system-symbolic"), text,
+                              tooltip=None if short else result[:600])
+        else:
+            pill = self._pill("dialog-warning-symbolic", result if short else result[:200], failed=True)
+        self._before_spinner(pill)
         self.label = None  # text after an action starts a new message
         self.answer += "\n"
         self.win.scroll_down()
         return GLib.SOURCE_REMOVE
 
     def _handoff(self, model: str):
-        row = Gtk.Box(spacing=8)
-        row.add_css_class("action-row")
-        row.append(Gtk.Image(icon_name="go-next-symbolic"))
-        row.append(Gtk.Label(label=f"Handed to {model}", xalign=0, hexpand=True))
-        self._before_spinner(row)
+        self._before_spinner(self._pill("go-next-symbolic", f"Handed to {model}"))
+        self.model_label.set_label(model)
+        self.spin_label.set_label(f"Loading {model}…")
         self.label = None
         self.answer = ""  # the bigger model's reply is the answer
         self.win.scroll_down()
@@ -586,23 +703,29 @@ class Reply:
         return answer["v"]
 
     def _confirm_card(self, summary: str, answer: dict, answered: threading.Event):
-        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         card.add_css_class("card")
-        title = Gtk.Label(label=f"{summary}?", xalign=0, wrap=True, margin_top=12, margin_start=12, margin_end=12)
+        card.add_css_class("confirm-card")
+        head = Gtk.Box(spacing=10, margin_top=12, margin_start=12, margin_end=12)
+        head.append(Gtk.Image(icon_name="dialog-question-symbolic", pixel_size=20))
+        title = Gtk.Label(label=f"{summary}?", xalign=0, wrap=True, hexpand=True)
         title.add_css_class("heading")
+        head.append(title)
         buttons = Gtk.Box(spacing=6, halign=Gtk.Align.END, margin_bottom=12, margin_end=12, homogeneous=True)
         cancel = Gtk.Button(label="_Cancel", use_underline=True)
         allow = Gtk.Button(label="_Allow", use_underline=True)
         allow.add_css_class("suggested-action")
         buttons.append(cancel)
         buttons.append(allow)
-        card.append(title)
+        card.append(head)
         card.append(buttons)
         self._before_spinner(card)
         self.label = None
+        self.spin_label.set_label("Waiting for you…")
         self.win.scroll_down()
 
         def pick(value: bool):
+            self.spin_label.set_label("Working…")
             answer["v"] = value
             card.remove(buttons)
             title.remove_css_class("heading")
@@ -628,6 +751,7 @@ class Reply:
         if answer:
             copy = Gtk.Button(icon_name="edit-copy-symbolic", tooltip_text="Copy", halign=Gtk.Align.START)
             copy.add_css_class("flat")
+            copy.add_css_class("circular")
             copy.connect("clicked", lambda *_: (self.win.copy_text(answer), self.win.toast("Copied")))
             self.box.append(copy)
             if not self.win.is_active():

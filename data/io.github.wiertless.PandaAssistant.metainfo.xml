@@ -21,6 +21,12 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.5.0" date="2026-11-14">
+      <description>
+        <p>A fresher look: a start page with a greeting and suggestions, message bubbles, Panda's avatar,
+        compact pills for actions, a live status of what Panda is doing, and a floating message bar.</p>
+      </description>
+    </release>
     <release version="0.4.0" date="2026-11-14">
       <description>
         <ul>
