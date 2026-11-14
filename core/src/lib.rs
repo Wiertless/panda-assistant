@@ -4,6 +4,7 @@
 pub mod agent;
 pub mod context;
 pub mod flm;
+pub mod mcp;
 pub mod paths;
 pub mod service;
 pub mod store;

@@ -17,6 +17,8 @@ use serde_json::{Value, json};
 
 use crate::agent::{Agent, Callbacks};
 use crate::flm::{self, FlmClient, Model};
+use crate::mcp::Hub;
+use crate::tool::Context;
 use crate::{paths, store, tools};
 
 pub const BUS_NAME: &str = "io.github.wiertless.PandaAssistant.Core";
@@ -53,6 +55,9 @@ pub const INTROSPECTION: &str = r#"
     <signal name="ConfirmRequest"><arg type="s" name="chat_id"/><arg type="u" name="request"/><arg type="s" name="name"/><arg type="s" name="summary"/><arg type="s" name="detail"/><arg type="b" name="can_always"/></signal>
     <signal name="Finished"><arg type="s" name="chat_id"/><arg type="s" name="error"/></signal>
     <signal name="StateChanged"><arg type="s" name="model"/><arg type="s" name="state"/></signal>
+    <signal name="Clipboard"><arg type="s" name="text"/></signal>
+    <signal name="StepAside"/>
+    <signal name="StepBack"/>
   </interface>
 </node>
 "#;
@@ -157,6 +162,9 @@ pub struct Shared {
     next_request: AtomicU32,
     pending: Mutex<HashMap<u32, Sender<String>>>,
     pub state: Mutex<String>,
+    pub mcp: Arc<Hub>,
+    /// What tools may ask of the window: clipboard, stepping aside.
+    pub tool_ctx: Mutex<Context>,
 }
 
 impl Shared {
@@ -174,6 +182,8 @@ impl Shared {
             next_request: AtomicU32::new(1),
             pending: Mutex::new(HashMap::new()),
             state: Mutex::new("Not loaded".into()),
+            mcp: Hub::new(),
+            tool_ctx: Mutex::new(Context::default()),
         })
     }
 
@@ -211,7 +221,13 @@ impl Shared {
     fn make_agent(self: &Arc<Self>) -> Agent {
         let cfg = self.config.lock().unwrap().clone();
         let models = self.models.lock().unwrap().clone();
-        let mut agent = Agent::new(self.client.clone(), &cfg.model, Arc::new(tools::all));
+        let hub = self.mcp.clone();
+        let mut agent = Agent::new(self.client.clone(), &cfg.model, Arc::new(move || {
+            let mut all = tools::all();
+            all.extend(hub.tools());
+            all
+        }));
+        agent.ctx = self.tool_ctx.lock().unwrap().clone();
         agent.cancel = self.cancel.clone();
         agent.web_enabled = cfg.web_search;
         agent.memory_enabled = cfg.memory;
@@ -264,7 +280,21 @@ pub struct Service {
 
 impl Service {
     pub fn new(conn: gio::DBusConnection, client: Arc<FlmClient>) -> Arc<Self> {
-        Arc::new(Self { shared: Shared::new(client), conn, idle: Mutex::new(None) })
+        let shared = Shared::new(client);
+        let emit = |conn: &gio::DBusConnection, name: &'static str, args: Option<Variant>| {
+            let c = conn.clone();
+            move || { let _ = c.emit_signal(None, OBJECT_PATH, INTERFACE, name, args.as_ref()); }
+        };
+        {
+            let mut ctx = shared.tool_ctx.lock().unwrap();
+            let c = conn.clone();
+            ctx.copy_to_clipboard = Some(Arc::new(move |text: &str| {
+                let _ = c.emit_signal(None, OBJECT_PATH, INTERFACE, "Clipboard", Some(&(text,).to_variant()));
+            }));
+            ctx.hide_window = Some(Arc::new(emit(&conn, "StepAside", None)));
+            ctx.show_window = Some(Arc::new(emit(&conn, "StepBack", None)));
+        }
+        Arc::new(Self { shared, conn, idle: Mutex::new(None) })
     }
 
     pub fn shared(&self) -> Arc<Shared> {
@@ -316,6 +346,11 @@ impl Service {
             let result = shared.client.ensure_server(&agent.model, Some(cfg.ctx_len), Duration::from_secs(300))
                 .and_then(|_| {
                     me.set_state("Loaded");
+                    if agent.use_tools {
+                        for problem in shared.mcp.start_all() {
+                            cb.notice(&format!("Couldn't connect {problem}"));
+                        }
+                    }
                     agent.ask(&text, &cb, &images)
                 });
             let error = result.err().map(|e| e.message).unwrap_or_default();
@@ -337,6 +372,7 @@ impl Service {
     }
 
     pub fn reload(self: &Arc<Self>) {
+        self.shared.mcp.reload();
         let cfg = Config::load();
         *self.shared.always_allow.lock().unwrap() = cfg.always_allow.clone();
         let changed_ctx = self.shared.config.lock().unwrap().ctx_len != cfg.ctx_len;
@@ -358,6 +394,7 @@ impl Service {
         self.cancel_idle();
         let me = self.clone();
         std::thread::spawn(move || {
+            me.shared.mcp.stop_all();
             me.shared.client.stop_server();
             me.set_state("Not loaded");
         });
@@ -483,6 +520,7 @@ pub fn run() -> ControlFlow {
     let _owner = gio::bus_own_name_on_connection(&conn, BUS_NAME, gio::BusNameOwnerFlags::NONE, |_, _| {},
                                                  move |_, _| quit.quit());
     main_loop.run();
+    service.shared().mcp.stop_all();
     service.shared().client.stop_server();
     ControlFlow::Continue
 }
