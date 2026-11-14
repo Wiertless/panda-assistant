@@ -21,6 +21,17 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.2.0" date="2026-11-14">
+      <description>
+        <p>Uses much less memory:</p>
+        <ul>
+          <li>The model loads when you start typing and unloads after 5 minutes idle</li>
+          <li>Unload Model in the main menu frees memory right away</li>
+          <li>Context length defaults to 8K tokens instead of the model's maximum</li>
+          <li>Preferences for context length and the idle timer</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.1" date="2026-11-14">
       <description><p>Licensed under the MIT license.</p></description>
     </release>

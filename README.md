@@ -10,7 +10,16 @@ A local AI assistant for GNOME that runs on an AMD Ryzen AI NPU through [FastFlo
 
 Panda lists the models FastFlowLM has downloaded (`flm list`). Only models labelled **tool-calling** can take actions; others are marked "chat only". Flash models are single-turn and can't use tools. The default is `gemma4-it:e2b`; the choice is saved in `~/.config/panda-assistant/config.json`.
 
-If nothing is listening on `127.0.0.1:52625`, Panda starts `flm serve <model>` when you send the first message and stops it when you quit. A server you started yourself is left alone. Set `PANDA_FLM_URL` to use another address.
+## Memory
+
+The model only takes memory while it's loaded, which the window subtitle shows (**Loaded** / **Not loaded**).
+
+- **Load on demand:** typing in the message field starts `flm serve` in the background, so it's usually ready by the time you press Enter.
+- **Unload when idle:** after 5 minutes without use (1, 5, 15, 30 minutes or never, in Preferences) Panda stops the server it started. **Unload Model** in the main menu does it immediately. Reloading is quick while Linux still has the model file in its page cache.
+- **Short context:** the server starts with an 8K-token context (4K–32K in Preferences) instead of the model's default (64K for Gemma 4). FLM sizes its buffers for the context length, so this is the biggest saving.
+- **Prefix cache:** for Qwen 3.5/3.6, the prompt cache is capped at 1 GiB instead of FLM's 4 GiB.
+
+A server you started yourself is used as it is and never stopped. Set `PANDA_FLM_URL` to use another address.
 
 ## Keyboard shortcuts
 
@@ -19,6 +28,7 @@ If nothing is listening on `127.0.0.1:52625`, Panda starts `flm serve <model>` w
 | Ctrl+N | New chat |
 | Ctrl+L | Focus the message field |
 | Esc | Stop the answer |
+| Ctrl+, | Preferences |
 | Ctrl+? | Keyboard shortcuts |
 | Ctrl+W / Ctrl+Q | Close / quit |
 

@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -20,6 +21,21 @@ from pathlib import Path
 from typing import Iterator
 
 DEFAULT_URL = os.environ.get("PANDA_FLM_URL", "http://127.0.0.1:52625")
+DEFAULT_CTX_LEN = 8192
+# Qwen3.5/3.6 keep earlier prompts in a host-memory prefix cache (FLM default
+# limit 4096 MiB). Panda's prompts are short, so a smaller limit is plenty.
+PREFIX_CACHE_MB = 1024
+PREFIX_CACHE_FAMILIES = ("qwen3.5", "qwen3.6")
+
+
+def serve_command(flm: str, model: str, ctx_len: int | None) -> list[str]:
+    """The `flm serve` command line Panda uses, sized for short chats."""
+    cmd = [flm, "serve", model]
+    if ctx_len:
+        cmd += ["--ctx-len", str(ctx_len)]
+    if model.split(":")[0].split("-")[0] in PREFIX_CACHE_FAMILIES:
+        cmd += ["--prefix-cache-mb", str(PREFIX_CACHE_MB)]
+    return cmd
 
 
 class FlmError(RuntimeError):
@@ -167,6 +183,8 @@ class FlmClient:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self._server: subprocess.Popen | None = None
+        self._server_ctx: int | None = None
+        self._lock = threading.Lock()
 
     # -- server ------------------------------------------------------------
     def is_up(self) -> bool:
@@ -176,37 +194,59 @@ class FlmClient:
         except (OSError, urllib.error.URLError):
             return False
 
-    def ensure_server(self, model: str, wait: float = 120) -> bool:
-        """Start `flm serve` if nothing is listening. True if we started it."""
-        if self.is_up():
-            return False
-        flm = shutil.which("flm")
-        if not flm:
-            raise FlmError("FastFlowLM (flm) is not installed.")
-        log_dir = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "panda-assistant"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log = open(log_dir / "flm-serve.log", "ab")
-        self._server = subprocess.Popen([flm, "serve", model], stdin=subprocess.DEVNULL,
-                                        stdout=log, stderr=log, start_new_session=True)
-        log.close()
-        deadline = time.monotonic() + wait
-        while time.monotonic() < deadline:
-            if self._server.poll() is not None:
-                raise FlmError(f"flm serve exited ({self._server.returncode}); see {log_dir / 'flm-serve.log'}")
-            if self.is_up():
-                return True
-            time.sleep(0.5)
-        raise FlmError("FastFlowLM didn't start within two minutes.")
+    @property
+    def owns_server(self) -> bool:
+        """True while a server this app started is running."""
+        return self._server is not None and self._server.poll() is None
 
-    def stop_server(self) -> None:
-        """Stop the server only if this app started it."""
-        if self._server and self._server.poll() is None:
-            self._server.terminate()
-            try:
-                self._server.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                self._server.kill()
-        self._server = None
+    def ensure_server(self, model: str, ctx_len: int | None = DEFAULT_CTX_LEN, wait: float = 120) -> bool:
+        """Start `flm serve` unless one is listening. True if this call started it.
+
+        A server someone else started is used as it is. One Panda started with
+        another context length is restarted, since that is fixed at launch.
+        """
+        with self._lock:
+            if self.owns_server and self._server_ctx != ctx_len:
+                self._stop_locked()
+            if self.is_up():
+                return False
+            flm = shutil.which("flm")
+            if not flm:
+                raise FlmError("FastFlowLM (flm) is not installed.")
+            log_dir = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "panda-assistant"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            with open(log_dir / "flm-serve.log", "ab") as log:
+                self._server = subprocess.Popen(serve_command(flm, model, ctx_len), stdin=subprocess.DEVNULL,
+                                                stdout=log, stderr=log, start_new_session=True)
+            self._server_ctx = ctx_len
+            deadline = time.monotonic() + wait
+            while time.monotonic() < deadline:
+                if self._server.poll() is not None:
+                    code = self._server.returncode
+                    self._server = None
+                    raise FlmError(f"flm serve exited ({code}); see {log_dir / 'flm-serve.log'}")
+                if self.is_up():
+                    return True
+                time.sleep(0.25)
+            self._stop_locked()
+            raise FlmError("FastFlowLM didn't start within two minutes.")
+
+    def stop_server(self) -> bool:
+        """Stop the server only if this app started it. True if one was stopped."""
+        with self._lock:
+            return self._stop_locked()
+
+    def _stop_locked(self) -> bool:
+        server, self._server = self._server, None
+        if server is None or server.poll() is not None:
+            return False
+        server.terminate()
+        try:
+            server.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            server.kill()
+            server.wait()
+        return True
 
     # -- models ------------------------------------------------------------
     def list_models(self) -> list[Model]:

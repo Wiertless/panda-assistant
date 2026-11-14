@@ -16,11 +16,14 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 from . import APP_ID, APP_NAME, DEFAULT_MODEL, VERSION  # noqa: E402
 from . import tools as T  # noqa: E402
 from .agent import Agent, Callbacks  # noqa: E402
-from .flm import FlmClient, FlmError, Model  # noqa: E402
+from .flm import DEFAULT_CTX_LEN, FlmClient, FlmError, Model  # noqa: E402
 from .markup import to_pango  # noqa: E402
 
 CONFIG = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "panda-assistant" / "config.json"
 REPO_URL = "https://github.com/Wiertless/panda-assistant"
+CTX_CHOICES = [(4096, "4K tokens"), (8192, "8K tokens"), (16384, "16K tokens"), (32768, "32K tokens")]
+IDLE_CHOICES = [(1, "After 1 Minute"), (5, "After 5 Minutes"), (15, "After 15 Minutes"),
+                (30, "After 30 Minutes"), (0, "Never")]
 
 CSS = """
 .message { padding: 8px 12px; border-radius: 12px; }
@@ -81,6 +84,11 @@ class Window(Adw.ApplicationWindow):
         self.busy = False
         self.agent = Agent(self.client, self.cfg.get("model", DEFAULT_MODEL),
                            ctx=T.Context(copy_to_clipboard=self.copy_text))
+        self.ctx_len = int(self.cfg.get("ctx_len", DEFAULT_CTX_LEN))
+        self.unload_after = int(self.cfg.get("unload_after_minutes", 5))
+        self.state = "Not loaded"
+        self._loading = False
+        self._idle_id = 0
 
         # Header bar: new chat at the start, primary menu at the end, model as subtitle.
         self.title = Adw.WindowTitle(title=APP_NAME, subtitle=self.agent.model)
@@ -90,7 +98,11 @@ class Window(Adw.ApplicationWindow):
         self.model_menu = Gio.Menu()
         menu = Gio.Menu()
         menu.append_submenu("_Model", self.model_menu)
+        memory = Gio.Menu()
+        memory.append("_Unload Model", "win.unload")
+        menu.append_section(None, memory)
         tail = Gio.Menu()
+        tail.append("_Preferences", "win.preferences")
         tail.append("_Keyboard Shortcuts", "win.show-help-overlay")
         tail.append(f"_About {APP_NAME}", "app.about")
         menu.append_section(None, tail)
@@ -112,6 +124,8 @@ class Window(Adw.ApplicationWindow):
         # Composer.
         self.entry = Gtk.Entry(hexpand=True, placeholder_text="Ask anything…")
         self.entry.connect("activate", lambda *_: self.send())
+        # Start loading the model while the question is being typed.
+        self.entry.connect("changed", lambda e: e.get_text().strip() and self.preload())
         self.send_btn = Gtk.Button(icon_name="go-up-symbolic", tooltip_text="Send", valign=Gtk.Align.CENTER)
         self.send_btn.add_css_class("suggested-action")
         self.send_btn.add_css_class("circular")
@@ -135,6 +149,9 @@ class Window(Adw.ApplicationWindow):
         self._add_action("focus-entry", lambda: self.entry.grab_focus())
         self._add_action("stop", self.stop)
         self._add_action("show-help-overlay", self.show_shortcuts)
+        self._add_action("preferences", self.show_preferences)
+        self.unload_action = self._add_action("unload", lambda: self.unload(manual=True))
+        self.unload_action.set_enabled(False)
         self.model_action = Gio.SimpleAction.new_stateful("model", GLib.VariantType.new("s"),
                                                           GLib.Variant("s", self.agent.model))
         self.model_action.connect("activate", self._on_model)
@@ -148,6 +165,7 @@ class Window(Adw.ApplicationWindow):
         action = Gio.SimpleAction.new(name, None)
         action.connect("activate", lambda *_: fn())
         self.add_action(action)
+        return action
 
     def toast(self, text: str):
         self.toasts.add_toast(Adw.Toast(title=GLib.markup_escape_text(text), timeout=3))
@@ -155,6 +173,7 @@ class Window(Adw.ApplicationWindow):
 
     # -- models -----------------------------------------------------------
     def _load_models(self):
+        GLib.idle_add(self._set_state, "Loaded" if self.client.is_up() else "Not loaded")
         try:
             models = self.client.list_models()
         except Exception as e:  # noqa: BLE001
@@ -192,7 +211,7 @@ class Window(Adw.ApplicationWindow):
         self.toast(f"Switched to {name}")
 
     def _apply_model(self):
-        self.title.set_subtitle(self.agent.model)
+        self._show_state()
         model = next((m for m in self.models if m.name == self.agent.model), None)
         self.agent.use_tools = True
         self.banner.set_revealed(False)
@@ -204,6 +223,105 @@ class Window(Adw.ApplicationWindow):
             elif not model.can_use_tools:
                 self.banner.set_title("This model can chat but can't take actions")
                 self.banner.set_revealed(True)
+
+    # -- memory: load on demand, unload when idle ------------------------
+    def _set_state(self, state: str):
+        self.state = state
+        self._show_state()
+        self.unload_action.set_enabled(self.client.owns_server and not self.busy)
+        return GLib.SOURCE_REMOVE
+
+    def _show_state(self):
+        self.title.set_subtitle(f"{self.agent.model} · {self.state}")
+
+    def preload(self):
+        """Load the model in the background if it isn't loaded yet."""
+        if self._loading or self.state == "Loaded":
+            return
+        self._loading = True
+        self._cancel_idle()
+        self._set_state("Loading…")
+
+        def work():
+            try:
+                self.client.ensure_server(self.agent.model, self.ctx_len)
+                GLib.idle_add(self._set_state, "Loaded")
+            except FlmError as e:
+                GLib.idle_add(self._set_state, "Not loaded")
+                GLib.idle_add(self.toast, str(e))
+            finally:
+                self._loading = False
+                GLib.idle_add(self._schedule_idle)
+        threading.Thread(target=work, daemon=True).start()
+
+    def _cancel_idle(self):
+        if self._idle_id:
+            GLib.source_remove(self._idle_id)
+            self._idle_id = 0
+
+    def _schedule_idle(self):
+        self._cancel_idle()
+        if self.unload_after > 0 and self.client.owns_server and not self.busy:
+            self._idle_id = GLib.timeout_add_seconds(self.unload_after * 60, self._on_idle)
+        return GLib.SOURCE_REMOVE
+
+    def _on_idle(self):
+        self._idle_id = 0
+        self.unload(manual=False)
+        return GLib.SOURCE_REMOVE
+
+    def unload(self, manual: bool):
+        """Stop the server Panda started, which frees the model's memory."""
+        if self.busy or not self.client.owns_server:
+            return
+        self._cancel_idle()
+
+        def work():
+            stopped = self.client.stop_server()
+            GLib.idle_add(self._set_state, "Not loaded")
+            if stopped and manual:
+                GLib.idle_add(self.toast, "Model unloaded")
+        threading.Thread(target=work, daemon=True).start()
+
+    def show_preferences(self):
+        page = Adw.PreferencesPage()
+        group = Adw.PreferencesGroup(title="Memory", description="The model only uses memory while it's loaded. "
+                                     "It loads when you start typing and unloads when idle.")
+        ctx_row = Adw.ComboRow(title="Context Length", subtitle="Longer conversations need more memory",
+                               model=Gtk.StringList.new([label for _, label in CTX_CHOICES]))
+        ctx_values = [v for v, _ in CTX_CHOICES]
+        ctx_row.set_selected(ctx_values.index(self.ctx_len) if self.ctx_len in ctx_values else 1)
+        idle_row = Adw.ComboRow(title="Unload Model", subtitle="Frees memory when Panda isn't used",
+                                model=Gtk.StringList.new([label for _, label in IDLE_CHOICES]))
+        idle_values = [v for v, _ in IDLE_CHOICES]
+        idle_row.set_selected(idle_values.index(self.unload_after) if self.unload_after in idle_values else 1)
+
+        def on_ctx(row, _p):
+            self.ctx_len = ctx_values[row.get_selected()]
+            self.cfg["ctx_len"] = self.ctx_len
+            save_config(self.cfg)
+            if self.client.owns_server and not self.busy:
+                self.unload(manual=False)  # reloads with the new length on next use
+
+        def on_idle(row, _p):
+            self.unload_after = idle_values[row.get_selected()]
+            self.cfg["unload_after_minutes"] = self.unload_after
+            save_config(self.cfg)
+            self._schedule_idle()
+
+        ctx_row.connect("notify::selected", on_ctx)
+        idle_row.connect("notify::selected", on_idle)
+        group.add(ctx_row)
+        group.add(idle_row)
+        page.add(group)
+        if hasattr(Adw, "PreferencesDialog"):  # libadwaita 1.5+
+            dialog = Adw.PreferencesDialog()
+            dialog.add(page)
+            dialog.present(self)
+        else:
+            win = Adw.PreferencesWindow(transient_for=self, modal=True)
+            win.add(page)
+            win.present()
 
     # -- chat -------------------------------------------------------------
     def new_chat(self):
@@ -235,6 +353,7 @@ class Window(Adw.ApplicationWindow):
         self.entry.set_text("")
         self.stack.set_visible_child_name("chat")
         self._add_user(text)
+        self._cancel_idle()
         self._set_busy(True)
         reply = Reply(self)
         threading.Thread(target=self._worker, args=(text, reply), daemon=True).start()
@@ -245,16 +364,21 @@ class Window(Adw.ApplicationWindow):
 
     def _worker(self, text: str, reply: "Reply"):
         try:
-            if self.client.ensure_server(self.agent.model):
-                GLib.idle_add(self.toast, "Started FastFlowLM")
+            if self.state != "Loaded":
+                GLib.idle_add(self._set_state, "Loading…")
+            self.client.ensure_server(self.agent.model, self.ctx_len)
+            GLib.idle_add(self._set_state, "Loaded")
             self.agent.ask(text, reply.callbacks())
         except FlmError as e:
             GLib.idle_add(reply.error, str(e))
+            if not self.client.is_up():
+                GLib.idle_add(self._set_state, "Not loaded")
         except Exception as e:  # noqa: BLE001
             GLib.idle_add(reply.error, f"{type(e).__name__}: {e}")
         finally:
             GLib.idle_add(reply.finish)
             GLib.idle_add(self._set_busy, False)
+            GLib.idle_add(self._schedule_idle)
 
     def _set_busy(self, busy: bool):
         self.busy = busy
@@ -264,6 +388,7 @@ class Window(Adw.ApplicationWindow):
             self.send_btn.remove_css_class(cls)
         self.send_btn.add_css_class("destructive-action" if busy else "suggested-action")
         self.model_action.set_enabled(not busy)
+        self.unload_action.set_enabled(self.client.owns_server and not busy)
         if not busy:
             self.entry.grab_focus()
         return GLib.SOURCE_REMOVE
@@ -288,7 +413,8 @@ class Window(Adw.ApplicationWindow):
 
     def show_shortcuts(self):
         sections = [("General", [("New Chat", "<Ctrl>n"), ("Focus Message Field", "<Ctrl>l"),
-                                 ("Stop Answer", "Escape"), ("Keyboard Shortcuts", "<Ctrl>question"),
+                                 ("Stop Answer", "Escape"), ("Preferences", "<Ctrl>comma"),
+                                 ("Keyboard Shortcuts", "<Ctrl>question"),
                                  ("Close Window", "<Ctrl>w"), ("Quit", "<Ctrl>q")])]
         if hasattr(Adw, "ShortcutsDialog"):  # libadwaita 1.8+
             dialog = Adw.ShortcutsDialog()
@@ -481,7 +607,8 @@ class App(Adw.Application):
         self.add_action(ask)
         for action, accels in (("app.quit", ["<Ctrl>q"]), ("window.close", ["<Ctrl>w"]),
                                ("win.new-chat", ["<Ctrl>n"]), ("win.focus-entry", ["<Ctrl>l"]),
-                               ("win.stop", ["Escape"]), ("win.show-help-overlay", ["<Ctrl>question"])):
+                               ("win.stop", ["Escape"]), ("win.show-help-overlay", ["<Ctrl>question"]),
+                               ("win.preferences", ["<Ctrl>comma"])):
             self.set_accels_for_action(action, accels)
 
     def _present(self) -> Window:
