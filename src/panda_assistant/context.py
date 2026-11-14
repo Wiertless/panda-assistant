@@ -63,6 +63,16 @@ def system_context() -> str:
     if bats:
         lines.append(f"Battery: {_read(str(bats[0] / 'capacity'))}% ({_read(str(bats[0] / 'status')).lower()})")
     try:
+        from .tools import _short, user_dirs
+        dirs = user_dirs()
+    except Exception:  # noqa: BLE001
+        dirs, _short = {}, str
+    home = str(Path.home())
+    names = {"download": "Downloads", "documents": "Documents", "pictures": "Pictures", "music": "Music",
+             "videos": "Videos", "desktop": "Desktop"}
+    folders = ", ".join(f"{names[r]} = {_short(p)}" for r, p in dirs.items() if r in names)
+    lines.append(f"Home folder: {home}" + (f" (folders: {folders})" if folders else ""))
+    try:
         from .tools import default_apps
         apps = default_apps()
     except Exception:  # noqa: BLE001 - outside a desktop session

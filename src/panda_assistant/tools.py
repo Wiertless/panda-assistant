@@ -208,20 +208,144 @@ def open_url(ctx: Context, args: dict) -> str:
     return f"Opened {url}."
 
 
-def _home_path(raw: str) -> Path:
-    path = Path(os.path.expanduser(raw.strip())).resolve()
+# XDG user folders, by role. Their real names depend on the language
+# (Downloads is ~/Pobrane in Polish), so look them up instead of guessing.
+USER_DIRS = ("desktop", "documents", "download", "music", "pictures", "public_share", "templates", "videos")
+DIR_ALIASES = {"downloads": "download", "download": "download", "documents": "documents", "docs": "documents",
+               "desktop": "desktop", "music": "music", "pictures": "pictures", "photos": "pictures",
+               "videos": "videos", "movies": "videos", "public": "public_share", "templates": "templates"}
+
+
+def user_dirs() -> dict[str, Path]:
+    """{role: folder} for the XDG user folders that exist."""
+    try:
+        from gi.repository import GLib
+    except ImportError:
+        return {}
+    out = {}
+    for role in USER_DIRS:
+        enum = getattr(GLib.UserDirectory, "DIRECTORY_" + role.upper(), None)
+        path = GLib.get_user_special_dir(enum) if enum is not None else None
+        if path and Path(path).is_dir() and Path(path).resolve() != Path.home().resolve():
+            out[role] = Path(path)
+    return out
+
+
+def _hidden(path: Path, home: Path) -> bool:
+    try:
+        rel = path.relative_to(home)
+    except ValueError:
+        return True
+    return any(part.startswith(".") for part in rel.parts)
+
+
+def _home_path(raw: str, must_exist: bool = True) -> Path:
+    """Resolve what the model gave: absolute, ~/…, relative to home, or a
+    folder name such as "Downloads" (in any language). Stays inside the home
+    folder and away from hidden files, which hold keys, tokens and profiles."""
     home = Path.home().resolve()
+    text = raw.strip().strip("'\"")
+    first, _, rest = text.replace("\\", "/").partition("/")
+    role = DIR_ALIASES.get(first.lower().removeprefix("my ").removeprefix("~/").strip())
+    dirs = user_dirs()
+    if role in dirs:
+        path = dirs[role] / rest
+    elif text in ("", "~", "home", "home folder"):
+        path = home
+    else:
+        path = Path(os.path.expanduser(text))
+        if not path.is_absolute():
+            path = home / path
+    path = path.resolve()
     if path != home and home not in path.parents:
-        raise ToolError("only files in your home folder can be opened")
-    if not path.exists():
-        raise ToolError(f"{path} doesn't exist")
+        raise ToolError("only files in your home folder are allowed")
+    if _hidden(path, home):
+        raise ToolError("hidden files and folders are off-limits")
+    if must_exist and not path.exists():
+        raise ToolError(f"{_short(path)} doesn't exist")
     return path
+
+
+def _short(path: Path) -> str:
+    try:
+        rel = path.resolve().relative_to(Path.home().resolve())
+        return "~" if str(rel) == "." else f"~/{rel}"
+    except ValueError:
+        return str(path)
+
+
+def _size(n: int) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024
+    return str(n)
+
+
+def list_folder(ctx: Context, args: dict) -> str:
+    import datetime as dt
+    folder = _home_path(str(args.get("path", "") or "~"))
+    if not folder.is_dir():
+        raise ToolError(f"{_short(folder)} isn't a folder")
+    entries = [e for e in folder.iterdir() if not e.name.startswith(".")]
+    entries.sort(key=lambda e: (not e.is_dir(), e.name.lower()))
+    lines = [f"{_short(folder)} ({len(entries)} items):"]
+    for e in entries[:60]:
+        try:
+            st = e.stat()
+        except OSError:
+            continue
+        when = dt.datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d")
+        lines.append(f"{e.name}/" if e.is_dir() else f"{e.name}  ({_size(st.st_size)}, {when})")
+    if len(entries) > 60:
+        lines.append(f"… and {len(entries) - 60} more")
+    return "\n".join(lines)
+
+
+def find_files(ctx: Context, args: dict) -> str:
+    import time
+    words = [w.lower() for w in str(args.get("name", "")).split() if w]
+    if not words:
+        raise ToolError("give part of the file name to look for")
+    root = _home_path(str(args.get("folder", "") or "~"))
+    home = Path.home().resolve()
+    deadline = time.monotonic() + 4
+    hits = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in ("node_modules", "__pycache__")]
+        for name in filenames + dirnames:
+            if not name.startswith(".") and all(w in name.lower() for w in words):
+                p = Path(dirpath, name)
+                try:
+                    hits.append((p.stat().st_mtime, p))
+                except OSError:
+                    pass
+        if time.monotonic() > deadline or len(hits) > 500:
+            break
+    if not hits:
+        return f"No files named like '{' '.join(words)}' in {_short(root)}."
+    hits.sort(reverse=True)
+    return "\n".join(_short(p) + ("/" if p.is_dir() else "") for _, p in hits[:20])
+
+
+def read_file(ctx: Context, args: dict) -> str:
+    path = _home_path(str(args.get("path", "")))
+    if not path.is_file():
+        raise ToolError(f"{_short(path)} isn't a file")
+    with open(path, "rb") as f:
+        data = f.read(200_000)
+    if b"\0" in data[:4096]:
+        raise ToolError(f"{_short(path)} isn't a text file; use open_file to open it in its app")
+    text = data.decode("utf-8", errors="replace")
+    if len(text) > 3000:
+        text = text[:3000] + "\n[…]"
+    return f"{_short(path)}:\n{text}"
 
 
 def open_file(ctx: Context, args: dict) -> str:
     path = _home_path(str(args.get("path", "")))
     _gio().AppInfo.launch_default_for_uri(path.as_uri(), None)
-    return f"Opened {path}."
+    return f"Opened {_short(path)}."
 
 
 # -- reading state --------------------------------------------------------------
@@ -389,10 +513,10 @@ POWER_MODES = {"power-saver": "Power Saver", "balanced": "Balanced", "performanc
 
 
 def set_power_mode(ctx: Context, args: dict) -> str:
-    from gi.repository import GLib
     mode = str(args.get("mode", "")).strip().lower().replace(" ", "-")
     if mode not in POWER_MODES:
         raise ToolError("mode must be power-saver, balanced or performance")
+    from gi.repository import GLib
     bus = _gio().bus_get_sync(_gio().BusType.SYSTEM, None)
     last = None
     # tuned-ppd and power-profiles-daemon both serve the new and the legacy name.
@@ -506,6 +630,46 @@ def open_settings(ctx: Context, args: dict) -> str:
     return f"Opened Settings at {panel}."
 
 
+# Taildrop: send files to the user's other Tailscale devices.
+def _tailnet_peers() -> list[dict]:
+    import json as _json
+    out = _run(["tailscale", "status", "--json"])
+    peers = (_json.loads(out).get("Peer") or {}).values()
+    return [{"name": (p.get("HostName") or "").strip(),
+             "dns": (p.get("DNSName") or "").split(".")[0],
+             "os": p.get("OS") or "", "online": bool(p.get("Online"))} for p in peers]
+
+
+def list_devices(ctx: Context, args: dict) -> str:
+    peers = sorted(_tailnet_peers(), key=lambda p: (not p["online"], p["name"].lower()))
+    if not peers:
+        return "No other devices on the tailnet."
+    return "\n".join(f"{p['name']} ({p['os'] or '?'}, {'online' if p['online'] else 'offline'})" for p in peers)
+
+
+def send_file(ctx: Context, args: dict) -> str:
+    path = _home_path(str(args.get("path", "")))
+    if not path.is_file():
+        raise ToolError(f"{_short(path)} isn't a file; Taildrop sends files, not folders")
+    wanted = str(args.get("device", "")).strip().lower()
+    peers = _tailnet_peers()
+    match = next((p for p in peers if wanted in (p["name"].lower(), p["dns"].lower())), None)
+    if match is None:
+        names = ", ".join(p["name"] for p in peers if p["online"]) or "none online"
+        raise ToolError(f"no device called '{wanted}' on the tailnet (online: {names})")
+    if not match["online"]:
+        raise ToolError(f"{match['name']} is offline")
+    proc = subprocess.run(["tailscale", "file", "cp", str(path), f"{match['dns'] or match['name']}:"],
+                          capture_output=True, text=True, timeout=600)
+    if proc.returncode != 0:
+        err = (proc.stderr or proc.stdout).strip()
+        if "access denied" in err.lower() or "operator" in err.lower():
+            raise ToolError("Tailscale won't let this user send files yet. Run once in a terminal: "
+                            "sudo tailscale set --operator=$USER")
+        raise ToolError(err or "tailscale file cp failed")
+    return f"Sent {path.name} to {match['name']} with Taildrop."
+
+
 def set_bluetooth(ctx: Context, args: dict) -> str:
     from gi.repository import GLib
     on = _bool(args, "enabled")
@@ -536,9 +700,18 @@ TOOLS: list[Tool] = [
          lambda a: f"Open {a.get('name', 'an app')}"),
     Tool("open_url", "Open a web address in the default browser.",
          _obj({"url": {"type": "string"}}, ["url"]), SAFE, open_url, lambda a: f"Open {a.get('url', 'a link')}"),
-    Tool("open_file", "Open a file or folder in the user's home folder with its default app.",
-         _obj({"path": {"type": "string", "description": "Path, may start with ~"}}, ["path"]), SAFE, open_file,
+    Tool("open_file", "Open a file or folder with its default app. Paths can be relative to the home "
+         "folder, start with ~, or start with a folder name like Downloads or Documents.",
+         _obj({"path": {"type": "string"}}, ["path"]), SAFE, open_file,
          lambda a: f"Open {a.get('path', 'a file')}"),
+    Tool("list_folder", "List what's in a folder (default: the home folder).",
+         _obj({"path": {"type": "string", "description": "e.g. Downloads, Documents/work, ~"}}), SAFE, list_folder,
+         lambda a: f"Look in {a.get('path') or 'your home folder'}"),
+    Tool("find_files", "Find files and folders by part of their name, newest first.",
+         _obj({"name": {"type": "string"}, "folder": {"type": "string", "description": "Where to look (optional)"}},
+              ["name"]), SAFE, find_files, lambda a: f"Find files named “{a.get('name', '')}”"),
+    Tool("read_file", "Read a text file (notes, code, configs, CSV…) to answer from it.",
+         _obj({"path": {"type": "string"}}, ["path"]), SAFE, read_file, lambda a: f"Read {a.get('path', 'a file')}"),
     Tool("get_battery", "Get the battery charge level and charging state.", _obj(), SAFE, get_battery,
          lambda a: "Read battery"),
     Tool("get_system_info", "Get OS, kernel, uptime, memory and disk space.", _obj(), SAFE, get_system_info,
@@ -587,6 +760,12 @@ TOOLS: list[Tool] = [
     Tool("open_settings", "Open GNOME Settings at a page, e.g. display, power, keyboard, sound.",
          _obj({"panel": {"type": "string"}}, ["panel"]), SAFE, open_settings,
          lambda a: f"Open Settings: {a.get('panel', '')}"),
+    Tool("list_devices", "List the user's other devices on Tailscale (for Taildrop).", _obj(), SAFE, list_devices,
+         lambda a: "List Tailscale devices"),
+    Tool("send_file", "Send a file to one of the user's devices with Taildrop (Tailscale).",
+         _obj({"path": {"type": "string"}, "device": {"type": "string", "description": "Device name"}},
+              ["path", "device"]), CONFIRM, send_file,
+         lambda a: f"Send {Path(str(a.get('path', 'a file'))).name} to {a.get('device', 'a device')}"),
     Tool("set_wifi", "Turn Wi-Fi on or off. Turning it off disconnects the network.", ENABLED, CONFIRM, set_wifi,
          _onoff("enabled", "Wi-Fi")),
     Tool("set_bluetooth", "Turn Bluetooth on or off. Turning it off disconnects Bluetooth devices.", ENABLED,

@@ -7,6 +7,8 @@ A local AI assistant for GNOME that runs on an AMD Ryzen AI NPU through [FastFlo
 - **Desktop actions** through the model's tool calls:
   - **Web:** search (DuckDuckGo, falling back to Wikipedia's API) and read pages, with results trimmed to fit small contexts.
   - **Open:** apps, files in your home folder, web pages and pages of GNOME Settings. Kinds of apps ("email", "files", "browser", "calendar", "music", "photos", "text editor", "terminal"…) open your default app for them, as set in GNOME Settings → Apps → Default Apps, and apps also match on their generic name and keywords.
+  - **Files:** list folders, find files by name (newest first), read text files. Paths may be absolute, start with `~`, be relative to home, or start with a folder name such as "Downloads", which maps to the real folder in any language (e.g. `~/Pobrane`). Everything stays inside the home folder, and hidden files and folders (`.ssh`, keyrings, browser profiles) are off-limits, so a web page can't talk Panda into reading or leaking them.
+  - **Taildrop:** list your Tailscale devices and send a file to one (asks first). Needs `sudo tailscale set --operator=$USER` once.
   - **Read:** battery, system info, time and current settings.
   - **Change directly:** dark mode, Night Light, power mode, Do Not Disturb, volume, mute, brightness and the clipboard.
   - **Ask first:** Wi-Fi and Bluetooth (they can disconnect you), and any other GNOME desktop setting (`find_settings` / `get_setting` / `change_setting`). Changes are limited to `org.gnome.desktop.*`, settings-daemon plugins, mutter, shell keybindings and Files. Extension, lockdown and screensaver keys are blocked.

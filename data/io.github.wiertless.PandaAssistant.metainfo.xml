@@ -21,6 +21,16 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.6.0" date="2026-11-14">
+      <description>
+        <ul>
+          <li>Works with your files: list folders, find files by name, read text files</li>
+          <li>Understands paths relative to your home folder and folder names in any language</li>
+          <li>Sends files to your other devices with Taildrop (asks first)</li>
+          <li>Hidden files such as SSH keys stay off-limits</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.5.1" date="2026-11-14">
       <description>
         <p>Understands kinds of apps: "open my email", "files" or "the browser" open your default apps,
