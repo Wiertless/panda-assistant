@@ -26,6 +26,9 @@ pub const OBJECT_PATH: &str = "/io/github/wiertless/PandaAssistant/Core";
 pub const INTERFACE: &str = "io.github.wiertless.PandaAssistant.Core1";
 /// A bigger model (hand-off, pictures) is swapped out this soon after use.
 const BIG_MODEL_IDLE: Duration = Duration::from_secs(60);
+/// With no model loaded and nothing to do, the service exits after this long
+/// (D-Bus starts it again on the next call).
+const EXIT_WHEN_IDLE: Duration = Duration::from_secs(600);
 
 pub const INTROSPECTION: &str = r#"
 <node>
@@ -45,6 +48,8 @@ pub const INTROSPECTION: &str = r#"
     <method name="Models"><arg type="s" name="json" direction="out"/></method>
     <method name="Reload"/>
     <method name="Unload"/>
+    <method name="Load"/>
+    <method name="Connections"><arg type="s" name="json" direction="out"/></method>
     <signal name="Text"><arg type="s" name="chat_id"/><arg type="s" name="text"/></signal>
     <signal name="Reasoning"><arg type="s" name="chat_id"/><arg type="s" name="text"/></signal>
     <signal name="ToolStarted"><arg type="s" name="chat_id"/><arg type="s" name="name"/><arg type="s" name="summary"/></signal>
@@ -263,7 +268,14 @@ impl Shared {
                 agent.compacted = (data["compacted"].as_u64().unwrap_or(0) as usize).min(agent.messages.len());
                 return (chat_id.to_string(), agent);
             }
-        (store::new_chat_id(), agent)
+        // A new chat; a client may choose its id (so it can route the signals).
+        let id = if !chat_id.is_empty() && chat_id.len() <= 64
+            && chat_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+            chat_id.to_string()
+        } else {
+            store::new_chat_id()
+        };
+        (id, agent)
     }
 
     fn big_model_loaded(&self) -> bool {
@@ -276,6 +288,8 @@ pub struct Service {
     shared: Arc<Shared>,
     conn: gio::DBusConnection,
     idle: Mutex<Option<glib::SourceId>>,
+    last_activity: Mutex<std::time::Instant>,
+    loading: AtomicBool,
 }
 
 impl Service {
@@ -294,7 +308,8 @@ impl Service {
             ctx.hide_window = Some(Arc::new(emit(&conn, "StepAside", None)));
             ctx.show_window = Some(Arc::new(emit(&conn, "StepBack", None)));
         }
-        Arc::new(Self { shared, conn, idle: Mutex::new(None) })
+        Arc::new(Self { shared, conn, idle: Mutex::new(None), last_activity: Mutex::new(std::time::Instant::now()),
+                        loading: AtomicBool::new(false) })
     }
 
     pub fn shared(&self) -> Arc<Shared> {
@@ -306,6 +321,47 @@ impl Service {
         let model = self.shared.config.lock().unwrap().model.clone();
         let _ = self.conn.emit_signal(None, OBJECT_PATH, INTERFACE, "StateChanged",
                                       Some(&(model.as_str(), state).to_variant()));
+    }
+
+    /// Load the default model ahead of a question (e.g. while it's typed).
+    pub fn preload(self: &Arc<Self>) {
+        if self.shared.busy.load(Ordering::SeqCst) || self.loading.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        self.cancel_idle();
+        let me = self.clone();
+        std::thread::spawn(move || {
+            let cfg = me.shared.config.lock().unwrap().clone();
+            if *me.shared.state.lock().unwrap() != "Loaded" {
+                me.set_state("Loading…");
+            }
+            let ok = me.shared.client.ensure_server(&cfg.model, Some(cfg.ctx_len), Duration::from_secs(300)).is_ok();
+            me.set_state(if ok { "Loaded" } else { "Not loaded" });
+            me.loading.store(false, Ordering::SeqCst);
+            let me2 = me.clone();
+            glib::MainContext::default().invoke(move || me2.schedule_idle());
+        });
+    }
+
+    /// The MCP servers and how they're doing, for the window's Connections page.
+    pub fn connections(&self) -> Value {
+        let servers: Vec<Value> = self.shared.mcp.servers.lock().unwrap().values().map(|s| {
+            let s = s.lock().unwrap();
+            let target = if s.cfg.url.is_empty() { std::iter::once(s.cfg.command.clone()).chain(s.cfg.args.clone()).collect::<Vec<_>>().join(" ") } else { s.cfg.url.clone() };
+            json!({"name": s.cfg.name, "label": s.label, "running": s.running(), "tools": s.tools.len(), "error": s.error,
+                   "disabled": s.cfg.disabled, "trust": s.cfg.trust, "target": target})
+        }).collect();
+        json!({"servers": servers, "config_error": *self.shared.mcp.config_error.lock().unwrap(), "max_tools": crate::mcp::MAX_TOOLS})
+    }
+
+    fn touch(&self) {
+        *self.last_activity.lock().unwrap() = std::time::Instant::now();
+    }
+
+    /// True when the service has nothing loaded and nothing to do for a while.
+    fn should_exit(&self) -> bool {
+        !self.shared.busy.load(Ordering::SeqCst) && !self.loading.load(Ordering::SeqCst) && !self.shared.client.owns_server()
+            && self.last_activity.lock().unwrap().elapsed() > EXIT_WHEN_IDLE
     }
 
     pub fn load_models(self: &Arc<Self>) {
@@ -360,6 +416,7 @@ impl Service {
             let _ = store::save_chat(&id, &agent.messages, &agent.model, &agent.summary, agent.compacted);
             *shared.agent.lock().unwrap() = Some(agent);
             shared.busy.store(false, Ordering::SeqCst);
+            me.touch();
             cb.emit("Finished", (id.as_str(), error.as_str()).to_variant());
             let me2 = me.clone();
             glib::MainContext::default().invoke(move || me2.schedule_idle());
@@ -450,6 +507,7 @@ impl Service {
     }
 
     fn handle(self: &Arc<Self>, method: &str, params: &Variant, invocation: gio::DBusMethodInvocation) {
+        self.touch();
         let reply = |v: Option<Variant>| invocation.clone().return_value(v.as_ref());
         match method {
             "Ask" => {
@@ -470,10 +528,26 @@ impl Service {
             }
             "Status" => reply(Some((self.status().to_string(),).to_variant())),
             "Models" => {
-                let models: Vec<Value> = self.shared.models.lock().unwrap().iter()
-                    .map(|m| json!({"name": m.name, "labels": m.labels})).collect();
-                reply(Some((Value::Array(models).to_string(),).to_variant()))
+                // The list loads in the background at start; wait for it if needed.
+                let shared = self.shared.clone();
+                glib::MainContext::default().spawn_local(async move {
+                    let list = gio::spawn_blocking(move || {
+                        if shared.models.lock().unwrap().is_empty()
+                            && let Ok(models) = shared.client.list_models() {
+                                *shared.models.lock().unwrap() = models.into_iter().filter(|m| m.installed).collect();
+                            }
+                        let models: Vec<Value> = shared.models.lock().unwrap().iter()
+                            .map(|m| json!({"name": m.name, "labels": m.labels})).collect();
+                        Value::Array(models).to_string()
+                    }).await.unwrap_or_else(|_| "[]".into());
+                    invocation.return_value(Some(&(list,).to_variant()));
+                });
             }
+            "Load" => {
+                self.preload();
+                reply(None)
+            }
+            "Connections" => reply(Some((self.connections().to_string(),).to_variant())),
             "Reload" => {
                 self.reload();
                 reply(None)
@@ -516,9 +590,28 @@ pub fn run() -> ControlFlow {
     }
     service.load_models();
     let main_loop = glib::MainLoop::new(None, false);
+    let (s, l) = (service.clone(), main_loop.clone());
+    glib::timeout_add_seconds_local(60, move || {
+        if s.should_exit() {
+            l.quit();
+            return ControlFlow::Break;
+        }
+        ControlFlow::Continue
+    });
+    // Own the name with the plain C call: gio-rs's closure wrapper panics
+    // when the bus goes away (it gets no connection then). Losing the bus
+    // closes the connection, which ends the loop below.
+    {
+        use glib::translate::ToGlibPtr;
+        // SAFETY: valid connection and name; no callbacks or user data.
+        unsafe {
+            gio::ffi::g_bus_own_name_on_connection(conn.to_glib_none().0, BUS_NAME.to_glib_none().0,
+                                                   gio::ffi::G_BUS_NAME_OWNER_FLAGS_NONE, None, None,
+                                                   std::ptr::null_mut(), None);
+        }
+    }
     let quit = main_loop.clone();
-    let _owner = gio::bus_own_name_on_connection(&conn, BUS_NAME, gio::BusNameOwnerFlags::NONE, |_, _| {},
-                                                 move |_, _| quit.quit());
+    conn.connect_closed(move |_, _, _| quit.quit());
     main_loop.run();
     service.shared().mcp.stop_all();
     service.shared().client.stop_server();

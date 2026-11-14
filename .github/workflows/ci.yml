@@ -42,7 +42,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
-    needs: test
+    needs: [test, core]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -56,6 +56,11 @@ jobs:
             echo "tag $GITHUB_REF_NAME != VERSION $v" >&2; exit 1
           fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
+      - name: Build the service
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libglib2.0-dev libgdk-pixbuf-2.0-dev
+          cargo build --release --locked --manifest-path core/Cargo.toml
       - name: Build and publish the release tarball
         env:
           GH_TOKEN: ${{ github.token }}

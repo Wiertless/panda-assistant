@@ -18,8 +18,8 @@ from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk, Pango  # noqa: E402
 from . import APP_ID, APP_NAME, DEFAULT_MODEL, VERSION  # noqa: E402
 from . import mcp, store  # noqa: E402
 from . import tools as T  # noqa: E402
-from .agent import IMAGE_MARKER, Agent, Callbacks  # noqa: E402
-from .flm import (DEFAULT_CTX_LEN, FlmClient, FlmError, Model, pick_smarter_model,  # noqa: E402
+from .core_client import Core, CoreError  # noqa: E402
+from .flm import (DEFAULT_CTX_LEN, Model, pick_smarter_model,  # noqa: E402
                   pick_vision_model)
 from .markup import to_pango  # noqa: E402
 
@@ -133,6 +133,29 @@ def _shown_user_text(content: str) -> str:
     return content
 
 
+IMAGE_MARKER = "[image]"
+# After answering a question from search with no window, the window process
+# quits this soon; the model stays loaded in the service.
+HIDDEN_QUIT_SECONDS = 30
+
+
+class ChatSettings:
+    """What the window shows about the chat; the agent itself runs in assistantd."""
+
+    def __init__(self, cfg: dict):
+        self.model = cfg.get("model", DEFAULT_MODEL)
+        self.web_enabled = bool(cfg.get("web_search", True))
+        self.memory_enabled = bool(cfg.get("memory", True))
+        self.always_allow = set(cfg.get("always_allow", []))
+        self.smarter_model: str | None = None
+        self.vision_model: str | None = None
+        self.use_tools = True
+        self.messages: list[dict] = []
+
+    def reset(self):
+        self.messages = []
+
+
 def load_config() -> dict:
     try:
         return json.loads(CONFIG.read_text())
@@ -141,6 +164,11 @@ def load_config() -> dict:
 
 
 def save_config(cfg: dict) -> None:
+    # The service adds to "always_allow" (Always Allow); keep what it wrote.
+    on_disk = load_config()
+    if "always_allow" in on_disk and "always_allow" not in cfg.get("_changed", ()):
+        cfg["always_allow"] = on_disk["always_allow"]
+    cfg.pop("_changed", None)
     try:
         CONFIG.parent.mkdir(parents=True, exist_ok=True)
         CONFIG.write_text(json.dumps(cfg, indent=2))
@@ -180,26 +208,18 @@ class Window(Adw.ApplicationWindow):
         if self.cfg.get("maximized"):
             self.maximize()
         self.app = app
-        self.client = FlmClient()
         self.models: list[Model] = []
         self.busy = False
-        self.agent = Agent(self.client, self.cfg.get("model", DEFAULT_MODEL),
-                           ctx=T.Context(copy_to_clipboard=self.copy_text,
-                                         hide_window=lambda: on_main(self._step_aside),
-                                         show_window=lambda: on_main(self._step_back)))
-        self.agent.web_enabled = bool(self.cfg.get("web_search", True))
-        self.agent.memory_enabled = bool(self.cfg.get("memory", True))
-        self.agent.sees = self._model_sees
-        self.mcp = mcp.Hub()  # other apps' tools; started on the first message
-        self.agent.extra_tools = lambda: mcp.as_tools(self.mcp)
-        self.agent.always_allow = set(self.cfg.get("always_allow", []))
+        self.agent = ChatSettings(self.cfg)
+        self.core = Core(on_state=self._on_core_state, on_clipboard=self.copy_text,
+                         on_step_aside=self._step_aside, on_step_back=self._step_back)
+        self.reply: "Reply | None" = None
         self.chat_id = store.new_chat_id()
         self.last_activity = 0.0  # when the last answer finished
         self.attachments: list[tuple[Gdk.Texture | None, str]] = []  # (thumbnail, data: URL)
         self.smarter_choice = self.cfg.get("smarter_model", "auto")  # "auto", "off" or a model
         self._apply_smarter()  # "auto" is resolved again once the model list has loaded
         self.ctx_len = int(self.cfg.get("ctx_len", DEFAULT_CTX_LEN))
-        self.agent.ctx_tokens = self.ctx_len
         # 0 = keep the default (small) model loaded for quick answers.
         self.unload_after = int(self.cfg.get("unload_after_minutes", 0))
         self.state = "Not loaded"
@@ -305,7 +325,7 @@ class Window(Adw.ApplicationWindow):
 
         self.connect("close-request", self._on_close)
         self.entry.grab_focus()
-        threading.Thread(target=self._load_models, daemon=True).start()
+        GLib.idle_add(lambda: self._load_models() and GLib.SOURCE_REMOVE)
 
     def _build_start_page(self) -> Gtk.Widget:
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, valign=Gtk.Align.CENTER,
@@ -476,8 +496,6 @@ class Window(Adw.ApplicationWindow):
         self.new_chat()
         self.chat_id = chat_id
         self.agent.messages = data["messages"]
-        self.agent.summary = str(data.get("summary") or "")
-        self.agent.compacted = min(int(data.get("compacted") or 0), len(self.agent.messages))
         self._render_history(data["messages"], data.get("model") or self.agent.model)
         self.stack.set_visible_child_name("chat")
         self.split.set_show_content(True)
@@ -636,20 +654,26 @@ class Window(Adw.ApplicationWindow):
 
     # -- models -----------------------------------------------------------
     def _load_models(self):
-        GLib.idle_add(self._set_state, "Loaded" if self.client.is_up() else "Not loaded")
         try:
-            models = self.client.list_models()
-        except Exception as e:  # noqa: BLE001
-            GLib.idle_add(self.toast, f"Couldn't list models: {e}")
-            models = []
-        GLib.idle_add(self._fill_models, models)
+            status = self.core.status()
+            self._set_state(status.get("state", "Not loaded"))
+        except CoreError as e:
+            self.banner.set_title(str(e))
+            self.banner.set_revealed(True)
+            return
+
+        def done(models, err):
+            if err:
+                self.toast(f"Couldn't list models: {err}")
+            self._fill_models([Model(m["name"], True, list(m.get("labels") or [])) for m in (models or [])])
+
+        self.core.models(done)
 
     def _fill_models(self, models: list[Model]):
-        installed = [m for m in models if m.installed]
-        if not installed and not self.client.is_up() and not models:
-            self.banner.set_title("FastFlowLM isn't installed")
+        self.models = [m for m in models if m.installed]
+        if not self.models:
+            self.banner.set_title("No models found. Is FastFlowLM installed?")
             self.banner.set_revealed(True)
-        self.models = installed or models
         if self.agent.model not in [m.name for m in self.models]:
             self.models.insert(0, Model(self.agent.model, True, []))
         self.model_menu.remove_all()
@@ -679,6 +703,7 @@ class Window(Adw.ApplicationWindow):
         self.agent.model = name
         self.cfg["model"] = name
         save_config(self.cfg)
+        self.core.reload()
         self.new_chat()
         self._apply_model()
         self.toast(f"Switched to {name}")
@@ -699,101 +724,56 @@ class Window(Adw.ApplicationWindow):
                 self.banner.set_title("This model can chat but can't take actions")
                 self.banner.set_revealed(True)
 
-    # -- memory: load on demand, unload when idle ------------------------
+    # -- memory: the service loads and unloads models ---------------------
+    def _on_core_state(self, model: str, state: str):
+        self._set_state(state)
+
     def _set_state(self, state: str):
         self.state = state
         self._show_state()
-        self.unload_action.set_enabled(self.client.owns_server and not self.busy)
+        self.unload_action.set_enabled(state == "Loaded" and not self.busy)
         return GLib.SOURCE_REMOVE
 
     def _show_state(self):
         self.title.set_subtitle(f"{self.agent.model} · {self.state}")
 
     def preload(self):
-        """Load the model in the background if it isn't loaded yet."""
-        if self._loading or self.state == "Loaded":
+        """Ask the service to load the model while the question is typed."""
+        if self.state in ("Loaded", "Loading…") or self._loading:
             return
         self._loading = True
-        self._cancel_idle()
-        self._set_state("Loading…")
-
-        def work():
-            try:
-                self.client.ensure_server(self.agent.model, self.ctx_len)
-                GLib.idle_add(self._set_state, "Loaded")
-            except FlmError as e:
-                GLib.idle_add(self._set_state, "Not loaded")
-                GLib.idle_add(self.toast, str(e))
-            finally:
-                self._loading = False
-                GLib.idle_add(self._schedule_idle)
-        threading.Thread(target=work, daemon=True).start()
+        GLib.timeout_add_seconds(5, lambda: setattr(self, "_loading", False) or GLib.SOURCE_REMOVE)
+        self.core.load()
 
     def _cancel_idle(self):
         if self._idle_id:
             GLib.source_remove(self._idle_id)
             self._idle_id = 0
 
-    def _big_model_loaded(self) -> bool:
-        return self.client.owns_server and self.client.last_model not in (None, self.agent.model)
-
     def _schedule_idle(self):
+        """With no window, quit soon after answering; the service keeps the model."""
         self._cancel_idle()
-        if self.busy:
-            return GLib.SOURCE_REMOVE
-        if self._big_model_loaded():
-            # A hand-off left a bigger model in memory; go back to the small one soon.
-            self._idle_id = GLib.timeout_add_seconds(BIG_MODEL_IDLE_SECONDS, self._on_idle)
-        elif self.unload_after > 0 and (self.client.owns_server or not self.get_visible()):
-            self._idle_id = GLib.timeout_add_seconds(self.unload_after * 60, self._on_idle)
+        if not self.busy and not self.get_visible():
+            self._idle_id = GLib.timeout_add_seconds(HIDDEN_QUIT_SECONDS, self._on_idle)
         return GLib.SOURCE_REMOVE
 
     def _on_idle(self):
         self._idle_id = 0
-        if self.busy:
-            return GLib.SOURCE_REMOVE
-        if self._big_model_loaded():
-            self.swap_to_default()
-        elif not self.get_visible():
-            # Answering from search with no window, and unloading is on: quit.
-            self.mcp.stop_all()
-            self.client.stop_server()
+        if not self.busy and not self.get_visible():
             self.destroy()  # the last window: the app exits
-        else:
-            self.unload(manual=False)
         return GLib.SOURCE_REMOVE
 
-    def swap_to_default(self):
-        """Restart FLM with just the default model: frees the bigger model and its context."""
-        self._loading = True
-        self._set_state("Loading…")
-
-        def work():
-            try:
-                self.client.stop_server()
-                self.client.ensure_server(self.agent.model, self.ctx_len)
-                GLib.idle_add(self._set_state, "Loaded")
-            except FlmError as e:
-                GLib.idle_add(self._set_state, "Not loaded")
-                GLib.idle_add(self.toast, str(e))
-            finally:
-                self._loading = False
-                GLib.idle_add(self._schedule_idle)
-        threading.Thread(target=work, daemon=True).start()
-
     def unload(self, manual: bool):
-        """Stop the server Panda started, which frees the model's memory."""
-        if self.busy or not self.client.owns_server:
+        """Free the model's memory (the service stops FastFlowLM)."""
+        if self.busy:
             return
-        self._cancel_idle()
+        self.core.unload()
+        if manual:
+            self.toast("Model unloaded")
 
-        def work():
-            self.mcp.stop_all()
-            stopped = self.client.stop_server()
-            GLib.idle_add(self._set_state, "Not loaded")
-            if stopped and manual:
-                GLib.idle_add(self.toast, "Model unloaded")
-        threading.Thread(target=work, daemon=True).start()
+    def reload_core(self):
+        """Settings changed: the service reads them before the next question."""
+        self.core.reload()
 
     def show_preferences(self):
         page = Adw.PreferencesPage(title="General", icon_name="preferences-system-symbolic")
@@ -810,17 +790,15 @@ class Window(Adw.ApplicationWindow):
 
         def on_ctx(row, _p):
             self.ctx_len = ctx_values[row.get_selected()]
-            self.agent.ctx_tokens = self.ctx_len
             self.cfg["ctx_len"] = self.ctx_len
             save_config(self.cfg)
-            if self.client.owns_server and not self.busy:
-                self.unload(manual=False)  # reloads with the new length on next use
+            self.reload_core()  # the service restarts FLM with the new length on next use
 
         def on_idle(row, _p):
             self.unload_after = idle_values[row.get_selected()]
             self.cfg["unload_after_minutes"] = self.unload_after
             save_config(self.cfg)
-            self._schedule_idle()
+            self.reload_core()
 
         abilities = Adw.PreferencesGroup(title="Abilities")
         web_row = Adw.SwitchRow(title="Search the Web", active=self.agent.web_enabled,
@@ -830,6 +808,7 @@ class Window(Adw.ApplicationWindow):
             self.agent.web_enabled = row.get_active()
             self.cfg["web_search"] = self.agent.web_enabled
             save_config(self.cfg)
+            self.reload_core()
 
         web_row.connect("notify::active", on_web)
         abilities.add(web_row)
@@ -838,19 +817,26 @@ class Window(Adw.ApplicationWindow):
                                        description="Actions you chose “Always Allow” for")
         allowed_rows: list[Gtk.Widget] = []
 
+        def ask_again(name: str):
+            self.agent.always_allow.discard(name)
+            self.cfg["always_allow"] = sorted(self.agent.always_allow)
+            self.cfg["_changed"] = ("always_allow",)
+            save_config(self.cfg)
+            self.reload_core()
+            fill_allowed()
+
         def fill_allowed():
             for r in allowed_rows:
                 allowed.remove(r)
             allowed_rows.clear()
+            # The service writes Always Allow choices to the shared settings file.
+            self.agent.always_allow = set(load_config().get("always_allow", []))
             for name in sorted(self.agent.always_allow):
                 server, _, tool = name.partition("__")
                 title = f"{server}: {tool}" if tool else name.replace("_", " ").capitalize()
                 row = Adw.ActionRow(title=GLib.markup_escape_text(title))
                 ask = Gtk.Button(label="Ask Again", valign=Gtk.Align.CENTER)
-                ask.connect("clicked", lambda _b, n=name: (self.agent.always_allow.discard(n),
-                                                           self.cfg.__setitem__("always_allow",
-                                                                                sorted(self.agent.always_allow)),
-                                                           save_config(self.cfg), fill_allowed()))
+                ask.connect("clicked", lambda _b, n=name: ask_again(n))
                 row.add_suffix(ask)
                 allowed_rows.append(row)
                 allowed.add(row)
@@ -877,6 +863,7 @@ class Window(Adw.ApplicationWindow):
             self.cfg["smarter_model"] = self.smarter_choice
             save_config(self.cfg)
             self._apply_smarter()
+            self.reload_core()
 
         smart_row.connect("notify::selected", on_smart)
         smart_group.add(smart_row)
@@ -909,9 +896,9 @@ class Window(Adw.ApplicationWindow):
 
         def on_switch(row, _p):
             self.agent.memory_enabled = row.get_active()
-            self.agent.notes = None
             self.cfg["memory"] = self.agent.memory_enabled
             save_config(self.cfg)
+            self.reload_core()
 
         switch.connect("notify::active", on_switch)
         top.add(switch)
@@ -960,15 +947,22 @@ class Window(Adw.ApplicationWindow):
         page.add(group)
         rows: list[Gtk.Widget] = []
 
-        def status(server: mcp.Server) -> str:
-            if server.cfg.disabled:
+        def status(server: dict) -> str:
+            if server["disabled"]:
                 return "Off"
-            if server.error:
-                return f"Couldn't connect: {server.error}"
-            if server.running:
-                n = len(server.tools)
-                return f"{n} tool{'s' if n != 1 else ''}" + (" · trusted" if server.cfg.trust else "")
+            if server["error"]:
+                return f"Couldn't connect: {server['error']}"
+            if server["running"]:
+                n = server["tools"]
+                return f"{n} tool{'s' if n != 1 else ''}" + (" · trusted" if server["trust"] else "")
             return "Connects when you send a message"
+
+        def changed():
+            try:
+                self.core.reload(wait=True)
+            except CoreError as e:
+                self.toast(str(e))
+            fill()
 
         def set_enabled(name: str, on: bool):
             configs = mcp.load_config()
@@ -976,34 +970,35 @@ class Window(Adw.ApplicationWindow):
                 if c.name == name:
                     c.disabled = not on
             mcp.save_config(configs)
-            self.mcp.reload()
-            fill()
+            changed()
 
         def remove(name: str):
             mcp.save_config([c for c in mcp.load_config() if c.name != name])
-            self.mcp.reload()
-            fill()
+            changed()
 
         def fill():
             for r in rows:
                 group.remove(r)
             rows.clear()
-            if self.mcp.config_error:
+            try:
+                info = self.core.connections()
+            except CoreError as e:
+                info = {"servers": [], "config_error": str(e)}
+            if info.get("config_error"):
                 rows.append(Adw.ActionRow(title="The configuration file has a mistake",
-                                          subtitle=GLib.markup_escape_text(self.mcp.config_error)))
-            elif not self.mcp.servers:
+                                          subtitle=GLib.markup_escape_text(info["config_error"])))
+            elif not info["servers"]:
                 rows.append(Adw.ActionRow(title="No servers yet", subtitle="Add one with the + button"))
-            for server in self.mcp.servers.values():
-                target = server.cfg.url or " ".join([server.cfg.command, *server.cfg.args])
-                row = Adw.ActionRow(title=GLib.markup_escape_text(server.cfg.name),
-                                    subtitle=GLib.markup_escape_text(f"{status(server)}\n{target}"),
+            for server in info["servers"]:
+                row = Adw.ActionRow(title=GLib.markup_escape_text(server["name"]),
+                                    subtitle=GLib.markup_escape_text(f"{status(server)}\n{server['target']}"),
                                     subtitle_lines=3)
-                switch = Gtk.Switch(active=not server.cfg.disabled, valign=Gtk.Align.CENTER)
-                switch.connect("notify::active", lambda sw, _p, n=server.cfg.name: set_enabled(n, sw.get_active()))
+                switch = Gtk.Switch(active=not server["disabled"], valign=Gtk.Align.CENTER)
+                switch.connect("notify::active", lambda sw, _p, n=server["name"]: set_enabled(n, sw.get_active()))
                 delete = Gtk.Button(icon_name="user-trash-symbolic", tooltip_text="Remove Server",
                                     valign=Gtk.Align.CENTER)
                 delete.add_css_class("flat")
-                delete.connect("clicked", lambda _b, n=server.cfg.name: remove(n))
+                delete.connect("clicked", lambda _b, n=server["name"]: remove(n))
                 row.add_suffix(switch)
                 row.add_suffix(delete)
                 rows.append(row)
@@ -1042,8 +1037,7 @@ class Window(Adw.ApplicationWindow):
                 except (mcp.McpError, OSError) as e:
                     self.toast(str(e).capitalize())
                     return
-                self.mcp.reload()
-                fill()
+                changed()
 
             dialog.connect("response", on_response)
             dialog.present(page.get_root())
@@ -1062,7 +1056,7 @@ class Window(Adw.ApplicationWindow):
 
     def _notes_changed(self):
         if not self.busy:
-            self.agent.notes = None  # pick up the change on the next message
+            self.reload_core()  # the service picks up memory and skills on the next message
 
     def _skills_page(self) -> Adw.PreferencesPage:
         page = Adw.PreferencesPage(title="Skills", icon_name="view-list-bullet-symbolic")
@@ -1174,40 +1168,26 @@ class Window(Adw.ApplicationWindow):
         self._add_user(text, thumbs=thumbs)
         self._cancel_idle()
         self._set_busy(True)
-        reply = Reply(self)
-        threading.Thread(target=self._worker, args=(prompt, images, reply), daemon=True).start()
+        self.reply = Reply(self)
+        try:
+            self.core.ask(self.chat_id, prompt, images, self.reply)
+        except CoreError as e:
+            self.reply.on_finished(str(e))
 
     def stop(self):
         if self.busy:
-            self.agent.cancel.set()
+            self.core.stop()
 
-    def _worker(self, text: str, images: list[str], reply: "Reply"):
-        try:
-            if self.state != "Loaded":
-                GLib.idle_add(self._set_state, "Loading…")
-            self.client.ensure_server(self.agent.model, self.ctx_len)
-            GLib.idle_add(self._set_state, "Loaded")
-            if self.agent.use_tools:
-                for problem in self.mcp.start_all():
-                    GLib.idle_add(self.toast, f"Couldn't connect {problem}")
-            self.agent.ask(text, reply.callbacks(), images or None)
-        except FlmError as e:
-            GLib.idle_add(reply.error, str(e))
-            if not self.client.is_up():
-                GLib.idle_add(self._set_state, "Not loaded")
-        except Exception as e:  # noqa: BLE001
-            GLib.idle_add(reply.error, f"{type(e).__name__}: {e}")
-        finally:
-            try:
-                store.save_chat(self.chat_id, self.agent.messages, self.agent.model,
-                                summary=self.agent.summary, compacted=self.agent.compacted)
-            except OSError as e:
-                GLib.idle_add(self.toast, f"Couldn't save the chat: {e}")
-            self.last_activity = time.time()
-            GLib.idle_add(reply.finish)
-            GLib.idle_add(self._refresh_chats)
-            GLib.idle_add(self._set_busy, False)
-            GLib.idle_add(self._schedule_idle)
+    def turn_finished(self, reply: "Reply"):
+        """The service finished a turn (it has saved the chat)."""
+        data = store.load_chat(self.chat_id)
+        if data:
+            self.agent.messages = data["messages"]
+        self.last_activity = time.time()
+        self.reply = None
+        self._refresh_chats()
+        self._set_busy(False)
+        self._schedule_idle()
 
     def _set_busy(self, busy: bool):
         self.busy = busy
@@ -1217,7 +1197,7 @@ class Window(Adw.ApplicationWindow):
             self.send_btn.remove_css_class(cls)
         self.send_btn.add_css_class("destructive-action" if busy else "suggested-action")
         self.model_action.set_enabled(not busy)
-        self.unload_action.set_enabled(self.client.owns_server and not busy)
+        self.unload_action.set_enabled(self.state == "Loaded" and not busy)
         if not busy:
             self.entry.grab_focus()
         return GLib.SOURCE_REMOVE
@@ -1255,9 +1235,13 @@ class Window(Adw.ApplicationWindow):
             return GLib.SOURCE_REMOVE
         GLib.timeout_add(30, go)
 
+    def in_view(self) -> bool:
+        """Shown and focused: the user is looking at this window."""
+        return self.get_visible() and self.is_active()
+
     def _step_aside(self):
         """Minimize so the window behind becomes the focused one (screenshots, read_window)."""
-        self._stepped_aside = self.get_visible() and self.is_active()
+        self._stepped_aside = self.in_view()
         if self._stepped_aside:
             self.minimize()
 
@@ -1266,13 +1250,8 @@ class Window(Adw.ApplicationWindow):
             self._stepped_aside = False
             self.present()
 
-    def allow_always(self, name: str):
-        self.agent.always_allow.add(name)
-        self.cfg["always_allow"] = sorted(self.agent.always_allow)
-        save_config(self.cfg)
-
     def copy_text(self, text: str):
-        on_main(lambda: Gdk.Display.get_default().get_clipboard().set(text))
+        Gdk.Display.get_default().get_clipboard().set(text)
 
     def show_shortcuts(self):
         sections = [("General", [("New Chat", "<Ctrl>n"), ("Focus Message Field", "<Ctrl>l"),
@@ -1352,18 +1331,36 @@ class Reply:
         else:
             win.messages.append(row)
 
-    def callbacks(self) -> Callbacks:
-        idle = GLib.idle_add
-        return Callbacks(
-            text=lambda s: idle(self._text, s),
-            reasoning=lambda s: idle(self._reasoning, s),
-            tool_started=lambda n, s: idle(self._tool_started, n, s),
-            tool_finished=lambda n, r, ok: idle(self._action, n, r, ok),
-            notice=lambda s: idle(self.win.toast, s),
-            handoff=lambda model: idle(self._handoff, model),
-            compacting=lambda: idle(self.spin_label.set_label, "Summarizing older messages…"),
-            confirm=self._confirm,
-        )
+    # -- events from the service (see core_client.Turn), on the GTK thread --
+    def on_text(self, s: str):
+        self._text(s)
+
+    def on_reasoning(self, s: str):
+        self._reasoning(s)
+
+    def on_tool_started(self, name: str, summary: str):
+        self._tool_started(name, summary)
+
+    def on_tool_finished(self, name: str, result: str, ok: bool):
+        self._action(name, result, ok)
+
+    def on_notice(self, text: str):
+        self.win.toast(text)
+
+    def on_handoff(self, model: str):
+        self._handoff(model)
+
+    def on_compacting(self):
+        self.spin_label.set_label("Summarizing older messages…")
+
+    def on_confirm(self, request: int, name: str, summary: str, detail: str, can_always: bool):
+        self._confirm_card(request, name, summary, detail, can_always)
+
+    def on_finished(self, error: str):
+        if error:
+            self.error(error)
+        self.finish()
+        self.win.turn_finished(self)
 
     def _before_spinner(self, widget: Gtk.Widget):
         if self.spin.get_parent():
@@ -1434,17 +1431,7 @@ class Reply:
         self.win.scroll_down()
         return GLib.SOURCE_REMOVE
 
-    def _confirm(self, name: str, summary: str, detail: str = "") -> bool:
-        """Worker thread: show the action inline and wait for Allow or Cancel."""
-        answered = threading.Event()
-        answer = {"v": False}
-        on_main(self._confirm_card, name, summary, detail, answer, answered)
-        while not answered.wait(0.2):
-            if self.win.agent.cancel.is_set():
-                return False
-        return answer["v"]
-
-    def _confirm_card(self, name: str, summary: str, detail: str, answer: dict, answered: threading.Event):
+    def _confirm_card(self, request: int, name: str, summary: str, detail: str, can_always: bool):
         card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         card.add_css_class("card")
         card.add_css_class("confirm-card")
@@ -1458,10 +1445,10 @@ class Reply:
         allow = Gtk.Button(label="_Allow", use_underline=True)
         allow.add_css_class("suggested-action")
         buttons.append(cancel)
-        if name not in T.ALWAYS_ASK:
+        if can_always:
             always = Gtk.Button(label="Always A_llow", use_underline=True,
                                 tooltip_text="Don't ask again for this kind of action")
-            always.connect("clicked", lambda *_: (self.win.allow_always(name), pick(True)))
+            always.connect("clicked", lambda *_: (self.win.agent.always_allow.add(name), pick("always")))
             buttons.append(always)
         buttons.append(allow)
         card.append(head)
@@ -1476,20 +1463,19 @@ class Reply:
         self.label = None
         self.spin_label.set_label("Waiting for you…")
         self.win.scroll_down()
-        if not self.win.is_active():
+        if not self.win.in_view():
             self.win.app.notify(f"{APP_NAME} needs your OK", f"{summary}?", self.win.chat_id,
                                 button="Review")
 
-        def pick(value: bool):
+        def pick(answer: str):
             self.spin_label.set_label("Working…")
-            answer["v"] = value
             card.remove(buttons)
             title.remove_css_class("heading")
-            title.set_label(f"{summary}: {'allowed' if value else 'cancelled'}")
-            answered.set()
+            title.set_label(f"{summary}: {'cancelled' if answer == 'deny' else 'allowed'}")
+            self.win.core.confirm(request, answer)
 
-        allow.connect("clicked", lambda *_: pick(True))
-        cancel.connect("clicked", lambda *_: pick(False))
+        allow.connect("clicked", lambda *_: pick("allow"))
+        cancel.connect("clicked", lambda *_: pick("deny"))
         allow.grab_focus()
 
     def error(self, text: str):
@@ -1511,7 +1497,7 @@ class Reply:
             copy.add_css_class("circular")
             copy.connect("clicked", lambda *_: (self.win.copy_text(answer), self.win.toast("Copied")))
             self.box.append(copy)
-        if notify and not self.win.is_active():
+        if notify and not self.win.in_view():
             if answer:
                 self.win.app.notify(APP_NAME, plain(answer), self.win.chat_id)
             elif self.failure:
@@ -1624,9 +1610,10 @@ class App(Adw.Application):
             Adw.AboutWindow(transient_for=self.window, **kwargs).present()
 
     def _on_shutdown(self, *_):
-        if self.window:
-            self.window.mcp.stop_all()
-            self.window.client.stop_server()
+        # The service keeps running (and keeps or frees the model per its
+        # settings); just stop a turn this window started.
+        if self.window and self.window.busy:
+            self.window.core.stop()
 
 
 def main(argv) -> int:

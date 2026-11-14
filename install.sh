@@ -7,7 +7,20 @@ APP_ID=io.github.wiertless.PandaAssistant
 BINDIR=$PREFIX/bin
 DATADIR=$PREFIX/share
 LIBDIR=$DATADIR/panda-assistant
+LIBEXECDIR=$PREFIX/libexec/panda-assistant
 cd "$(dirname "$0")"
+
+# The service that runs the model and tools (Rust). Release tarballs carry a
+# prebuilt one; in a checkout, build it with: cargo build --release --manifest-path core/Cargo.toml
+for core in core-bin/assistantd core/target/release/assistantd; do
+  if [ -x "$core" ]; then
+    install -D -m 0755 "$core" "$DESTDIR$LIBEXECDIR/assistantd"
+    install -D -m 0644 "data/$APP_ID.Core.service" "$DESTDIR$DATADIR/dbus-1/services/$APP_ID.Core.service"
+    sed -i "s|@LIBEXECDIR@|$LIBEXECDIR|" "$DESTDIR$DATADIR/dbus-1/services/$APP_ID.Core.service"
+    break
+  fi
+done
+[ -x "$DESTDIR$LIBEXECDIR/assistantd" ] || echo "warning: assistantd isn't built; the app needs it" >&2
 
 install -d "$DESTDIR$LIBDIR/panda_assistant"
 install -m 0644 src/panda_assistant/*.py "$DESTDIR$LIBDIR/panda_assistant/"
