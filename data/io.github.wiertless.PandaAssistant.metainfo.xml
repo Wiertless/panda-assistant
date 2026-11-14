@@ -21,6 +21,12 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.5.1" date="2026-11-14">
+      <description>
+        <p>Understands kinds of apps: "open my email", "files" or "the browser" open your default apps,
+        and Panda knows which apps those are.</p>
+      </description>
+    </release>
     <release version="0.5.0" date="2026-11-14">
       <description>
         <p>A fresher look: a start page with a greeting and suggestions, message bubbles, Panda's avatar,

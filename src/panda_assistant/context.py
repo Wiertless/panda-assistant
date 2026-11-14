@@ -62,5 +62,12 @@ def system_context() -> str:
     bats = sorted(Path("/sys/class/power_supply").glob("BAT*"))
     if bats:
         lines.append(f"Battery: {_read(str(bats[0] / 'capacity'))}% ({_read(str(bats[0] / 'status')).lower()})")
+    try:
+        from .tools import default_apps
+        apps = default_apps()
+    except Exception:  # noqa: BLE001 - outside a desktop session
+        apps = {}
+    if apps:
+        lines.append("Default apps: " + ", ".join(f"{role}: {name}" for role, name in apps.items()))
     lines.append("Today: " + datetime.date.today().strftime("%A %Y-%m-%d"))
     return "About this computer:\n" + "\n".join(f"- {line}" for line in lines)

@@ -87,11 +87,81 @@ def _gio():
 
 # -- opening things -----------------------------------------------------------
 
+# Everyday words for kinds of apps -> the content type whose default handler
+# is "that" app, as in GNOME Settings -> Apps -> Default Apps.
+APP_ROLES = {
+    "browser": "x-scheme-handler/https", "email": "x-scheme-handler/mailto",
+    "files": "inode/directory", "calendar": "text/calendar", "music": "audio/mpeg",
+    "video": "video/mp4", "photos": "image/jpeg", "text editor": "text/plain",
+    "pdf": "application/pdf", "terminal": None, "settings": None,
+}
+ROLE_WORDS = {
+    "browser": ("browser", "web browser", "internet", "web"),
+    "email": ("email", "e-mail", "mail", "mail app", "email app", "inbox"),
+    "files": ("files", "file manager", "file browser", "folders", "explorer", "finder"),
+    "calendar": ("calendar", "agenda"),
+    "music": ("music", "music player", "audio player"),
+    "video": ("video", "videos", "video player", "movies"),
+    "photos": ("photos", "pictures", "images", "image viewer", "photo viewer"),
+    "text editor": ("text editor", "editor", "notepad"),
+    "pdf": ("pdf", "pdf viewer", "document viewer", "documents"),
+    "terminal": ("terminal", "console", "command line", "shell"),
+    "settings": ("settings", "system settings", "preferences", "control panel"),
+}
+FALLBACK_IDS = {"terminal": ("org.gnome.Ptyxis", "org.gnome.Console", "org.gnome.Terminal"),
+                "settings": ("org.gnome.Settings",)}
+
+
+def role_for(name: str) -> str | None:
+    wanted = name.strip().lower().removeprefix("my ").removeprefix("the ").removesuffix(" app")
+    for role, words in ROLE_WORDS.items():
+        if wanted in words:
+            return role
+    return None
+
+
+def default_app(role: str):
+    Gio = _gio()
+    ctype = APP_ROLES.get(role)
+    app = None
+    if ctype and ctype.startswith("x-scheme-handler/"):
+        app = Gio.AppInfo.get_default_for_uri_scheme(ctype.split("/", 1)[1])
+    elif ctype:
+        app = Gio.AppInfo.get_default_for_type(ctype, False)
+    if app is None:
+        for app_id in FALLBACK_IDS.get(role, ()):
+            try:
+                app = Gio.DesktopAppInfo.new(app_id + ".desktop")
+            except TypeError:
+                app = None
+            if app:
+                break
+    return app
+
+
+def default_apps() -> dict[str, str]:
+    """{role: app name} for the roles that have a default app here."""
+    out = {}
+    for role in APP_ROLES:
+        try:
+            app = default_app(role)
+        except Exception:  # noqa: BLE001 - no GIO or no desktop session
+            app = None
+        if app:
+            out[role] = app.get_display_name()
+    return out
+
+
 def _find_app(name: str):
     Gio = _gio()
     wanted = name.strip().lower()
     if not wanted:
         raise ToolError("no app name given")
+    role = role_for(wanted)
+    if role:
+        app = default_app(role)
+        if app:
+            return app
     best = None
     for app in Gio.AppInfo.get_all():
         if not app.should_show():
@@ -99,7 +169,10 @@ def _find_app(name: str):
         names = [(app.get_display_name() or "").lower(), (app.get_id() or "").lower().removesuffix(".desktop")]
         if wanted in names:
             return app
-        if best is None and any(wanted in n for n in names):
+        extra = []
+        if isinstance(app, Gio.DesktopAppInfo):
+            extra = [(app.get_generic_name() or "").lower()] + [k.lower() for k in (app.get_keywords() or [])]
+        if best is None and (any(wanted in n for n in names) or wanted in extra):
             best = app
     if best is None:
         raise ToolError(f"no installed app matches '{name}'")
@@ -457,8 +530,9 @@ def _onoff(key: str, what: str) -> Callable[[dict], str]:
 ENABLED = _obj({"enabled": {"type": "boolean"}}, ["enabled"])
 
 TOOLS: list[Tool] = [
-    Tool("open_app", "Open an installed application by its name, e.g. 'Files' or 'Zed'.",
-         _obj({"name": {"type": "string", "description": "App name"}}, ["name"]), SAFE, open_app,
+    Tool("open_app", "Open an app by its name ('Zed') or by what it is: browser, email, files, calendar, "
+         "music, video, photos, text editor, pdf, terminal or settings opens the user's default app for it.",
+         _obj({"name": {"type": "string", "description": "App name or kind of app"}}, ["name"]), SAFE, open_app,
          lambda a: f"Open {a.get('name', 'an app')}"),
     Tool("open_url", "Open a web address in the default browser.",
          _obj({"url": {"type": "string"}}, ["url"]), SAFE, open_url, lambda a: f"Open {a.get('url', 'a link')}"),

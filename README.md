@@ -6,7 +6,7 @@ A local AI assistant for GNOME that runs on an AMD Ryzen AI NPU through [FastFlo
 - **GNOME search:** type anything (3+ characters) in the overview and pick **Ask: …** to send it to Panda. The search provider only echoes your text back; the model runs only when you pick the result.
 - **Desktop actions** through the model's tool calls:
   - **Web:** search (DuckDuckGo, falling back to Wikipedia's API) and read pages, with results trimmed to fit small contexts.
-  - **Open:** apps, files in your home folder, web pages and pages of GNOME Settings.
+  - **Open:** apps, files in your home folder, web pages and pages of GNOME Settings. Kinds of apps ("email", "files", "browser", "calendar", "music", "photos", "text editor", "terminal"…) open your default app for them, as set in GNOME Settings → Apps → Default Apps, and apps also match on their generic name and keywords.
   - **Read:** battery, system info, time and current settings.
   - **Change directly:** dark mode, Night Light, power mode, Do Not Disturb, volume, mute, brightness and the clipboard.
   - **Ask first:** Wi-Fi and Bluetooth (they can disconnect you), and any other GNOME desktop setting (`find_settings` / `get_setting` / `change_setting`). Changes are limited to `org.gnome.desktop.*`, settings-daemon plugins, mutter, shell keybindings and Files. Extension, lockdown and screensaver keys are blocked.
