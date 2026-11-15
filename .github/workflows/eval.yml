@@ -49,6 +49,7 @@ jobs:
       matrix:
         include:
           - { model: "gemma4-it:e2b", search: "gemma-4-E2B-it" }
+          - { model: "gemma4-it:e4b", search: "gemma-4-E4B-it" }
           - { model: "qwen3.5:2b", search: "Qwen3.5-2B" }
           - { model: "qwen3.5:4b", search: "Qwen3.5-4B" }
           - { model: "qwen3-it:4b", search: "Qwen3-4B-Instruct-2507" }
