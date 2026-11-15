@@ -1,6 +1,6 @@
 {
   "baseline": {
-    "about": "What ships: steady sampling, examples, argument repair, the claim check, forced follow-up after a lookup."
+    "about": "What ships: steady sampling, examples, argument repair, the claim check, forced follow-up, reply as a tool on the first round."
   },
   "no-harness": {
     "about": "The model on its own: default sampling, no examples, no repair, no claim check, no forced follow-up.",
@@ -8,7 +8,8 @@
     "examples": false,
     "repair_args": false,
     "nudge": false,
-    "force_completion": false
+    "force_completion": false,
+    "reply_tool": false
   },
   "warm": {
     "about": "Like baseline, but sampled at the server's usual temperature.",
@@ -31,7 +32,11 @@
     "force_completion": false
   },
   "reply-tool": {
-    "about": "Like baseline, but the first round must call a tool, with reply(text) as one of them (smolagents, Apple, Rasa).",
+    "about": "Same as baseline (reply as a tool is on by default since 0.17).",
     "reply_tool": true
+  },
+  "no-reply-tool": {
+    "about": "Like baseline, but the model may answer in plain text on the first round (0.16.1 and before).",
+    "reply_tool": false
   }
 }

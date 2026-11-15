@@ -247,7 +247,7 @@ impl Agent {
             repair_args: true,
             nudge: true,
             force_completion: true,
-            reply_tool: false,
+            reply_tool: true,
             turn_no: 0,
             group_seen: std::collections::HashMap::new(),
         }
@@ -968,6 +968,7 @@ mod tests {
 
     fn agent(flm: &FakeFlm) -> Agent {
         let mut a = Agent::new(Arc::new(FlmClient::new(&flm.url)), "test-model", test_tools());
+        a.reply_tool = false; // most tests script plain replies; reply_is_a_tool_on_the_first_round turns it on
         a.machine = Some("About this computer: test".into());
         a
     }

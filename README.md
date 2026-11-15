@@ -37,6 +37,7 @@ Shown simply as **Assistant** on the desktop. A local AI assistant for GNOME tha
   - A reply that says it did something ("Done, I sent it") when no tool ran is taken back, and the model is asked to actually do it.
   - An exact repeat of a call that just failed isn't run again; the model is told to change course. After three failed calls in a turn, or when it runs out of steps, the smarter model takes over the request.
   - Each active tool group comes with one worked example in the prompt, and lookups (find_files, list_devices, find_settings…) end with what to do next.
+  - Answering is a tool too: the first round of each turn must call one, and `reply(text)` is among them, so talking instead of acting is a choice among tools rather than the easy way out (as in smolagents' `final_answer`, Apple's required tool mode and Rasa's `ChitChat`). On Gemma 4 E2B in the eval it fixed 3 prompts and broke none (88/91 against 85/91).
   - A request to do something that stopped after a lookup (found the setting, listed the devices) is asked again with only the tools that finish it and a tool call required (the server's constrained decoding), plus `ask_user` for when several things fit.
   - Tool calls a model writes into its reply as text (Gemma's `call:name{…}`, a `tool_code` block, or JSON) are run as calls.
   - Tool groups unused for two turns drop out of the request, so the tool list doesn't only grow.

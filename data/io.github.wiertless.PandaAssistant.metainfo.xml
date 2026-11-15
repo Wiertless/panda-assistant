@@ -21,6 +21,14 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.17.0" date="2026-11-15">
+      <description>
+        <ul>
+          <li>The model picks between acting and answering every time, so small models act far more reliably</li>
+          <li>Contacts, family and Polish volume words ("ścisz") find the right tools</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.16.1" date="2026-11-15">
       <description>
         <ul>
