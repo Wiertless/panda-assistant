@@ -1162,5 +1162,27 @@
   "paraphrases": [
    "streść moją umowę najmu"
   ]
+ },
+ {
+  "name": "proofread selection",
+  "prompt": "proofread the selected text",
+  "tags": [
+   "single"
+  ],
+  "stubs": {
+   "rewrite_selection": "Copied the result to the clipboard; paste it with Ctrl+V. It reads: I will be there at five."
+  },
+  "expect": [
+   {
+    "tool": "rewrite_selection",
+    "args": {
+     "instruction": "proofread|spelling|grammar|fix|correct"
+    }
+   }
+  ],
+  "paraphrases": [
+   "popraw zaznaczony tekst",
+   "make this shorter"
+  ]
  }
 ]

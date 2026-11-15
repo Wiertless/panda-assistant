@@ -67,7 +67,7 @@ pub fn completes(lookup: &str) -> &'static [&'static str] {
 /// the chat may be written to steer the model.
 pub fn reads_untrusted(tool: &str) -> bool {
     matches!(tool, "web_search" | "read_web_page" | "read_document" | "ask_document" | "read_file" | "search_file_contents" | "get_events"
-        | "clipboard_history" | "read_window" | "look_at_image" | "find_contact") || tool.contains("__")
+        | "clipboard_history" | "read_window" | "look_at_image" | "find_contact" | "rewrite_selection") || tool.contains("__")
 }
 
 /// Tools that send something out, keep something, or change the machine
@@ -250,6 +250,11 @@ in_minutes, or at as HH:MM or YYYY-MM-DD HH:MM in local time (today's date is in
         Tool::new("cancel_reminder", "Cancel a reminder or timer by what it's about or its time.",
                   obj(json!({"which": {"type": "string"}}), &[]), Safe, crate::reminders::cancel_reminder,
                   text("which", |w| format!("Cancel the reminder {}", or(w, "")))),
+        Tool::new("rewrite_selection", "Rewrite the text the user has selected (highlighted) in any app: proofread, \
+shorten, make it formal, translate… The result goes to the clipboard to paste. Use it for \"this\", \"the selected \
+text\", \"popraw to\".", obj(json!({"instruction": {"type": "string", "description": "What to do with it, e.g. proofread"},
+                             "text": {"type": "string", "description": "Only when the user gave the text in the message"}}), &["instruction"]),
+                  Safe, settings::rewrite_selection, text("instruction", |i| format!("Rewrite the selection: {}", or(i, "proofread")))),
         Tool::new("clipboard_history", "What the user copied recently, newest first (text only). Use it for \"what I \
 copied\", \"the link from before\", \"paste that address\". query keeps only clips with those words.",
                   obj(json!({"query": {"type": "string"}}), &[]), Safe, settings::clipboard_history,
@@ -410,7 +415,7 @@ mod tests {
     #[test]
     fn same_tools_and_risks_as_the_python_app() {
         let names: Vec<String> = all().into_iter().map(|t| t.name).collect();
-        assert_eq!(names.len(), 63, "{names:?}");
+        assert_eq!(names.len(), 64, "{names:?}");
         let risky: Vec<String> = all().into_iter().filter(|t| t.risk == Risk::Confirm).map(|t| t.name).collect();
         assert_eq!(risky, ["run_command"]);
     }

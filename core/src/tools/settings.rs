@@ -331,6 +331,44 @@ pub fn copy_to_clipboard(ctx: &Context, args: &Args) -> ToolResult {
     Ok("Copied to the clipboard.".into())
 }
 
+// -- selected text (the Assistant Clipboard shell extension) ----------------------------
+
+const REWRITE: &str = "Rewrite the text as the instruction says. Keep its language unless told otherwise, keep \
+names, numbers and formatting. Output only the rewritten text, nothing before or after it.";
+
+/// The text highlighted right now in any app (the primary selection, through GNOME Shell).
+pub fn selected_text() -> Result<String, ToolError> {
+    let reply = super::run::dbus_call(false, "org.gnome.Shell", CLIP_PATH, CLIP_IFACE, "Selection", None,
+                                      Some(glib::VariantTy::new("(s)").unwrap()), 3000)
+        .map_err(|_| ToolError("reading the selection needs the Assistant Clipboard extension (Extensions app)".into()))?;
+    Ok(reply.child_value(0).get::<String>().unwrap_or_default())
+}
+
+/// rewrite_selection: proofread, shorten, translate… the selected text, in a
+/// fresh context with no tools, and put the result on the clipboard.
+pub fn rewrite_selection(ctx: &Context, args: &Args) -> ToolResult {
+    let instruction = arg_str(args, "instruction");
+    let instruction = if instruction.trim().is_empty() { "Fix spelling, grammar and punctuation.".to_string() } else { instruction };
+    let text = match arg_str(args, "text") {
+        t if !t.trim().is_empty() => t,
+        _ => selected_text()?,
+    };
+    if text.trim().is_empty() {
+        return Err("nothing is selected: select the text first, then ask again".into());
+    }
+    let ask = ctx.ask_model.as_ref().ok_or("the model isn't available")?;
+    let out = ask(REWRITE, &format!("Instruction: {instruction}\n\nText:\n{text}"))?;
+    let out = out.trim().trim_matches('"').trim().to_string();
+    if out.is_empty() {
+        return Err("the rewrite came back empty".into());
+    }
+    let copy = ctx.copy_to_clipboard.as_ref().ok_or("the clipboard isn't available")?;
+    copy(&out);
+    let preview: String = out.chars().take(160).collect();
+    Ok(format!("Copied the result to the clipboard; paste it with Ctrl+V. It reads: {preview}{}",
+               if out.chars().count() > 160 { "…" } else { "" }))
+}
+
 // -- clipboard history (the Assistant Clipboard shell extension) -------------------------
 
 const CLIP_PATH: &str = "/io/github/wiertless/PandaAssistant/Clipboard";
@@ -375,6 +413,30 @@ mod guard_tests {
         }
         assert!(allowed_schema("org.gnome.desktop.interface"));
         assert!(BLOCKED_KEYS.contains(&"custom-keybindings"));
+    }
+}
+
+#[cfg(test)]
+mod rewrite_tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn rewrites_go_to_the_clipboard() {
+        let copied = Arc::new(Mutex::new(String::new()));
+        let c = copied.clone();
+        let ctx = Context {
+            ask_model: Some(Arc::new(|_: &str, user: &str| {
+                assert!(user.contains("Instruction: proofread") && user.contains("i will be their at five"));
+                Ok("\"I will be there at five.\"".into())
+            })),
+            copy_to_clipboard: Some(Arc::new(move |t: &str| *c.lock().unwrap() = t.to_string())),
+            ..Default::default()
+        };
+        let args: Args = serde_json::from_value(serde_json::json!({"instruction": "proofread", "text": "i will be their at five"})).unwrap();
+        let out = rewrite_selection(&ctx, &args).unwrap();
+        assert_eq!(*copied.lock().unwrap(), "I will be there at five.");
+        assert!(out.contains("Ctrl+V") && out.contains("I will be there"));
     }
 }
 

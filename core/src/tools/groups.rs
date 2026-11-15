@@ -15,8 +15,10 @@ pub const MORE_TOOLS: &str = "more_tools";
 pub const GROUPS: [(&str, &str, &[&str]); 12] = [
     ("reminders", "listing and cancelling reminders and timers",
      &["remind", "reminder", "timer", "alarm", "przypomn", "przypomin", "minutnik", "budzik"]),
-    ("clipboard", "what the user copied recently",
-     &["copied", "copy", "clipboard", "paste", "pasted", "skopiow", "schowek", "schowk", "wklej"]),
+    ("clipboard", "what the user copied recently, and rewriting the selected text (proofread, shorten, translate)",
+     &["copied", "copy", "clipboard", "paste", "pasted", "skopiow", "schowek", "schowk", "wklej", "selected", "selection",
+       "highlighted", "proofread", "rewrite", "rephrase", "shorten", "shorter", "translate", "formal", "spelling", "grammar",
+       "zaznacz", "popraw", "przepisz", "skróć", "przetłumacz", "przetlumacz", "ortograf", "literówk"]),
     ("settings", "dark mode, Night Light, volume, brightness, power mode, Do Not Disturb, Wi-Fi/Bluetooth on or off, any GNOME setting",
      &["dark", "light", "night", "volume", "sound", "mute", "loud", "quiet", "bright", "dim", "power", "battery saver", "performance",
        "disturb", "notification", "setting", "font", "text size", "bigger", "smaller", "scal", "wallpaper", "background", "theme",
@@ -78,7 +80,7 @@ call it again with the one that is a speaker."),
     ("web", "\"who won yesterday's match?\" → web_search, then read_web_page on the best result if the snippets don't say."),
     ("memory", "\"forget my old address\" → forget(fact \"address\")."),
     ("commands", "\"build my project\" → run_command with the build command, in the project's folder."),
-    ("clipboard", "\"paste the link I copied before\" → clipboard_history(query \"http\"), then answer with it."),
+    ("clipboard", "\"make the selected text more polite\" → rewrite_selection(instruction \"make it more polite\")."),
 ];
 
 pub fn example_for(group: &str) -> Option<&'static str> {
@@ -151,7 +153,7 @@ pub fn group_of(tool: &str) -> &'static str {
         "set_dark_mode" | "set_do_not_disturb" | "set_volume" | "set_mute" | "set_brightness" | "set_power_mode"
         | "set_night_light" | "get_setting" | "change_setting" | "open_settings" | "set_wifi"
         | "set_bluetooth" => "settings",
-        "clipboard_history" => "clipboard",
+        "clipboard_history" | "rewrite_selection" => "clipboard",
         "list_reminders" | "cancel_reminder" => "reminders",
         "list_folder" | "read_file" | "read_document" | "ask_document" | "search_file_contents" | "look_at_image" => "files",
         "get_battery" | "get_system_info" => "system",
