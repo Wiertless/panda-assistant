@@ -399,5 +399,343 @@
   "answer": [
    "długa|dluga"
   ]
+ },
+ {
+  "name": "follow-up: send it",
+  "before": [
+   "take a screenshot"
+  ],
+  "prompt": "now send it to my phone",
+  "memory": [
+   "The user's phone is the iPhone (Jakub)"
+  ],
+  "stubs": {
+   "save_screenshot": "Saved the screenshot as ~/Obrazy/Zrzuty ekranu/Zrzut ekranu z 2026-11-15 10-00-00.png. To send it, pass exactly that path to send_file.",
+   "list_devices": "jakubs-iphone (iOS, online)\nframework (linux, this device)",
+   "send_file": [
+    {
+     "when": {
+      "device": "jakubs-iphone",
+      "path": "zrzut ekranu z 2026-11-15"
+     },
+     "result": "Sent Zrzut ekranu z 2026-11-15 10-00-00.png to jakubs-iphone with Taildrop."
+    },
+    {
+     "when": {
+      "device": "jakubs-iphone"
+     },
+     "error": "that file doesn't exist"
+    },
+    {
+     "error": "no device on the tailnet called that. Devices: jakubs-iphone (iOS), framework (linux)"
+    }
+   ]
+  },
+  "expect": [
+   {
+    "tool": "send_file",
+    "args": {
+     "device": "jakubs-iphone",
+     "path": "Zrzut ekranu"
+    }
+   }
+  ]
+ },
+ {
+  "name": "follow-up: send that",
+  "before": [
+   "what do I have tomorrow?"
+  ],
+  "prompt": "send that to my phone",
+  "memory": [
+   "The user's phone is the iPhone (Jakub)"
+  ],
+  "stubs": {
+   "get_events": "Monday 2026-11-16:\n09:30–10:00 Dentist (Dr Nowak)\n13:00–14:00 Lunch with Ola",
+   "list_devices": "jakubs-iphone (iOS, online)\nframework (linux, this device)",
+   "send_text": [
+    {
+     "when": {
+      "device": "jakubs-iphone"
+     },
+     "result": "Sent Tomorrow.txt to jakubs-iphone with Taildrop."
+    },
+    {
+     "error": "no device on the tailnet called that. Devices: jakubs-iphone (iOS), framework (linux)"
+    }
+   ]
+  },
+  "expect": [
+   {
+    "tool": "send_text",
+    "args": {
+     "device": "jakubs-iphone",
+     "text": "dentist"
+    }
+   }
+  ]
+ },
+ {
+  "name": "follow-up: a bit lower",
+  "before": [
+   "set the volume to 60"
+  ],
+  "prompt": "a bit lower",
+  "expect": [
+   {
+    "tool": "set_volume",
+    "args": {
+     "percent": "30|35|40|45|50|55"
+    }
+   }
+  ],
+  "forbid": [
+   "set_mute"
+  ]
+ },
+ {
+  "name": "screenshot to phone (pl)",
+  "prompt": "zrób zrzut ekranu i wyślij mi go na telefon",
+  "memory": [
+   "The user's phone is the iPhone (Jakub)"
+  ],
+  "stubs": {
+   "save_screenshot": "Saved the screenshot as ~/Obrazy/Zrzuty ekranu/Zrzut ekranu z 2026-11-15 10-00-00.png. To send it, pass exactly that path to send_file.",
+   "list_devices": "jakubs-iphone (iOS, online)\nframework (linux, this device)",
+   "send_file": [
+    {
+     "when": {
+      "device": "jakubs-iphone",
+      "path": "zrzut ekranu z 2026-11-15"
+     },
+     "result": "Sent Zrzut ekranu z 2026-11-15 10-00-00.png to jakubs-iphone with Taildrop."
+    },
+    {
+     "when": {
+      "device": "jakubs-iphone"
+     },
+     "error": "that file doesn't exist"
+    },
+    {
+     "error": "no device on the tailnet called that. Devices: jakubs-iphone (iOS), framework (linux)"
+    }
+   ]
+  },
+  "expect": [
+   {
+    "tool": "save_screenshot"
+   },
+   {
+    "tool": "send_file",
+    "args": {
+     "device": "jakubs-iphone",
+     "path": "Zrzut ekranu"
+    }
+   }
+  ]
+ },
+ {
+  "name": "three steps",
+  "prompt": "take a screenshot, send it to my phone, then turn on do not disturb",
+  "memory": [
+   "The user's phone is the iPhone (Jakub)"
+  ],
+  "stubs": {
+   "save_screenshot": "Saved the screenshot as ~/Obrazy/Zrzuty ekranu/Zrzut ekranu z 2026-11-15 10-00-00.png. To send it, pass exactly that path to send_file.",
+   "list_devices": "jakubs-iphone (iOS, online)\nframework (linux, this device)",
+   "send_file": [
+    {
+     "when": {
+      "device": "jakubs-iphone",
+      "path": "zrzut ekranu z 2026-11-15"
+     },
+     "result": "Sent Zrzut ekranu z 2026-11-15 10-00-00.png to jakubs-iphone with Taildrop."
+    },
+    {
+     "when": {
+      "device": "jakubs-iphone"
+     },
+     "error": "that file doesn't exist"
+    },
+    {
+     "error": "no device on the tailnet called that. Devices: jakubs-iphone (iOS), framework (linux)"
+    }
+   ]
+  },
+  "expect": [
+   {
+    "tool": "save_screenshot"
+   },
+   {
+    "tool": "send_file",
+    "args": {
+     "device": "jakubs-iphone"
+    }
+   },
+   {
+    "tool": "set_do_not_disturb",
+    "args": {
+     "enabled": "true"
+    }
+   }
+  ]
+ },
+ {
+  "name": "read and answer",
+  "prompt": "how big is the deposit in my lease?",
+  "stubs": {
+   "find_files": "~/Dokumenty/lease-2026.pdf",
+   "search_file_contents": "~/Dokumenty/lease-2026.pdf (mentions: deposit)",
+   "read_document": "LEASE AGREEMENT ... §4 Deposit: the Tenant pays a deposit of 4 500 zł before moving in ..."
+  },
+  "expect": [
+   {
+    "tool": "read_document|read_file",
+    "args": {
+     "path": "lease-2026.pdf"
+    }
+   }
+  ],
+  "answer": [
+   "4 500|4500|4,500"
+  ]
+ },
+ {
+  "name": "wrong guess, then fix",
+  "prompt": "connect my headphones",
+  "stubs": {
+   "list_bluetooth": "Sony WH-1000XM5 (not connected)\nMX Master 3 (connected)",
+   "connect_bluetooth": [
+    {
+     "when": {
+      "device": "sony"
+     },
+     "result": "Connected Sony WH-1000XM5."
+    },
+    {
+     "when": {
+      "device": "wh-1000"
+     },
+     "result": "Connected Sony WH-1000XM5."
+    },
+    {
+     "error": "no paired device called that (known: Sony WH-1000XM5, MX Master 3)"
+    }
+   ]
+  },
+  "expect": [
+   {
+    "tool": "connect_bluetooth",
+    "args": {
+     "device": "sony|wh-1000"
+    }
+   }
+  ]
+ },
+ {
+  "name": "am I free",
+  "prompt": "am I free at 1pm tomorrow?",
+  "stubs": {
+   "get_events": "Monday 2026-11-16:\n09:30–10:00 Dentist (Dr Nowak)\n13:00–14:00 Lunch with Ola"
+  },
+  "expect": [
+   {
+    "tool": "get_events"
+   }
+  ],
+  "answer": [
+   "lunch|ola"
+  ]
+ },
+ {
+  "name": "memory + contact",
+  "prompt": "what's my sister's phone number?",
+  "memory": [
+   "The user's sister is Ola Kowalska"
+  ],
+  "stubs": {
+   "find_contact": [
+    {
+     "when": {
+      "name": "ola"
+     },
+     "result": "Ola Kowalska — phone +48 600 100 200"
+    },
+    {
+     "when": {
+      "name": "kowalska"
+     },
+     "result": "Ola Kowalska — phone +48 600 100 200"
+    },
+    {
+     "result": "No contact matches that. Try part of the name, or another name you know them by."
+    }
+   ]
+  },
+  "expect": [
+   {
+    "tool": "find_contact",
+    "args": {
+     "name": "ola|kowalska"
+    }
+   }
+  ],
+  "answer": [
+   "600"
+  ]
+ },
+ {
+  "name": "setting by lookup",
+  "prompt": "turn on tap to click",
+  "stubs": {
+   "find_settings": "org.gnome.desktop.peripherals.touchpad tap-to-click = false — Enable tap to click (boolean)"
+  },
+  "expect": [
+   {
+    "tool": "change_setting",
+    "args": {
+     "key": "tap-to-click",
+     "value": "true"
+    }
+   }
+  ]
+ },
+ {
+  "name": "thanks",
+  "before": [
+   "turn on dark mode"
+  ],
+  "prompt": "thanks!",
+  "no_tools": true
+ },
+ {
+  "name": "implicit memory",
+  "prompt": "from now on, call me Kuba",
+  "expect": [
+   {
+    "tool": "remember",
+    "args": {
+     "fact": "kuba"
+    }
+   }
+  ]
+ },
+ {
+  "name": "quieter (pl)",
+  "prompt": "ścisz trochę",
+  "stubs": {
+   "get_status": "Volume 70%, not muted. Dark mode on. Wi-Fi: Home 5G."
+  },
+  "expect": [
+   {
+    "tool": "set_volume",
+    "args": {
+     "percent": "30|35|40|45|50|55|60|65"
+    }
+   }
+  ],
+  "forbid": [
+   "set_mute"
+  ]
  }
 ]

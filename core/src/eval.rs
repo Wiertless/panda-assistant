@@ -47,6 +47,9 @@ pub enum Stub {
 #[derive(Deserialize, Clone)]
 pub struct Scenario {
     pub name: String,
+    /// Earlier messages in the same chat, asked first (their tool calls aren't judged).
+    #[serde(default)]
+    pub before: Vec<String>,
     pub prompt: String,
     #[serde(default)]
     pub memory: Vec<String>,
@@ -158,11 +161,21 @@ pub fn run(client: &Arc<FlmClient>, model: &str, sees: bool, s: &Scenario) -> Ou
     agent.notes = Some(if facts.is_empty() { String::new() } else { format!("What you remember about the user:\n{}", facts.join("\n")) });
     agent.sees = Arc::new(move |_| sees);
     let started = Instant::now();
-    let result = agent.ask(&s.prompt, &Quiet, &[]);
+    let mut result = Ok(());
+    for earlier in &s.before {
+        result = agent.ask(earlier, &Quiet, &[]);
+        if result.is_err() {
+            break;
+        }
+    }
+    let skip = calls.lock().unwrap().len();
+    if result.is_ok() {
+        result = agent.ask(&s.prompt, &Quiet, &[]);
+    }
     let seconds = started.elapsed().as_secs_f64();
     let answer = agent.messages.iter().rev().find(|m| m["role"] == "assistant" && m["content"].as_str().is_some_and(|c| !c.is_empty()))
         .and_then(|m| m["content"].as_str()).unwrap_or("").to_string();
-    let calls = calls.lock().unwrap().clone();
+    let calls = calls.lock().unwrap()[skip..].to_vec();
     let verdict = match result {
         Err(e) => Err(format!("request failed: {}", e.message)),
         Ok(()) => judge(s, &calls, &answer),
