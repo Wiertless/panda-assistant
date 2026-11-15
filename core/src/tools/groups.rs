@@ -19,7 +19,8 @@ pub const GROUPS: [(&str, &str, &[&str]); 11] = [
      &["dark", "light", "night", "volume", "sound", "mute", "loud", "quiet", "bright", "dim", "power", "battery saver", "performance",
        "disturb", "notification", "setting", "font", "text size", "bigger", "smaller", "scal", "wallpaper", "background", "theme",
        "wifi", "wi-fi", "bluetooth", "keyboard", "mouse", "touchpad", "display", "screen",
-       "ciemn", "jasn", "głoś", "glos", "cisz", "wycisz", "jasność", "jasnosc", "ustawien", "tryb", "czcionk", "tapet", "ekran", "dźwięk", "dzwiek"]),
+       "ciemn", "jasn", "głoś", "glos", "cisz", "wycisz", "ścisz", "pogłoś", "podgłoś", "rozjaśn", "przyciem", "ściemn",
+       "przyciszy", "zgłoś", "louder", "quieter", "turn down", "turn up", "jasność", "jasnosc", "ustawien", "tryb", "czcionk", "tapet", "ekran", "dźwięk", "dzwiek"]),
     ("files", "list folders, find files by name or by what's inside, read text files, PDFs and documents, look at images",
      &["file", "folder", "director", "document", "pdf", "download", "picture", "photo", "image", "read ", "find", "where is",
        "lease", "contract", "invoice", "receipt", "resume", "cv", "letter", "report", "statement", "ticket", "manual",
@@ -35,8 +36,11 @@ pub const GROUPS: [(&str, &str, &[&str]); 11] = [
     ("personal", "calendar events and contacts from the user's accounts",
      &["calendar", "event", "meeting", "appointment", "schedule", "today", "tomorrow", "week", "monday", "tuesday", "wednesday",
        "thursday", "friday", "saturday", "sunday", "contact", "email address", "phone number", "birthday",
+       "number", "email", "address", "sister", "brother", "mom", "mum", "dad", "wife", "husband", "girlfriend", "boyfriend",
+       "friend", "colleague", "boss",
        "kalendarz", "spotkani", "wydarzen", "dziś", "dzis", "dzisiaj", "jutro", "tydzień", "tydzien", "poniedział", "wtor", "środ",
-       "czwart", "piąt", "sobot", "niedziel", "kontakt", "numer", "urodzin"]),
+       "czwart", "piąt", "sobot", "niedziel", "kontakt", "numer", "urodzin",
+       "siostr", "brat", "mam", "tat", "żon", "mąż", "męża", "dziewczyn", "chłopak", "przyjaci", "szef", "adres", "mail"]),
     ("apps", "searching inside apps (sums, emoji, weather, contacts…), app actions, opening a terminal, music and video playback",
      &["app", "terminal", "konsol", "emoji", "symbol", "convert", "przelicz", "action", "private window", "new window", "compose", "music", "song", "play", "pause", "skip", "next", "previous",
        "track", "spotify", "video", "calculat", "weather", "search in", "emoji", "character",
@@ -212,6 +216,9 @@ mod tests {
         assert!(groups_for("find the PDF about the lease").contains(&"files"));
         assert!(groups_for("how big is the deposit in my lease?").contains(&"files"));
         assert!(groups_for("mów do mnie Kuba").contains(&"memory"));
+        assert!(groups_for("ścisz trochę").contains(&"settings"), "Polish verbs with prefixes");
+        assert!(groups_for("give me Ola's number").contains(&"personal"));
+        assert!(groups_for("what's my sister's phone?").contains(&"personal"));
         assert!(groups_for("list my devices").iter().all(|g| *g != "files"));
         assert!(groups_for("open a terminal in Projects").contains(&"apps"));
         assert!(groups_for("what's the weather in Kraków").contains(&"apps"));
