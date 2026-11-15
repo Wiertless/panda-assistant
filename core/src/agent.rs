@@ -47,6 +47,9 @@ of guessing. It hands the task to a bigger local model, which answers the user d
 
 pub const ESCALATE: &str = "ask_smarter_model";
 pub const REPLY_RESERVE: usize = 1024;
+/// Most a reply may run to, thinking included: a model that rambles stops
+/// here instead of filling the context (minutes on the NPU, half an hour on a CPU).
+pub const MAX_REPLY_TOKENS: u32 = 2048;
 const COMPACT_AT: f64 = 0.75;
 const COMPACT_TO: f64 = 0.4;
 const COMPACT_PROMPT: &str = "Summarize the conversation above in under 150 words for your own later use: facts, \
@@ -409,7 +412,7 @@ impl Agent {
             json!({"role": "user", "content": format!("{previous}Conversation:\n{transcript}\n\n{COMPACT_PROMPT}")}),
         ];
         cb.compacting();
-        let Ok(stream) = self.client.chat_stream(&self.model, &prompt, None, None) else { return };
+        let Ok(stream) = self.client.chat_stream(&self.model, &prompt, None, None, Some(400)) else { return };
         let mut text = String::new();
         for ev in stream {
             match ev {
@@ -634,7 +637,7 @@ impl Agent {
     fn stream(&mut self, schemas: Option<&[Value]>, cb: &dyn Callbacks) -> Result<(String, Vec<ToolCall>), FlmError> {
         let conversation = self.conversation();
         let temperature = schemas.and(self.tool_temperature);
-        let stream = self.client.chat_stream(&self.model, &conversation, schemas, temperature)?;
+        let stream = self.client.chat_stream(&self.model, &conversation, schemas, temperature, Some(MAX_REPLY_TOKENS))?;
         let mut content = String::new();
         let mut calls = vec![];
         for ev in stream {
@@ -652,6 +655,8 @@ impl Agent {
                     if finish_reason.as_deref() == Some("length") && !calls.is_empty() {
                         cb.notice("The answer was cut off before the action was complete.");
                         calls.clear();
+                    } else if finish_reason.as_deref() == Some("length") {
+                        cb.notice("The answer ran too long and was cut off.");
                     }
                 }
             }
@@ -1042,6 +1047,7 @@ mod tests {
         assert_eq!(a.messages.last().unwrap()["content"], "The bigger model did it.");
         // Tool requests are sampled steadily; the helper gets every tool.
         assert_eq!(reqs[0]["temperature"], TOOL_TEMPERATURE);
+        assert_eq!(reqs[0]["max_tokens"], MAX_REPLY_TOKENS);
         assert!(reqs[0]["messages"][0]["content"].as_str().unwrap().contains("Examples:"));
     }
 

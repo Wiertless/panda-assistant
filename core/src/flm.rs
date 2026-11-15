@@ -494,8 +494,8 @@ impl FlmClient {
             .collect())
     }
 
-    pub fn chat_stream(&self, model: &str, messages: &[Value], tools: Option<&[Value]>, temperature: Option<f64>)
-                       -> Result<ChatStream, FlmError> {
+    pub fn chat_stream(&self, model: &str, messages: &[Value], tools: Option<&[Value]>, temperature: Option<f64>,
+                       max_tokens: Option<u32>) -> Result<ChatStream, FlmError> {
         *self.last_model.lock().unwrap() = Some(model.to_string());
         let mut body = json!({"model": model, "messages": messages, "stream": true});
         if let Some(t) = tools.filter(|t| !t.is_empty()) {
@@ -503,6 +503,9 @@ impl FlmClient {
         }
         if let Some(t) = temperature {
             body["temperature"] = json!(t);
+        }
+        if let Some(n) = max_tokens {
+            body["max_tokens"] = json!(n);
         }
         let resp = self
             .agent
