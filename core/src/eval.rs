@@ -32,6 +32,8 @@ pub struct Variant {
     pub repair_args: Option<bool>,
     pub nudge: Option<bool>,
     pub system_prompt: Option<String>,
+    /// Whether the prompt lists the devices and networks (default yes).
+    pub known: Option<bool>,
     #[serde(default)]
     pub descriptions: std::collections::HashMap<String, String>,
 }
@@ -55,6 +57,10 @@ pub fn variant(name: &str) -> Result<Variant, String> {
 }
 const MACHINE: &str = "About this computer: Framework Laptop 13, AMD Ryzen AI 5 340 with an NPU, 16 GB memory, \
 Fedora Silverblue 45 with GNOME. Now: Sunday 2026-11-15 10:00.";
+/// The devices and networks the stand-in tools know, as the real prompt lists them.
+const KNOWN: &str = "- Paired Bluetooth devices: Jakub's AirPods Pro, Sony WH-1000XM5, MX Master 3
+- The user's other devices (Taildrop): jakubs-iphone (iOS), framework (linux)
+- Saved networks: Home 5G, Biuro-Gosc, Phone hotspot";
 
 #[derive(Deserialize, Clone, Default)]
 pub struct Expect {
@@ -89,6 +95,8 @@ pub struct Scenario {
     pub prompt: String,
     #[serde(default)]
     pub memory: Vec<String>,
+    /// The devices and networks listed in the prompt, when not the usual ones.
+    pub known: Option<String>,
     #[serde(default)]
     pub stubs: std::collections::HashMap<String, Stub>,
     #[serde(default)]
@@ -215,7 +223,8 @@ pub fn run(client: &Arc<FlmClient>, model: &str, sees: bool, v: &Variant, s: &Sc
     agent.repair_args = v.repair_args.unwrap_or(agent.repair_args);
     agent.nudge = v.nudge.unwrap_or(agent.nudge);
     agent.system_prompt = v.system_prompt.clone();
-    agent.machine = Some(MACHINE.into());
+    let known = s.known.as_deref().unwrap_or(KNOWN);
+    agent.machine = Some(if v.known.unwrap_or(true) { format!("{MACHINE}\n{known}") } else { MACHINE.into() });
     let facts: Vec<String> = s.memory.iter().map(|f| format!("- {f}")).collect();
     agent.notes = Some(if facts.is_empty() { String::new() } else { format!("What you remember about the user:\n{}", facts.join("\n")) });
     agent.sees = Arc::new(move |_| sees);

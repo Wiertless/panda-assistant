@@ -62,6 +62,33 @@ fn saved_networks() -> Result<Vec<Net>, ToolError> {
         .collect())
 }
 
+/// The names the user may mean ("my headphones", "the office Wi-Fi", "my
+/// phone"), for the system prompt, so the model can match them without a
+/// lookup: paired Bluetooth devices, Taildrop devices, saved networks. Each
+/// part is left out when its service isn't there.
+pub fn known_names() -> Vec<String> {
+    let mut lines = vec![];
+    if let Ok(objects) = bluez_objects() {
+        let (devs, _) = bt_devices_from(&objects);
+        if !devs.is_empty() {
+            let names: Vec<&str> = devs.iter().map(|d| d.name.as_str()).take(10).collect();
+            lines.push(format!("Paired Bluetooth devices: {}", names.join(", ")));
+        }
+    }
+    if crate::flm::which("tailscale").is_some() && let Ok(peers) = tailnet_peers() && !peers.is_empty() {
+        let names: Vec<String> = peers.iter().take(10)
+            .map(|p| if p.os.is_empty() { p.name.clone() } else { format!("{} ({})", p.name, p.os) }).collect();
+        lines.push(format!("The user's other devices (Taildrop): {}", names.join(", ")));
+    }
+    if let Ok(nets) = saved_networks() && !nets.is_empty() {
+        let names: Vec<&str> = nets.iter().filter(|n| n.kind != "Wired").map(|n| n.name.as_str()).take(10).collect();
+        if !names.is_empty() {
+            lines.push(format!("Saved networks: {}", names.join(", ")));
+        }
+    }
+    lines
+}
+
 pub fn list_networks(_: &Context, _: &Args) -> ToolResult {
     let mut nets = saved_networks()?;
     if nets.is_empty() {

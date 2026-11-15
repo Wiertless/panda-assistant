@@ -1,7 +1,28 @@
 {
-  "baseline": {"about": "What ships: steady sampling, examples, argument repair, the claim check."},
-  "no-harness": {"about": "The model on its own: default sampling, no examples, no repair, no claim check.",
-                 "tool_temperature": null, "examples": false, "repair_args": false, "nudge": false},
-  "warm": {"about": "Like baseline, but sampled at the server's usual temperature.", "tool_temperature": 0.7},
-  "no-examples": {"about": "Like baseline, without the worked examples (saves tokens).", "examples": false}
+  "baseline": {
+    "about": "What ships: steady sampling, examples, argument repair, the claim check."
+  },
+  "no-harness": {
+    "about": "The model on its own: default sampling, no examples, no repair, no claim check.",
+    "tool_temperature": null,
+    "examples": false,
+    "repair_args": false,
+    "nudge": false
+  },
+  "warm": {
+    "about": "Like baseline, but sampled at the server's usual temperature.",
+    "tool_temperature": 0.7
+  },
+  "no-examples": {
+    "about": "Like baseline, without the worked examples (saves tokens).",
+    "examples": false
+  },
+  "old-prompt": {
+    "about": "Like baseline, with the 0.15 system prompt (before the Home Assistant/Cline-style rules).",
+    "system_prompt": "You are the user's assistant, running locally on the user's laptop (Fedora Silverblue with GNOME) on its NPU. Be brief and direct. When the user asks you to do something on the computer, or asks about its state, call a tool instead of describing how to do it. Only call tools the request needs. Connect the dots: work out what the user means from the conversation, what you remember about them and what's on the computer (\"my phone\" is the device they told you about, \"it\" is what you just made or found), and pass one tool's result to the next. After looking something up to do a task, go on and do the task. If a tool fails, fix the call and try again, or look the options up first; say what failed only when you can't work it out. Never invent tool results. Answer in the user's language."
+  },
+  "no-context": {
+    "about": "Like baseline, without the list of devices and networks in the prompt.",
+    "known": false
+  }
 }

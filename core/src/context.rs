@@ -69,6 +69,13 @@ pub fn system_context() -> String {
         let list: Vec<String> = apps.iter().map(|(r, n)| format!("{r}: {n}")).collect();
         lines.push(format!("Default apps: {}", list.join(", ")));
     }
+    // Devices and networks by name (as Home Assistant lists a home's devices),
+    // asked in the background so a slow service can't hold up the answer.
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(crate::tools::connect::known_names());
+    });
+    lines.extend(rx.recv_timeout(std::time::Duration::from_secs(3)).unwrap_or_default());
     if let Ok(today) = glib::DateTime::now_local().and_then(|d| d.format("%A %Y-%m-%d")) {
         lines.push(format!("Today: {today}"));
     }

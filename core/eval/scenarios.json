@@ -72,14 +72,14 @@
    "send_file": [
     {
      "when": {
-      "device": "jakubs-iphone",
+      "device": "jakubs-iphone|iphone|jakub",
       "path": "zrzut ekranu z 2026-11-15"
      },
      "result": "Sent Zrzut ekranu z 2026-11-15 10-00-00.png to jakubs-iphone with Taildrop."
     },
     {
      "when": {
-      "device": "jakubs-iphone"
+      "device": "jakubs-iphone|iphone|jakub"
      },
      "error": "that file doesn't exist"
     },
@@ -95,7 +95,7 @@
    {
     "tool": "send_file",
     "args": {
-     "device": "jakubs-iphone",
+     "device": "jakubs-iphone|iphone|jakub",
      "path": "Zrzut ekranu"
     }
    }
@@ -114,7 +114,7 @@
    "send_file": [
     {
      "when": {
-      "device": "jakubs-iphone",
+      "device": "jakubs-iphone|iphone|jakub",
       "path": "lease-2026.pdf"
      },
      "result": "Sent lease-2026.pdf to jakubs-iphone with Taildrop."
@@ -131,7 +131,7 @@
    {
     "tool": "send_file",
     "args": {
-     "device": "jakubs-iphone",
+     "device": "jakubs-iphone|iphone|jakub",
      "path": "lease-2026.pdf"
     }
    }
@@ -148,7 +148,7 @@
    "send_text": [
     {
      "when": {
-      "device": "jakubs-iphone"
+      "device": "jakubs-iphone|iphone|jakub"
      },
      "result": "Sent Shopping list.txt to jakubs-iphone with Taildrop."
     },
@@ -161,7 +161,7 @@
    {
     "tool": "send_text",
     "args": {
-     "device": "jakubs-iphone",
+     "device": "jakubs-iphone|iphone|jakub",
      "text": "coffee"
     }
    }
@@ -415,14 +415,14 @@
    "send_file": [
     {
      "when": {
-      "device": "jakubs-iphone",
+      "device": "jakubs-iphone|iphone|jakub",
       "path": "zrzut ekranu z 2026-11-15"
      },
      "result": "Sent Zrzut ekranu z 2026-11-15 10-00-00.png to jakubs-iphone with Taildrop."
     },
     {
      "when": {
-      "device": "jakubs-iphone"
+      "device": "jakubs-iphone|iphone|jakub"
      },
      "error": "that file doesn't exist"
     },
@@ -435,7 +435,7 @@
    {
     "tool": "send_file",
     "args": {
-     "device": "jakubs-iphone",
+     "device": "jakubs-iphone|iphone|jakub",
      "path": "Zrzut ekranu"
     }
    }
@@ -456,7 +456,7 @@
    "send_text": [
     {
      "when": {
-      "device": "jakubs-iphone"
+      "device": "jakubs-iphone|iphone|jakub"
      },
      "result": "Sent Tomorrow.txt to jakubs-iphone with Taildrop."
     },
@@ -469,7 +469,7 @@
    {
     "tool": "send_text",
     "args": {
-     "device": "jakubs-iphone",
+     "device": "jakubs-iphone|iphone|jakub",
      "text": "dentist"
     }
    }
@@ -505,14 +505,14 @@
    "send_file": [
     {
      "when": {
-      "device": "jakubs-iphone",
+      "device": "jakubs-iphone|iphone|jakub",
       "path": "zrzut ekranu z 2026-11-15"
      },
      "result": "Sent Zrzut ekranu z 2026-11-15 10-00-00.png to jakubs-iphone with Taildrop."
     },
     {
      "when": {
-      "device": "jakubs-iphone"
+      "device": "jakubs-iphone|iphone|jakub"
      },
      "error": "that file doesn't exist"
     },
@@ -528,7 +528,7 @@
    {
     "tool": "send_file",
     "args": {
-     "device": "jakubs-iphone",
+     "device": "jakubs-iphone|iphone|jakub",
      "path": "Zrzut ekranu"
     }
    }
@@ -546,14 +546,14 @@
    "send_file": [
     {
      "when": {
-      "device": "jakubs-iphone",
+      "device": "jakubs-iphone|iphone|jakub",
       "path": "zrzut ekranu z 2026-11-15"
      },
      "result": "Sent Zrzut ekranu z 2026-11-15 10-00-00.png to jakubs-iphone with Taildrop."
     },
     {
      "when": {
-      "device": "jakubs-iphone"
+      "device": "jakubs-iphone|iphone|jakub"
      },
      "error": "that file doesn't exist"
     },
@@ -569,7 +569,7 @@
    {
     "tool": "send_file",
     "args": {
-     "device": "jakubs-iphone"
+     "device": "jakubs-iphone|iphone|jakub"
     }
    }
   ],
@@ -632,7 +632,8 @@
      "device": "sony|wh-1000"
     }
    }
-  ]
+  ],
+  "known": "- Paired Bluetooth devices: Sony WH-1000XM5, MX Master 3\n- Saved networks: Home 5G"
  },
  {
   "name": "am I free",
@@ -738,6 +739,19 @@
   ],
   "forbid": [
    "set_mute"
+  ]
+ },
+ {
+  "name": "ambiguous: ask",
+  "prompt": "connect my headphones",
+  "stubs": {
+   "list_bluetooth": "Jakub's AirPods Pro (not connected)\nSony WH-1000XM5 (not connected)\nMX Master 3 (connected)"
+  },
+  "forbid": [
+   "connect_bluetooth"
+  ],
+  "answer": [
+   "airpods|sony|which|które|ktore"
   ]
  }
 ]
