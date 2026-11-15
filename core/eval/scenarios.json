@@ -571,7 +571,9 @@
     "args": {
      "device": "jakubs-iphone"
     }
-   },
+   }
+  ],
+  "also": [
    {
     "tool": "set_do_not_disturb",
     "args": {

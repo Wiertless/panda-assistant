@@ -93,6 +93,9 @@ pub struct Scenario {
     pub stubs: std::collections::HashMap<String, Stub>,
     #[serde(default)]
     pub expect: Vec<Expect>,
+    /// Calls that must also happen, in any order relative to `expect`.
+    #[serde(default)]
+    pub also: Vec<Expect>,
     #[serde(default)]
     pub forbid: Vec<String>,
     /// Words the answer must contain (any of "a|b" each), ignoring case.
@@ -100,6 +103,9 @@ pub struct Scenario {
     pub answer: Vec<String>,
     #[serde(default)]
     pub no_tools: bool,
+    /// The expected calls may come in any order (independent steps).
+    #[serde(default)]
+    pub unordered: bool,
 }
 
 pub struct Outcome {
@@ -149,8 +155,11 @@ pub fn judge(s: &Scenario, calls: &[(String, Args)], answer: &str) -> Result<(),
     let mut next = 0;
     for want in &s.expect {
         let names: Vec<&str> = want.tool.split('|').collect();
-        match calls[next..].iter().position(|(n, a)| names.contains(&n.as_str()) && args_match(&want.args, a)) {
-            Some(i) => next += i + 1,
+        let fits = |(n, a): &(String, Args)| names.contains(&n.as_str()) && args_match(&want.args, a);
+        let from = if s.unordered { 0 } else { next };
+        match calls[from..].iter().position(fits) {
+            Some(i) => next = from + i + 1,
+            None if calls.iter().any(fits) => return Err(format!("called {} too early, before the step it needs", want.tool)),
             None => {
                 let tried: Vec<String> = calls.iter().filter(|(n, _)| names.contains(&n.as_str()))
                     .map(|(n, a)| format!("{n}{}", Value::Object(a.clone()))).collect();
@@ -160,8 +169,14 @@ pub fn judge(s: &Scenario, calls: &[(String, Args)], answer: &str) -> Result<(),
             }
         }
     }
+    for want in &s.also {
+        let names: Vec<&str> = want.tool.split('|').collect();
+        if !calls.iter().any(|(n, a)| names.contains(&n.as_str()) && args_match(&want.args, a)) {
+            return Err(format!("never called {}{}", want.tool, Value::Object(want.args.clone())));
+        }
+    }
     let forbid: Vec<&str> = s.forbid.iter().map(String::as_str).chain(["run_command"]).collect();
-    if let Some((n, _)) = calls.iter().find(|(n, _)| forbid.contains(&n.as_str()) && !s.expect.iter().any(|e| e.tool.contains(n.as_str()))) {
+    if let Some((n, _)) = calls.iter().find(|(n, _)| forbid.contains(&n.as_str()) && !s.expect.iter().chain(&s.also).any(|e| e.tool.contains(n.as_str()))) {
         return Err(format!("called {n}, which it shouldn't"));
     }
     let lower = answer.to_lowercase();
@@ -329,7 +344,10 @@ mod tests {
         let right = ("send_file".to_string(), args(json!({"device": "Jakubs-iPhone", "path": "~/a.png"})));
         assert!(judge(&s, &[shot.clone(), wrong.clone(), right.clone()], "Sent it.").is_ok());
         assert!(judge(&s, &[shot.clone(), wrong.clone()], "Sent").unwrap_err().contains("wanted send_file"));
-        assert!(judge(&s, &[right.clone(), shot.clone()], "Sent").is_err(), "order counts");
+        assert!(judge(&s, &[right.clone(), shot.clone()], "Sent").unwrap_err().contains("too early"), "order counts");
+        let mut any = s.clone();
+        any.unordered = true;
+        assert!(judge(&any, &[right.clone(), shot.clone()], "Sent").is_ok(), "unless it doesn't");
         assert!(judge(&s, &[shot, right], "Done!").unwrap_err().contains("doesn't mention"));
         let rules = Stub::Rules(serde_json::from_value(json!([{"when": {"device": "jakubs"}, "result": "ok"}, {"error": "nope"}])).unwrap());
         assert_eq!(stub_result(Some(&rules), &args(json!({"device": "jakubs-iphone"}))).unwrap(), "ok");
