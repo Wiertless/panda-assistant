@@ -1012,5 +1012,63 @@
   "paraphrases": [
    "connect headphones"
   ]
+ },
+ {
+  "name": "reminder in",
+  "prompt": "remind me in 20 minutes to take the pizza out",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "set_reminder",
+    "args": {
+     "in_minutes": "20",
+     "text": "pizza"
+    }
+   }
+  ],
+  "paraphrases": [
+   "przypomnij mi za 20 minut o pizzy",
+   "in 20 min remind me about the pizza"
+  ]
+ },
+ {
+  "name": "reminder at",
+  "prompt": "remind me tomorrow at 9 to call mom",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "set_reminder",
+    "args": {
+     "at": "09:00|9:00|2026-11-16",
+     "text": "mom|mum"
+    }
+   }
+  ],
+  "paraphrases": [
+   "przypomnij mi jutro o 9 żeby zadzwonić do mamy"
+  ]
+ },
+ {
+  "name": "timer",
+  "prompt": "set a timer for 5 minutes",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "set_reminder",
+    "args": {
+     "in_minutes": "5"
+    }
+   }
+  ],
+  "paraphrases": [
+   "5 minute timer",
+   "nastaw minutnik na 5 minut"
+  ]
  }
 ]

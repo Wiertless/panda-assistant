@@ -23,6 +23,8 @@ install -D -m 0755 "$(pick assistantd)" "$DESTDIR$LIBEXECDIR/assistantd"
 install -D -m 0644 "data/$APP_ID.desktop" "$DESTDIR$DATADIR/applications/$APP_ID.desktop"
 install -D -m 0644 "data/$APP_ID.metainfo.xml" "$DESTDIR$DATADIR/metainfo/$APP_ID.metainfo.xml"
 install -D -m 0644 LICENSE "$DESTDIR$DATADIR/licenses/panda-assistant/LICENSE"
+# Reminders set before a reboot still fire: at login the service starts if any are waiting.
+install -D -m 0644 "data/$APP_ID.Reminders.desktop" "$DESTDIR/etc/xdg/autostart/$APP_ID.Reminders.desktop"
 # The clipboard history extension (enable it in Extensions, or SilverPanda does).
 ext=clipboard@assistant.wiertless.github.io
 install -D -m 0644 "data/shell-extension/$ext/metadata.json" "$DESTDIR$DATADIR/gnome-shell/extensions/$ext/metadata.json"

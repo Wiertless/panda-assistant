@@ -216,6 +216,16 @@ Returns titles, links and short snippets. Not for the user's own files, settings
                   text("url", |u| format!("Read {}", or(u, "a page")))),
         Tool::new("copy_to_clipboard", "Copy text to the clipboard.", obj(json!({"text": {"type": "string"}}), &["text"]),
                   Safe, settings::copy_to_clipboard, |_| "Copy to clipboard".into()),
+        Tool::new("set_reminder", "Remind the user of something later, or set a timer (leave text empty). Give \
+in_minutes, or at as HH:MM or YYYY-MM-DD HH:MM in local time (today's date is in the prompt).",
+                  obj(json!({"text": {"type": "string", "description": "What to remind them of"},
+                             "in_minutes": {"type": "number"}, "at": {"type": "string"}}), &[]),
+                  Safe, crate::reminders::set_reminder, text("text", |t| format!("Remind you: {}", or(t, "timer")))),
+        Tool::new("list_reminders", "List the reminders and timers that are set.", obj(json!({}), &[]), Safe,
+                  crate::reminders::list_reminders, |_| "List reminders".into()),
+        Tool::new("cancel_reminder", "Cancel a reminder or timer by what it's about or its time.",
+                  obj(json!({"which": {"type": "string"}}), &[]), Safe, crate::reminders::cancel_reminder,
+                  text("which", |w| format!("Cancel the reminder {}", or(w, "")))),
         Tool::new("clipboard_history", "What the user copied recently, newest first (text only). Use it for \"what I \
 copied\", \"the link from before\", \"paste that address\". query keeps only clips with those words.",
                   obj(json!({"query": {"type": "string"}}), &[]), Safe, settings::clipboard_history,
@@ -362,7 +372,7 @@ mod tests {
     #[test]
     fn same_tools_and_risks_as_the_python_app() {
         let names: Vec<String> = all().into_iter().map(|t| t.name).collect();
-        assert_eq!(names.len(), 56, "{names:?}");
+        assert_eq!(names.len(), 59, "{names:?}");
         let risky: Vec<String> = all().into_iter().filter(|t| t.risk == Risk::Confirm).map(|t| t.name).collect();
         assert_eq!(risky, ["run_command"]);
     }

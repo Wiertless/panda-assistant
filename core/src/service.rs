@@ -53,6 +53,8 @@ pub const INTROSPECTION: &str = r#"
     <method name="Unload"/>
     <method name="Load"/>
     <method name="Restart"/>
+    <method name="SnoozeReminder"><arg type="s" name="id" direction="in"/></method>
+    <method name="DismissReminder"><arg type="s" name="id" direction="in"/></method>
     <method name="Connections"><arg type="s" name="json" direction="out"/></method>
     <method name="Pending">
       <arg type="s" name="chat_id" direction="in"/>
@@ -342,6 +344,7 @@ pub struct Service {
     /// When the last answer finished (a question from search after a long
     /// pause starts a new chat).
     last_turn: Mutex<Option<std::time::Instant>>,
+    reminder_timer: Mutex<Option<glib::SourceId>>,
 }
 
 impl Service {
@@ -361,7 +364,38 @@ impl Service {
             ctx.show_window = Some(Arc::new(emit(&conn, "StepBack", None)));
         }
         Arc::new(Self { shared, conn, idle: Mutex::new(None), last_activity: Mutex::new(std::time::Instant::now()),
-                        loading: AtomicBool::new(false), last_turn: Mutex::new(None) })
+                        loading: AtomicBool::new(false), last_turn: Mutex::new(None), reminder_timer: Mutex::new(None) })
+    }
+
+    /// Fire what's due and wake up for the next one. At most a minute
+    /// between checks: the monotonic clock stops during suspend, so a long
+    /// timeout would fire late after waking up.
+    pub fn schedule_reminders(self: &Arc<Self>) {
+        if let Some(id) = self.reminder_timer.lock().unwrap().take() {
+            id.remove();
+        }
+        for r in crate::reminders::take_due() {
+            search::notify_reminder(&self.conn, &r);
+            self.touch();
+        }
+        let Some(next) = crate::reminders::pending().first().map(|r| r.due) else { return };
+        let wait = (next - crate::reminders::now()).clamp(1, 60) as u64;
+        let me = self.clone();
+        let id = glib::timeout_add_local_once(Duration::from_secs(wait), move || {
+            me.reminder_timer.lock().unwrap().take();
+            me.schedule_reminders();
+        });
+        *self.reminder_timer.lock().unwrap() = Some(id);
+    }
+
+    /// Tools that add or remove reminders tell the main loop to reschedule.
+    pub fn watch_reminders(self: &Arc<Self>) {
+        let weak = Arc::downgrade(self);
+        self.shared.tool_ctx.lock().unwrap().reminders_changed = Some(Arc::new(move || {
+            let w = weak.clone();
+            glib::MainContext::default().invoke(move || if let Some(s) = w.upgrade() { s.schedule_reminders() });
+        }));
+        self.schedule_reminders();
     }
 
     pub fn shared(&self) -> Arc<Shared> {
@@ -414,6 +448,7 @@ impl Service {
     fn should_exit(&self) -> bool {
         !self.shared.busy.load(Ordering::SeqCst) && !self.loading.load(Ordering::SeqCst) && !self.shared.client.owns_server()
             && self.last_activity.lock().unwrap().elapsed() > EXIT_WHEN_IDLE
+            && crate::reminders::pending().is_empty()
     }
 
     pub fn load_models(self: &Arc<Self>) {
@@ -716,6 +751,16 @@ impl Service {
                 self.unload();
                 reply(None)
             }
+            "SnoozeReminder" | "DismissReminder" => {
+                let (id,): (String,) = params.get().unwrap_or_default();
+                if method == "SnoozeReminder" {
+                    crate::reminders::snooze(&id, crate::reminders::SNOOZE_MINUTES);
+                } else {
+                    crate::reminders::remove(&id);
+                }
+                self.schedule_reminders();
+                reply(None)
+            }
             "Restart" => {
                 reply(None);
                 self.restart();
@@ -754,6 +799,7 @@ pub fn run() -> ControlFlow {
         eprintln!("assistantd: can't export the service: {e}");
         return ControlFlow::Break;
     }
+    service.watch_reminders();
     let search = search::register(&service, &conn);
     if let Err(e) = &search {
         eprintln!("assistantd: no GNOME search: {e}");

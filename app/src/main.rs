@@ -155,6 +155,16 @@ fn main() -> glib::ExitCode {
         });
         app.add_action(&ask);
         let (a, s2) = (app.clone(), s.clone());
+        // A reminder notification's buttons: handled without opening a window.
+        for (name, method) in [("snooze-reminder", "SnoozeReminder"), ("done-reminder", "DismissReminder")] {
+            let action = gio::SimpleAction::new(name, Some(glib::VariantTy::STRING));
+            let a = app.clone();
+            action.connect_activate(move |_, v| if let Some(id) = v.and_then(|v| v.get::<String>()) {
+                let guard = a.hold(); // stay up until the service answered
+                crate::core::Core::reminder(method, &id, move || drop(guard));
+            });
+            app.add_action(&action);
+        }
         let open = gio::SimpleAction::new("open-chat", Some(glib::VariantTy::STRING));
         open.connect_activate(move |_, v| if let Some(id) = v.and_then(|v| v.get::<String>()) {
             present(&a, &s2).open_chat(&id);

@@ -23,6 +23,7 @@ install:
 	PREFIX=$(PREFIX) DESTDIR=$(DESTDIR) ./install.sh
 
 uninstall:
+	rm -f $(DESTDIR)/etc/xdg/autostart/$(APP_ID).Reminders.desktop
 	rm -rf $(DESTDIR)$(PREFIX)/libexec/panda-assistant \
 		$(DESTDIR)$(DATADIR)/gnome-shell/extensions/clipboard@assistant.wiertless.github.io
 	rm -f $(DESTDIR)$(BINDIR)/panda-assistant \

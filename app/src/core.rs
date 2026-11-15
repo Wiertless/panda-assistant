@@ -113,6 +113,13 @@ impl Core {
     pub fn unload(&self) {
         self.call_async("Unload", None);
     }
+    /// Snooze or dismiss a reminder (from its notification), then `done`.
+    pub fn reminder(method: &str, id: &str, done: impl FnOnce() + 'static) {
+        let Ok(bus) = gio::bus_get_sync(gio::BusType::Session, None::<&gio::Cancellable>) else { return done() };
+        bus.call(Some(BUS_NAME), OBJECT_PATH, INTERFACE, method, Some(&(id,).to_variant()), None,
+                 gio::DBusCallFlags::NONE, 10000, None::<&gio::Cancellable>, move |_| done());
+    }
+
     pub fn restart(&self) {
         self.call_async("Restart", None);
     }

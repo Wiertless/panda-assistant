@@ -132,6 +132,37 @@ pub fn notify(conn: &gio::DBusConnection, title: &str, body: &str, chat_id: &str
     }
 }
 
+/// A reminder that's due: Snooze and Done act on it without opening a window.
+pub fn notify_reminder(conn: &gio::DBusConnection, r: &crate::reminders::Reminder) {
+    let n = glib::VariantDict::new(None);
+    let timer = r.text == "Timer";
+    n.insert("title", if timer { "Timer done" } else { "Reminder" });
+    n.insert("body", if timer { "Your timer is up." } else { r.text.as_str() });
+    n.insert("priority", "urgent");
+    if let Some(icon) = gio::ThemedIcon::new("alarm-symbolic").serialize() {
+        n.insert_value("icon", &icon);
+    }
+    n.insert("default-action", "app.done-reminder");
+    n.insert_value("default-action-target", &r.id.to_variant());
+    let button = |label: &str, action: &str| {
+        let b = glib::VariantDict::new(None);
+        b.insert("label", label);
+        b.insert("action", action);
+        b.insert_value("target", &r.id.to_variant());
+        b.end()
+    };
+    let buttons = [button(&format!("Snooze {} min", crate::reminders::SNOOZE_MINUTES), "app.snooze-reminder"),
+                   button("Done", "app.done-reminder")];
+    n.insert_value("buttons", &Variant::array_from_iter_with_type(glib::VariantTy::VARDICT, buttons));
+    let id = format!("reminder-{}", r.id);
+    let sent = conn.call_sync(Some("org.gtk.Notifications"), "/org/gtk/Notifications", "org.gtk.Notifications",
+                              "AddNotification", Some(&Variant::tuple_from_iter([APP_ID.to_variant(), id.to_variant(), n.end()])),
+                              None, gio::DBusCallFlags::NONE, 5000, None::<&gio::Cancellable>);
+    if sent.is_err() {
+        notify(conn, "Reminder", &r.text, "", "Open Chat");
+    }
+}
+
 /// Notification text: markdown marks removed, cut at a word.
 pub fn plain(markdown: &str, limit: usize) -> String {
     let mut text = markdown.replace("```", "").replace("**", "").replace("__", "").replace('`', "");

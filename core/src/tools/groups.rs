@@ -12,7 +12,9 @@ pub const CORE: &str = "core";
 pub const MORE_TOOLS: &str = "more_tools";
 
 /// (group, what it's for, word stems that bring it in).
-pub const GROUPS: [(&str, &str, &[&str]); 11] = [
+pub const GROUPS: [(&str, &str, &[&str]); 12] = [
+    ("reminders", "listing and cancelling reminders and timers",
+     &["remind", "reminder", "timer", "alarm", "przypomn", "przypomin", "minutnik", "budzik"]),
     ("clipboard", "what the user copied recently",
      &["copied", "copy", "clipboard", "paste", "pasted", "skopiow", "schowek", "schowk", "wklej"]),
     ("settings", "dark mode, Night Light, volume, brightness, power mode, Do Not Disturb, Wi-Fi/Bluetooth on or off, any GNOME setting",
@@ -58,7 +60,8 @@ pub const GROUPS: [(&str, &str, &[&str]); 11] = [
 
 /// One worked example per group, shown while the group is active: small models
 /// copy an example far more reliably than they follow a rule.
-pub const EXAMPLES: [(&str, &str); 11] = [
+pub const EXAMPLES: [(&str, &str); 12] = [
+    ("reminders", "\"cancel the laundry reminder\" → cancel_reminder(which \"laundry\")."),
     (CORE, "\"grab the screen and put it on my tablet\" → save_screenshot, then send_file with the path it returned \
 and the tablet's name (from what you remember, or list_devices)."),
     ("settings", "\"turn off the animations\" → find_settings(query \"animations\"), then change_setting with the schema \
@@ -148,6 +151,7 @@ pub fn group_of(tool: &str) -> &'static str {
         | "set_night_light" | "get_setting" | "change_setting" | "open_settings" | "set_wifi"
         | "set_bluetooth" => "settings",
         "clipboard_history" => "clipboard",
+        "list_reminders" | "cancel_reminder" => "reminders",
         "list_folder" | "read_file" | "read_document" | "search_file_contents" | "look_at_image" => "files",
         "get_battery" | "get_system_info" => "system",
         "list_networks" | "connect_network" | "disconnect_network" | "list_bluetooth" | "connect_bluetooth"

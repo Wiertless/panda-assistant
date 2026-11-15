@@ -46,6 +46,8 @@ pub struct Context {
     pub images: Arc<Mutex<Vec<String>>>,
     /// The process of the window that asked (so reading "the window" skips it).
     pub client_pid: Arc<std::sync::atomic::AtomicU32>,
+    /// Reminders were added or removed: the service reschedules its timer.
+    pub reminders_changed: Option<Hook>,
 }
 
 pub type RunFn = Arc<dyn Fn(&Context, &Args) -> ToolResult + Send + Sync>;

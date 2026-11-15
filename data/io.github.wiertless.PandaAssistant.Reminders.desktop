@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Assistant Reminders
+Comment=Starts Assistant's service at login when reminders are waiting
+Exec=/usr/libexec/panda-assistant/assistantd --if-reminders
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
