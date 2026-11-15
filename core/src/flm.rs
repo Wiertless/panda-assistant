@@ -41,6 +41,17 @@ impl std::fmt::Display for FlmError {
 
 impl std::error::Error for FlmError {}
 
+/// The model used until the user picks one: the best-scoring small model in
+/// the eval that keeps up on the NPU, then the others in order, whichever is
+/// installed first.
+pub const DEFAULT_MODEL: &str = "qwen3.5:4b";
+pub const PREFERRED_MODELS: [&str; 4] = [DEFAULT_MODEL, "gemma4-it:e4b", "gemma4-it:e2b", "qwen3.5:2b"];
+
+/// The default for this machine: the first preferred model that's installed.
+pub fn default_model(installed: &[Model]) -> &'static str {
+    PREFERRED_MODELS.iter().find(|p| installed.iter().any(|m| m.name == **p && m.installed)).copied().unwrap_or(DEFAULT_MODEL)
+}
+
 /// Sampling and constraints for one request.
 #[derive(Debug, Clone, Default)]
 pub struct ChatOptions {
@@ -673,6 +684,10 @@ mod tests {
 
     #[test]
     fn list_labels_and_think() {
+        let installed = vec![Model::new("gemma4-it:e2b", true, &[]), Model::new("qwen3.5:4b", false, &[])];
+        assert_eq!(default_model(&installed), "gemma4-it:e2b", "the preferred one isn't downloaded");
+        assert_eq!(default_model(&[Model::new("qwen3.5:4b", true, &[])]), DEFAULT_MODEL);
+        assert_eq!(default_model(&[]), DEFAULT_MODEL);
         let list = "Models:\n  - gemma4-it:e2b ✅\n  - qwen3.5:9b ⏬\n";
         assert_eq!(parse_flm_list(list), vec![("gemma4-it:e2b".into(), true), ("qwen3.5:9b".into(), false)]);
         let labels = parse_model_labels(r#"{"models": {"qwen3.5": {"9b": {"label": ["vision", "tool-calling"]}}}}"#);

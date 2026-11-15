@@ -80,6 +80,8 @@ pub const INTROSPECTION: &str = r#"
 #[derive(Clone, Debug, PartialEq)]
 pub struct Config {
     pub model: String,
+    /// The user picked the model (else the default for what's installed).
+    pub model_chosen: bool,
     pub ctx_len: u32,
     pub web_search: bool,
     pub memory: bool,
@@ -97,7 +99,8 @@ impl Config {
 
     pub fn from_json(raw: &Value) -> Self {
         Self {
-            model: raw["model"].as_str().unwrap_or("gemma4-it:e2b").to_string(),
+            model: raw["model"].as_str().unwrap_or(flm::DEFAULT_MODEL).to_string(),
+            model_chosen: raw["model"].as_str().is_some(),
             ctx_len: raw["ctx_len"].as_u64().unwrap_or(flm::DEFAULT_CTX_LEN as u64) as u32,
             web_search: raw["web_search"].as_bool().unwrap_or(true),
             memory: raw["memory"].as_bool().unwrap_or(true),
@@ -425,6 +428,12 @@ impl Service {
                         Arc::new(tools::groups::Embedder::new(me.shared.client.clone(), flm::EMBED_MODEL))
                     });
                 }
+                // No choice yet: the best preferred model that's installed.
+                let mut cfg = me.shared.config.lock().unwrap();
+                if !cfg.model_chosen {
+                    cfg.model = flm::default_model(&installed).to_string();
+                }
+                drop(cfg);
                 *me.shared.models.lock().unwrap() = installed;
             }
         });

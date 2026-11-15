@@ -74,7 +74,7 @@ Panda is a [Model Context Protocol](https://modelcontextprotocol.io) client, so 
 
 ## Models
 
-Panda lists the models FastFlowLM has downloaded (`flm list`). Only models labelled **tool-calling** can take actions; others are marked "chat only". Flash models are single-turn and can't use tools. The default is `gemma4-it:e2b`; the choice is saved in `~/.config/panda-assistant/config.json`.
+Panda lists the models FastFlowLM has downloaded (`flm list`). Only models labelled **tool-calling** can take actions; others are marked "chat only". Flash models are single-turn and can't use tools. Until you pick one, it uses the first of `qwen3.5:4b`, `gemma4-it:e4b`, `gemma4-it:e2b` and `qwen3.5:2b` that's installed (Qwen 3.5 4B scores best in the eval and keeps up with Gemma 4 E2B on the NPU); your choice is saved in `~/.config/panda-assistant/config.json`.
 
 ## Smarter model
 

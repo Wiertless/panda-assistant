@@ -26,6 +26,7 @@
         <ul>
           <li>The model picks between acting and answering every time, so small models act far more reliably</li>
           <li>Contacts, family and Polish volume words ("ścisz") find the right tools</li>
+          <li>Qwen 3.5 4B is the default model when it's installed</li>
         </ul>
       </description>
     </release>

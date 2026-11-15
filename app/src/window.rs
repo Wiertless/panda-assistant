@@ -21,7 +21,7 @@ use crate::reply::Reply;
 
 pub const APP_ID: &str = "io.github.wiertless.PandaAssistant";
 pub const APP_NAME: &str = "Assistant";
-const DEFAULT_MODEL: &str = "gemma4-it:e2b";
+use assistant_core::flm::DEFAULT_MODEL;
 const STALE: Duration = Duration::from_secs(30 * 60);
 const MAX_ATTACHMENTS: usize = 4;
 const IMAGE_TYPES: [&str; 6] = ["image/png", "image/jpeg", "image/webp", "image/gif", "image/bmp", "image/tiff"];
@@ -672,7 +672,13 @@ impl Window {
     // -- models and memory -------------------------------------------------------------
     fn load_models(self: &Rc<Self>) {
         match self.core.status() {
-            Ok(st) => self.set_state(st["state"].as_str().unwrap_or("Not loaded")),
+            Ok(st) => {
+                // Until the user picks one, show the model the service chose for what's installed.
+                if config::load()["model"].as_str().is_none() && let Some(m) = st["model"].as_str().filter(|m| !m.is_empty()) {
+                    self.st.borrow_mut().model = m.to_string();
+                }
+                self.set_state(st["state"].as_str().unwrap_or("Not loaded"))
+            }
             Err(e) => {
                 self.banner.set_title(&e);
                 self.banner.set_button_label(Some("Restart"));
