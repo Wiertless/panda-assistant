@@ -15,6 +15,13 @@ on:
       only:
         description: Run only scenarios whose name contains this
         required: false
+      models:
+        description: 'Only these models (comma-separated, e.g. gemma4-it:e2b); empty for all'
+        required: false
+      repeat:
+        description: Runs per scenario
+        required: false
+        default: '1'
   push:
     branches: [main]
     paths:
@@ -49,7 +56,7 @@ jobs:
   eval:
     needs: build
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
@@ -62,11 +69,24 @@ jobs:
           - { model: "qwen3-it:4b", search: "Qwen3-4B-Instruct-2507" }
     name: eval (${{ matrix.m.model }}, ${{ matrix.variant }})
     steps:
+      - name: Is this model wanted?
+        id: pick
+        run: |
+          want="${{ inputs.models }}"
+          if [ -z "$want" ] || [[ ",${want// /}," == *",${{ matrix.m.model }},"* ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Skipped: not in ${want}"
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.pick.outputs.run == 'true'
       - uses: actions/download-artifact@v4
+        if: steps.pick.outputs.run == 'true'
         with:
           name: assistantd
       - name: Find and download the GGUF
+        if: steps.pick.outputs.run == 'true'
         id: gguf
         run: |
           read -r repo file < <(python3 .github/scripts/find_gguf.py "${{ matrix.m.search }}")
@@ -75,27 +95,29 @@ jobs:
           mkdir -p models
           curl -sSfL --retry 3 -o models/model.gguf "https://huggingface.co/$repo/resolve/main/$file"
       - name: Start llama.cpp
+        if: steps.pick.outputs.run == 'true'
         run: |
           docker run -d --name llama -p 8080:8080 -v "$PWD/models:/models" ghcr.io/ggml-org/llama.cpp:server \
             -m /models/model.gguf --jinja -c 8192 -np 1 --host 0.0.0.0 --port 8080
           for i in $(seq 1 120); do curl -sf localhost:8080/health && break; sleep 5; done
           curl -sf localhost:8080/health || { docker logs llama; exit 1; }
       - name: Run the scenarios
+        if: steps.pick.outputs.run == 'true'
         run: |
           chmod +x assistantd
           only=()
           if [ -n "${{ inputs.only }}" ]; then only=(--only "${{ inputs.only }}"); fi
           ./assistantd --eval --url http://127.0.0.1:8080 --model "${{ matrix.m.model }}" \
-            --variant "${{ matrix.variant }}" --json report.json "${only[@]}"
+            --variant "${{ matrix.variant }}" --repeat "${{ inputs.repeat || '1' }}" --json report.json "${only[@]}"
       - name: Summary
-        if: always()
+        if: always() && steps.pick.outputs.run == 'true'
         run: |
           [ -f report.json ] || exit 0
           { echo "### ${{ matrix.m.model }} · ${{ matrix.variant }} (${{ steps.gguf.outputs.source }})"
             python3 .github/scripts/eval_table.py report.json; } >> "$GITHUB_STEP_SUMMARY"
           cp report.json "report-$(echo '${{ matrix.m.model }}-${{ matrix.variant }}' | tr ':' '_').json"
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && steps.pick.outputs.run == 'true'
         with:
           name: report-${{ strategy.job-index }}
           path: report-*.json

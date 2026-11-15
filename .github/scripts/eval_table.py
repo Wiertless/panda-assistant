@@ -13,7 +13,7 @@ for r in reports:
 print("| Model | Passed | s/request |")
 print("|---|---|---|")
 for r in reports:
-    print(f"| `{r['label']}` | **{r['passed']}/{r['total']}** | {r['seconds'] / max(r['total'], 1):.1f} |")
+    print(f"| `{r['label']}` | **{r['passed']}/{r['total']}** ({100 * r['passed'] / max(r['total'], 1):.0f}%) | {r['seconds'] / max(len(r['scenarios']), 1):.1f} |")
 print()
 print("| Scenario | " + " | ".join(f"`{r['label']}`" for r in reports) + " |")
 print("|---|" + "---|" * len(reports))
@@ -21,7 +21,12 @@ for n in names:
     cells = []
     for r in reports:
         s = next((s for s in r["scenarios"] if s["name"] == n), None)
-        cells.append("—" if s is None else ("✅" if s["passed"] else "❌"))
+        if s is None:
+            cells.append("—")
+        elif s.get("runs", 1) > 1 and 0 < s.get("passed_runs", 0) < s["runs"]:
+            cells.append(f"{s['passed_runs']}/{s['runs']}")
+        else:
+            cells.append("✅" if s.get("passed_runs", int(s["passed"])) > 0 else "❌")
     print(f"| {n} | " + " | ".join(cells) + " |")
 fails = [(r["label"], s) for r in reports for s in r["scenarios"] if not s["passed"]]
 if fails:

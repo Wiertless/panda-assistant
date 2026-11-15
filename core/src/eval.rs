@@ -259,7 +259,7 @@ pub fn load(path: Option<&str>) -> Result<Vec<Scenario>, String> {
     serde_json::from_str(&text).map_err(|e| format!("scenarios: {e}"))
 }
 
-/// `assistantd --eval [--url URL] [--model M] [--variant NAME] [--scenarios FILE] [--only NAME] [--sees] [--json FILE]`
+/// `assistantd --eval [--url URL] [--model M] [--variant NAME] [--repeat N] [--scenarios FILE] [--only NAME] [--sees] [--json FILE]`
 pub fn main(args: &[String]) -> i32 {
     let opt = |k: &str| args.iter().position(|a| a == k).and_then(|i| args.get(i + 1)).cloned();
     let url = opt("--url");
@@ -292,23 +292,34 @@ pub fn main(args: &[String]) -> i32 {
             return 2;
         }
     };
-    println!("Evaluating {model} ({variant_name}: {}) on {} scenarios", v.about, scenarios.len());
-    let mut outcomes = vec![];
+    // Repeats turn one lucky or unlucky answer into a pass rate.
+    let repeat: usize = opt("--repeat").and_then(|n| n.parse().ok()).unwrap_or(1).max(1);
+    println!("Evaluating {model} ({variant_name}: {}) on {} scenarios, {repeat}x", v.about, scenarios.len());
+    let mut rows = vec![];
     for s in &scenarios {
-        let o = run(&client, &model, sees, &v, s);
-        let calls: Vec<&str> = o.calls.iter().map(|(n, _)| n.as_str()).collect();
-        println!("{} {:<22} {:>5.1}s  {}{}", if o.passed { "✓" } else { "✗" }, o.name, o.seconds,
+        let runs: Vec<Outcome> = (0..repeat).map(|_| run(&client, &model, sees, &v, s)).collect();
+        let ok = runs.iter().filter(|o| o.passed).count();
+        let secs = runs.iter().map(|o| o.seconds).sum::<f64>() / repeat as f64;
+        let shown = runs.iter().find(|o| !o.passed).unwrap_or(&runs[0]);
+        let calls: Vec<&str> = shown.calls.iter().map(|(n, _)| n.as_str()).collect();
+        let mark = if ok == repeat { "✓".to_string() } else if ok == 0 { "✗".to_string() } else { format!("{ok}/{repeat}") };
+        println!("{mark:>3} {:<24} {secs:>5.1}s  {}{}", s.name,
                  if calls.is_empty() { "(no tools)".into() } else { calls.join(" → ") },
-                 if o.passed { String::new() } else { format!("\n    {}", o.why) });
-        outcomes.push(o);
+                 if shown.passed { String::new() } else { format!("\n    {}", shown.why) });
+        rows.push((s.name.clone(), ok, secs, runs));
     }
-    let passed = outcomes.iter().filter(|o| o.passed).count();
-    let secs: f64 = outcomes.iter().map(|o| o.seconds).sum();
-    println!("{model}: {passed}/{} passed, {:.1}s per request on average", outcomes.len(), secs / outcomes.len().max(1) as f64);
+    let passed: usize = rows.iter().map(|r| r.1).sum();
+    let total = rows.len() * repeat;
+    let secs: f64 = rows.iter().map(|r| r.2).sum();
+    println!("{model}: {passed}/{total} passed ({:.0}%), {:.1}s per request on average",
+             100.0 * passed as f64 / total.max(1) as f64, secs / rows.len().max(1) as f64);
     if let Some(path) = opt("--json") {
-        let report = json!({"model": model, "variant": variant_name, "passed": passed, "total": outcomes.len(), "seconds": secs,
-            "scenarios": outcomes.iter().map(|o| json!({"name": o.name, "passed": o.passed, "why": o.why, "seconds": o.seconds,
-                "calls": o.calls.iter().map(|(n, a)| json!({"tool": n, "args": a})).collect::<Vec<_>>()})).collect::<Vec<_>>()});
+        let report = json!({"model": model, "variant": variant_name, "passed": passed, "total": total, "repeat": repeat,
+            "seconds": secs, "scenarios": rows.iter().map(|(name, ok, secs, runs)| {
+                let shown = runs.iter().find(|o| !o.passed).unwrap_or(&runs[0]);
+                json!({"name": name, "passed": *ok == repeat, "passed_runs": ok, "runs": repeat, "why": shown.why,
+                       "seconds": secs, "calls": shown.calls.iter().map(|(n, a)| json!({"tool": n, "args": a})).collect::<Vec<_>>()})
+            }).collect::<Vec<_>>()});
         let _ = std::fs::write(&path, serde_json::to_string_pretty(&report).unwrap());
     }
     0

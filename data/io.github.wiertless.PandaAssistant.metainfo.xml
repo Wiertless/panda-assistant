@@ -21,6 +21,16 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.16.0" date="2026-11-15">
+      <description>
+        <ul>
+          <li>Sending a file it found sends the file, not a note with its path</li>
+          <li>Knows your Bluetooth devices, other devices and saved networks by name, so "my headphones" just works</li>
+          <li>Clearer rules for the model: it checks instead of saying it can't, and acts instead of saying it will</li>
+          <li>Finding files and settings works whatever words you use</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.15.0" date="2026-11-15">
       <description>
         <ul>
