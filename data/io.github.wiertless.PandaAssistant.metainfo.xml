@@ -21,6 +21,14 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.13.1" date="2026-11-15">
+      <description>
+        <ul>
+          <li>Can take a screenshot and keep it, so it can send it to your phone</li>
+          <li>Finds a file even when the model retypes its name slightly wrong</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.13.0" date="2026-11-15">
       <description>
         <ul>

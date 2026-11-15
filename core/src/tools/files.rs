@@ -111,9 +111,24 @@ pub fn home_path(raw: &str, must_exist: bool) -> Result<PathBuf, ToolError> {
         return Err("hidden files and folders are off-limits".into());
     }
     if must_exist && !path.exists() {
-        return Err(format!("{} doesn't exist", short(&path)).into());
+        return loosely(&path).ok_or_else(|| format!("{} doesn't exist", short(&path)).into());
     }
     Ok(path)
+}
+
+/// Small models retype long names ("Zrzut ekranu z 2026-11-15 01-02-03.png")
+/// with the case, spaces or punctuation a bit off: take the one file in the
+/// same folder whose name matches when only letters and digits count.
+fn loosely(path: &Path) -> Option<PathBuf> {
+    let key = |s: &str| s.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect::<String>();
+    let want = key(&path.file_name()?.to_string_lossy());
+    if want.is_empty() {
+        return None;
+    }
+    let mut hits = fs::read_dir(path.parent()?).ok()?.flatten()
+        .filter(|e| !e.file_name().to_string_lossy().starts_with('.') && key(&e.file_name().to_string_lossy()) == want);
+    let hit = hits.next()?;
+    hits.next().is_none().then(|| hit.path())
 }
 
 pub fn size(n: u64) -> String {
@@ -253,6 +268,12 @@ mod tests {
         assert!(home_path("Projects/../../etc", true).is_err());
         assert!(home_path(".ssh/id_rsa", true).unwrap_err().0.contains("hidden"));
         assert!(home_path("nope.txt", true).unwrap_err().0.contains("doesn't exist"));
+        let shots = home.join("Obrazy/Zrzuty ekranu");
+        fs::create_dir_all(&shots).unwrap();
+        fs::write(shots.join("Zrzut ekranu z 2026-11-15 01-02-03.png"), "png").unwrap();
+        assert_eq!(home_path("~/Obrazy/Zrzuty ekranu/zrzut_ekranu_z_2026-11-15_01:02:03.PNG", true).unwrap(),
+                   shots.join("Zrzut ekranu z 2026-11-15 01-02-03.png"));
+        assert!(home_path("~/Obrazy/Zrzuty ekranu/zrzut ekranu z 2026-11-16.png", true).is_err());
         assert_eq!(short(&home.join("Projects")), "~/Projects");
         let out = read_file(&Context::default(), &args(json!({"path": "Projects/app/notes.txt"}))).unwrap();
         assert_eq!(out, "~/Projects/app/notes.txt:\nhello");

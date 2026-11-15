@@ -77,7 +77,8 @@ pub fn take_screenshot() -> Result<PathBuf, ToolError> {
     }).map_err(|e| ToolError(e.to_string()))?
 }
 
-pub fn look_at_screen(ctx: &Context, _: &Args) -> ToolResult {
+/// A screenshot with the assistant's window out of the way.
+fn screenshot_without_window(ctx: &Context) -> Result<PathBuf, ToolError> {
     if let Some(hide) = &ctx.hide_window {
         hide();
         std::thread::sleep(Duration::from_millis(500)); // let the window animate away
@@ -86,7 +87,17 @@ pub fn look_at_screen(ctx: &Context, _: &Args) -> ToolResult {
     if let Some(show) = &ctx.show_window {
         show();
     }
-    let path = shot?;
+    shot
+}
+
+/// A screenshot kept as a file, to send, share or keep (look_at_screen's is thrown away).
+pub fn save_screenshot(ctx: &Context, _: &Args) -> ToolResult {
+    let path = screenshot_without_window(ctx)?;
+    Ok(format!("Saved the screenshot as {}. To send it, pass exactly that path to send_file.", short(&path)))
+}
+
+pub fn look_at_screen(ctx: &Context, _: &Args) -> ToolResult {
+    let path = screenshot_without_window(ctx)?;
     let url = image_data_url(&path, 1024);
     // The portal saved a file just for this; don't leave it behind.
     let fresh = std::fs::metadata(&path).and_then(|m| m.modified()).ok()

@@ -217,7 +217,10 @@ Turns Bluetooth on if needed.", obj(json!({"device": {"type": "string"}}), &["de
         Tool::new("disconnect_bluetooth", "Disconnect a connected Bluetooth device by name.",
                   obj(json!({"device": {"type": "string"}}), &["device"]), Safe, connect::disconnect_bluetooth,
                   text("device", |d| format!("Disconnect {}", or(d, "a device")))),
-        Tool::new("look_at_screen", "Take a screenshot to see what's on the user's screen right now.", obj(json!({}), &[]),
+        Tool::new("save_screenshot", "Take a screenshot and save it as a file, to send, share or keep. Returns its path.",
+                  obj(json!({}), &[]), Safe, system_actions::save_screenshot, |_| "Take a screenshot".into()),
+        Tool::new("look_at_screen", "Take a screenshot to see what's on the user's screen right now. The picture is \
+only for you and isn't kept; use save_screenshot for one to send or keep.", obj(json!({}), &[]),
                   Safe, system_actions::look_at_screen, |_| "Look at the screen".into()),
         Tool::new("look_at_image", "Look at an image file (photo, screenshot, picture).", path(), Safe,
                   system_actions::look_at_image, text("path", |p| format!("Look at {}", or(p, "an image")))),
@@ -274,7 +277,7 @@ mod tests {
     #[test]
     fn same_tools_and_risks_as_the_python_app() {
         let names: Vec<String> = all().into_iter().map(|t| t.name).collect();
-        assert_eq!(names.len(), 53, "{names:?}");
+        assert_eq!(names.len(), 54, "{names:?}");
         let risky: Vec<String> = all().into_iter().filter(|t| t.risk == Risk::Confirm).map(|t| t.name).collect();
         assert_eq!(risky, ["send_file", "run_command"]);
     }
