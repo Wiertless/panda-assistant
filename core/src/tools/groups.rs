@@ -137,10 +137,10 @@ impl Embedder {
 pub fn group_of(tool: &str) -> &'static str {
     match tool {
         "set_dark_mode" | "set_do_not_disturb" | "set_volume" | "set_mute" | "set_brightness" | "set_power_mode"
-        | "set_night_light" | "find_settings" | "get_setting" | "change_setting" | "open_settings" | "set_wifi"
+        | "set_night_light" | "get_setting" | "change_setting" | "open_settings" | "set_wifi"
         | "set_bluetooth" => "settings",
         "clipboard_history" => "clipboard",
-        "list_folder" | "find_files" | "read_file" | "read_document" | "search_file_contents" | "look_at_image" => "files",
+        "list_folder" | "read_file" | "read_document" | "search_file_contents" | "look_at_image" => "files",
         "get_battery" | "get_system_info" => "system",
         "list_networks" | "connect_network" | "disconnect_network" | "list_bluetooth" | "connect_bluetooth"
         | "disconnect_bluetooth" | "list_devices" | "send_file" | "send_text" => "devices",
@@ -150,7 +150,19 @@ pub fn group_of(tool: &str) -> &'static str {
         "forget" | "save_skill" => "memory",
         "run_command" => "commands",
         t if t.contains("__") => "connected",
-        _ => CORE, // open apps/links/files, show in Files, time, status, remember, use a skill, web search, the screen
+        // Core: open apps/links/files, show in Files, time, status, remember, use a skill, web search, the
+        // screen, and the two lookups no keyword list can cover ("my lease", "tap to click").
+        _ => CORE,
+    }
+}
+
+/// The group a core lookup leads into: once it ran, its follow-up tools
+/// (read_document after find_files, change_setting after find_settings) come along.
+pub fn leads_to(tool: &str) -> Option<&'static str> {
+    match tool {
+        "find_files" => Some("files"),
+        "find_settings" => Some("settings"),
+        _ => None,
     }
 }
 
@@ -210,7 +222,11 @@ mod tests {
             assert!(g == CORE || names.contains(&g), "{} -> {g}", t.name);
         }
         let core = crate::tools::all().into_iter().filter(|t| group_of(&t.name) == CORE).count();
-        assert!(core <= 14, "core grew to {core} tools");
+        assert!(core <= 16, "core grew to {core} tools");
+        for t in ["find_files", "find_settings"] {
+            assert_eq!(group_of(t), CORE);
+            assert!(leads_to(t).is_some_and(|g| names.contains(&g)));
+        }
     }
 }
 

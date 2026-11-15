@@ -540,6 +540,9 @@ impl Agent {
                 }
                 let key = format!("{}{}", call.name, call.parsed_arguments().map(|a| Value::Object(a).to_string()).unwrap_or_default());
                 let result = if turn.failed.contains(&key) { REPEATED.to_string() } else { self.run_call(call, cb) };
+                if let Some(g) = groups::leads_to(&call.name) {
+                    self.active_groups.insert(g.to_string());
+                }
                 turn.tools_ran += 1;
                 if result.starts_with("Error") {
                     turn.failed.push(key);
