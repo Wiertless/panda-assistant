@@ -581,7 +581,7 @@ impl Agent {
             }
             Ok(Err(e)) => {
                 cb.tool_finished(&call.name, &e.0, false);
-                format!("Error: {}", e.0)
+                format!("Error: {}\n{RETRY_HINT}", e.0)
             }
             Err(_) => {
                 cb.tool_finished(&call.name, "The tool crashed", false);
@@ -590,6 +590,11 @@ impl Agent {
         }
     }
 }
+
+/// After a failed tool: work it out before telling the user it didn't work.
+const RETRY_HINT: &str = "Don't give up yet. If the error lists options, pick the one the user most likely means \
+(think about what you know about them: names, what they own, what they told you to remember) and call the tool again. \
+If it doesn't, look the options up with a list or find tool first. Ask the user only when it's really unclear.";
 
 fn last_answer(messages: &[Value]) -> String {
     messages.iter().rev()

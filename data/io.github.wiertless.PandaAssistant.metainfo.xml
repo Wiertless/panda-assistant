@@ -26,6 +26,7 @@
         <ul>
           <li>Can take a screenshot and keep it, so it can send it to your phone</li>
           <li>Finds a file even when the model retypes its name slightly wrong</li>
+          <li>Finds your devices by everyday name ("iPhone (Jakub)" finds jakubs-iphone), and tries again with what it knows when a tool can't find something</li>
         </ul>
       </description>
     </release>

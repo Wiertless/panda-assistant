@@ -224,12 +224,21 @@ pub fn send_file(_: &Context, args: &Args) -> ToolResult {
     if !path.is_file() {
         return Err(format!("{} isn't a file; Taildrop sends files, not folders", short(&path)).into());
     }
-    let wanted = arg_str(args, "device").trim().to_lowercase();
+    let wanted = arg_str(args, "device");
     let peers = tailnet_peers()?;
-    let Some(peer) = peers.iter().find(|p| p.name.to_lowercase() == wanted || p.dns.to_lowercase() == wanted) else {
-        let online: Vec<&str> = peers.iter().filter(|p| p.online).map(|p| p.name.as_str()).collect();
-        return Err(format!("no device called '{wanted}' on the tailnet (online: {})",
-                           if online.is_empty() { "none online".into() } else { online.join(", ") }).into());
+    let names: Vec<String> = peers.iter().map(|p| p.name.clone()).collect();
+    let by_dns = peers.iter().find(|p| !p.dns.is_empty() && p.dns.eq_ignore_ascii_case(wanted.trim()));
+    let peer = match by_dns {
+        Some(p) => p,
+        None => {
+            let name = pick(&wanted, &names, "device on the tailnet").map_err(|e| {
+                let all: Vec<String> = peers.iter()
+                    .map(|p| format!("{} ({}{})", p.name, p.os, if p.online { "" } else { ", offline" })).collect();
+                ToolError(format!("{} Devices: {}", e.0.split(" (known:").next().unwrap_or(&e.0),
+                                  if all.is_empty() { "none".into() } else { all.join(", ") }))
+            })?;
+            peers.iter().find(|p| p.name == name).unwrap()
+        }
     };
     if !peer.online {
         return Err(format!("{} is offline", peer.name).into());

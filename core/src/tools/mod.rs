@@ -51,9 +51,12 @@ pub fn pick(query: &str, names: &[String], what: &str) -> Result<String, ToolErr
         return Err(format!("say which {what}").into());
     }
     let normed: Vec<(&String, String)> = names.iter().map(|n| (n, norm_name(n))).collect();
-    let tests: [&dyn Fn(&str) -> bool; 4] = [
+    // Last: any real word ("iphone (jakub)" -> the one device with iphone in its name).
+    let words: Vec<&str> = q.split(' ').filter(|w| w.chars().count() >= 3).collect();
+    let tests: [&dyn Fn(&str) -> bool; 5] = [
         &|n| n == q, &|n| n.starts_with(&q), &|n| n.contains(&q),
         &|n| q.split(' ').all(|w| n.contains(w)),
+        &|n| words.iter().any(|w| n.split(' ').any(|nw| nw.contains(w) || (nw.len() >= 3 && w.contains(nw)))),
     ];
     for test in tests {
         let mut hits: Vec<&String> = normed.iter().filter(|(_, n)| test(n)).map(|(name, _)| *name).collect();
@@ -270,6 +273,11 @@ mod tests {
         assert_eq!(pick("mx master", &names, "device").unwrap(), "MX Master 3");
         assert_eq!(pick("flip", &names, "device").unwrap(), "JBL Flip 5");
         assert!(pick("headphones", &names, "device").is_err());
+        let peers: Vec<String> = ["jakubs-iphone", "framework", "ipad-mini"].map(String::from).to_vec();
+        assert_eq!(pick("iphone (jakub)", &peers, "device").unwrap(), "jakubs-iphone");
+        assert_eq!(pick("Jakub's iPhone", &peers, "device").unwrap(), "jakubs-iphone");
+        let peers: Vec<String> = ["iphone-15", "framework"].map(String::from).to_vec();
+        assert_eq!(pick("iphone (jakub)", &peers, "device").unwrap(), "iphone-15");
         let nets: Vec<String> = ["Home 5G", "Home 2.4"].map(String::from).to_vec();
         assert!(pick("home", &nets, "network").unwrap_err().0.contains("more than one"));
     }
