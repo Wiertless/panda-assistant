@@ -21,7 +21,9 @@ pub const GROUPS: [(&str, &str, &[&str]); 11] = [
        "wifi", "wi-fi", "bluetooth", "keyboard", "mouse", "touchpad", "display", "screen",
        "ciemn", "jasn", "głoś", "glos", "cisz", "wycisz", "jasność", "jasnosc", "ustawien", "tryb", "czcionk", "tapet", "ekran", "dźwięk", "dzwiek"]),
     ("files", "list folders, find files by name or by what's inside, read text files, PDFs and documents, look at images",
-     &["file", "folder", "director", "document", "pdf", "download", "picture", "photo", "image", "note", "read ", "find", "where is",
+     &["file", "folder", "director", "document", "pdf", "download", "picture", "photo", "image", "read ", "find", "where is",
+       "lease", "contract", "invoice", "receipt", "resume", "cv", "letter", "report", "statement", "ticket", "manual",
+       "umow", "umów", "faktur", "rachun", "paragon", "raport", "bilet", "instrukcj",
        "plik", "folder", "katalog", "dokument", "pobran", "zdję", "zdje", "obraz", "notat", "przeczytaj", "znajdź", "znajdz", "gdzie"]),
     ("system", "battery level, memory, disk space, uptime, OS version",
      &["battery", "memory", "ram", "disk", "storage", "space", "uptime", "kernel", "version", "cpu",
@@ -41,7 +43,9 @@ pub const GROUPS: [(&str, &str, &[&str]); 11] = [
        "aplikacj", "muzyk", "piosenk", "utwór", "utwor", "odtwórz", "odtworz", "zatrzymaj", "następn", "nastepn", "pogod", "kalkulator", "policz"]),
     ("web", "reading web pages", &["http", "www.", ".com", "website", "page", "link", "article", "strona", "stron", "artykuł", "artykul"]),
     ("memory", "forgetting remembered facts, saving workflows as skills",
-     &["forget", "skill", "workflow", "routine", "save that", "zapomnij", "umiejętn", "umiejetn", "zapisz"]),
+     &["forget", "skill", "workflow", "routine", "save that", "remember", "note that", "call me", "from now on",
+       "my name is", "zapomnij", "umiejętn", "umiejetn", "zapisz", "zapamiętaj", "pamiętaj", "mów do mnie", "od teraz",
+       "nazywam się"]),
     ("commands", "running shell commands in the developer toolbox (build, compile, git, scripts)",
      &["command", "terminal", "shell", "build", "compile", "make", "cargo", "git ", "npm", "script", "run ", "install",
        "polecen", "terminal", "skompiluj", "zbuduj", "uruchom", "skrypt"]),
@@ -206,6 +210,9 @@ mod tests {
         assert!(groups_for("a denoted fact").is_empty(), "stems start words");
         assert_eq!(groups_for("go to example.com"), ["web"]);
         assert!(groups_for("find the PDF about the lease").contains(&"files"));
+        assert!(groups_for("how big is the deposit in my lease?").contains(&"files"));
+        assert!(groups_for("mów do mnie Kuba").contains(&"memory"));
+        assert!(groups_for("list my devices").iter().all(|g| *g != "files"));
         assert!(groups_for("open a terminal in Projects").contains(&"apps"));
         assert!(groups_for("what's the weather in Kraków").contains(&"apps"));
     }

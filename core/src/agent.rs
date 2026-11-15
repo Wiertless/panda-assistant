@@ -645,12 +645,10 @@ impl Agent {
         Ok(())
     }
 
-    /// The tools of the groups in play (not the core ones): what an action
-    /// request that matched those groups should be done with.
+    /// The tools in play (core and the active groups): what an action request
+    /// answered without any tool should be done with.
     fn routed_names(&self) -> Vec<String> {
-        self.available_tools().into_iter()
-            .filter(|t| { let g = groups::group_of(&t.name); g != groups::CORE && self.active_groups.contains(g) })
-            .map(|t| t.name).collect()
+        self.available_tools().into_iter().filter(|t| self.routed(t)).map(|t| t.name).collect()
     }
 
     /// Only these tools (those available), plus ask_user for when several fit.
@@ -864,7 +862,7 @@ fn asks_for_action(text: &str) -> bool {
 /// A short reply that says an action was done ("Done!", "I've sent it",
 /// "Włączyłem…"); with no tool run, nothing was.
 fn claims_action(answer: &str) -> bool {
-    static CLAIM: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\b(done|i'?ve|i have|i('m| am) (turning|sending|opening)|turned|switched|sent|opened|connected|set (it|the|your)|muted|enabled|disabled|started|saved|gotowe|zrobione|włączy|wyłączy|wysła|otworzy|połączy|ustawi|zapisa)").unwrap());
+    static CLAIM: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\b(done|i'?ve|i have|i('m| am) (turning|sending|opening)|turned|switched|sent|opened|connected|set (it|the|your)|muted|enabled|disabled|started|saved|noted|got it|i'?ll remember|will remember|gotowe|zrobione|włączy|wyłączy|wysła|otworzy|połączy|ustawi|zapisa|zapamięta|zanotowa)").unwrap());
     answer.chars().count() < 400 && CLAIM.is_match(answer)
 }
 
