@@ -198,7 +198,7 @@ e.g. true, 1.25, 'prefer-dark', 300.",
                   connect::list_devices, |_| "List Tailscale devices".into()),
         Tool::new("send_file", "Send a file to one of the user's devices with Taildrop (Tailscale).",
                   obj(json!({"path": {"type": "string"}, "device": {"type": "string", "description": "Device name"}}),
-                      &["path", "device"]), Confirm, connect::send_file,
+                      &["path", "device"]), Safe, connect::send_file, // Taildrop only reaches your own devices
                   |a| format!("Send {} to {}", base_name(&or(arg_str(a, "path"), "a file")), or(arg_str(a, "device"), "a device"))),
         Tool::new("set_wifi", "Turn Wi-Fi on or off. Turning it off disconnects the network.", enabled(), Safe,
                   settings::set_wifi, onoff("enabled", "Wi-Fi")),
@@ -287,7 +287,7 @@ mod tests {
         let names: Vec<String> = all().into_iter().map(|t| t.name).collect();
         assert_eq!(names.len(), 54, "{names:?}");
         let risky: Vec<String> = all().into_iter().filter(|t| t.risk == Risk::Confirm).map(|t| t.name).collect();
-        assert_eq!(risky, ["send_file", "run_command"]);
+        assert_eq!(risky, ["run_command"]);
     }
 
     #[test]

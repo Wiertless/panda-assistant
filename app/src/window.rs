@@ -451,7 +451,10 @@ impl Window {
             self.split.set_show_content(true);
             return;
         }
-        let Some(data) = store::load_chat(id) else {
+        // A chat started from search is saved when its answer ends; until then
+        // it only exists in the service, so open it empty and follow the turn.
+        let running = || self.core.status().is_ok_and(|s| s["busy"] == true && s["chat_id"] == id);
+        let Some(data) = store::load_chat(id).or_else(|| running().then(|| serde_json::json!({"messages": []}))) else {
             self.toast("Couldn't open that chat");
             self.refresh_chats();
             return;
