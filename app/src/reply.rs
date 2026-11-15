@@ -1,4 +1,4 @@
-//! One assistant turn in the window: avatar and name, thoughts, a status
+//! One assistant turn in the window: its name and model, a status
 //! pill while it works, the answer as it streams, action pills, Allow/Cancel
 //! cards, and a copy button at the end.
 
@@ -83,8 +83,6 @@ pub struct Reply {
     win: Weak<Window>,
     bx: gtk::Box,
     model_label: gtk::Label,
-    thought: gtk::Label,
-    thinking: gtk::Expander,
     spin: gtk::Box,
     spin_label: gtk::Label,
     inner: RefCell<Inner>,
@@ -104,10 +102,6 @@ impl Reply {
         name.append(&title);
         name.append(&model_label);
         bx.append(&name);
-        let thought = gtk::Label::builder().wrap(true).xalign(0.0).selectable(true).build();
-        thought.add_css_class("dim-label");
-        thought.add_css_class("thought");
-        let thinking = gtk::Expander::builder().label("Thinking…").child(&thought).visible(false).build();
         // The "working" pill: spinner + label, removed when the turn ends.
         let spin = gtk::Box::builder().spacing(8).halign(gtk::Align::Start).build();
         spin.add_css_class("pill");
@@ -115,7 +109,6 @@ impl Reply {
         spin.append(&spinner());
         let spin_label = gtk::Label::new(Some("Thinking…"));
         spin.append(&spin_label);
-        bx.append(&thinking);
         if live {
             bx.append(&spin);
             win.append_animated(&row);
@@ -123,7 +116,7 @@ impl Reply {
             win.messages.append(&row);
         }
         Rc::new(Self {
-            win: win.weak(), bx, model_label, thought, thinking, spin, spin_label,
+            win: win.weak(), bx, model_label, spin, spin_label,
             inner: RefCell::new(Inner { summaries: HashMap::new(), label: None, text: String::new(), answer: String::new(), failure: String::new() }),
         })
     }
@@ -176,9 +169,6 @@ impl Reply {
     pub fn finish(&self, notify: bool) {
         if self.spin.parent().is_some() {
             self.bx.remove(&self.spin);
-        }
-        if self.thinking.is_visible() {
-            self.thinking.set_label(Some("Thoughts"));
         }
         let (answer, failure) = {
             let i = self.inner.borrow();
@@ -307,10 +297,9 @@ impl Turn for Reply {
         }
     }
 
-    fn on_reasoning(&self, s: &str) {
-        self.thinking.set_visible(true);
+    /// The model's reasoning isn't shown, only that it's thinking.
+    fn on_reasoning(&self, _: &str) {
         self.spin_label.set_label("Thinking…");
-        self.thought.set_text(&format!("{}{s}", self.thought.text()));
     }
 
     fn on_tool_started(&self, name: &str, summary: &str) {

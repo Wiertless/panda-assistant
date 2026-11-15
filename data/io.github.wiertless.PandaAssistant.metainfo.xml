@@ -26,6 +26,7 @@
         <ul>
           <li>Can take a screenshot and keep it, so it can send it to your phone</li>
           <li>Sends files to your own devices without asking first</li>
+          <li>Replies no longer show the model's reasoning, just "Thinking…" while it works</li>
           <li>Restart Assistant in the menu (and on error banners) starts everything over: the service, the model server and connected apps</li>
           <li>Review from a notification opens the new chat instead of failing with "Couldn't open that chat"</li>
           <li>Connects the dots: works out what you mean from the chat, what it remembers and what's on the computer, and when something isn't found it gets the close matches (files, apps, devices, settings) and tries again instead of giving up</li>

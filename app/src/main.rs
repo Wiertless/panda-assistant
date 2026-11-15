@@ -45,7 +45,6 @@ const CSS: &str = r#"
 .pill.quiet { background: alpha(currentColor, 0.06); }
 .pill image { color: @accent_color; }
 .pill.failed image { color: @warning_color; }
-.thought { font-size: 0.9em; }
 .confirm-card { padding: 6px; }
 .confirm-detail { padding: 8px 12px; border-radius: 8px; background: alpha(currentColor, 0.06); }
 .attachment { border-radius: 10px; }
