@@ -1,13 +1,14 @@
 {
   "baseline": {
-    "about": "What ships: steady sampling, examples, argument repair, the claim check."
+    "about": "What ships: steady sampling, examples, argument repair, the claim check, forced follow-up after a lookup."
   },
   "no-harness": {
-    "about": "The model on its own: default sampling, no examples, no repair, no claim check.",
+    "about": "The model on its own: default sampling, no examples, no repair, no claim check, no forced follow-up.",
     "tool_temperature": null,
     "examples": false,
     "repair_args": false,
-    "nudge": false
+    "nudge": false,
+    "force_completion": false
   },
   "warm": {
     "about": "Like baseline, but sampled at the server's usual temperature.",
@@ -24,5 +25,9 @@
   "no-context": {
     "about": "Like baseline, without the list of devices and networks in the prompt.",
     "known": false
+  },
+  "no-forcing": {
+    "about": "Like baseline, without re-asking with only the finishing tools after a lookup.",
+    "force_completion": false
   }
 }

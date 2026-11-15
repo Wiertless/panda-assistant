@@ -8,17 +8,19 @@ use regex::Regex;
 
 use serde_json::{Value, json};
 
-use crate::flm::{FlmClient, FlmError, StreamEvent, ToolCall, strip_think};
+use crate::flm::{ChatOptions, FlmClient, FlmError, StreamEvent, ToolCall, strip_think};
 use crate::store;
 use crate::tool::{Context, Risk, Tool};
 use crate::tools::groups;
 
 pub const MAX_ROUNDS: usize = 8; // room to look something up and retry
 pub const TOOL_TEMPERATURE: f64 = 0.2;
+const GROUP_IDLE_TURNS: usize = 2;
 /// Failed tool calls in one turn before the smarter model takes over.
 const FAILURES_BEFORE_HANDOFF: usize = 3;
 const NUDGE: &str = "(You said it's done, but no tool ran, so nothing happened yet. Call the tool now to do it, \
 or say plainly that you can't.)";
+pub const ASK_USER: &str = "ask_user";
 const ANSWER_NOW: &str = "(Now answer the user from these results, in a sentence or two.)";
 const REPEATED: &str = "Error: you already tried exactly this and it failed. Don't repeat it: change the arguments, \
 look the options up with another tool, or tell the user what's wrong.";
@@ -197,6 +199,13 @@ pub struct Agent {
     /// Fix slips in tool arguments, and take back claims of actions not done.
     pub repair_args: bool,
     pub nudge: bool,
+    /// Ask again, with only the finishing tools and a call required, when an
+    /// action request stopped after a lookup.
+    pub force_completion: bool,
+    /// Turns counted, and the last turn each tool group was used: groups idle
+    /// for a while are dropped, so the tool list doesn't only grow.
+    pub turn_no: usize,
+    pub group_seen: std::collections::HashMap<String, usize>,
 }
 
 impl Agent {
@@ -231,6 +240,9 @@ impl Agent {
             embedder: None,
             repair_args: true,
             nudge: true,
+            force_completion: true,
+            turn_no: 0,
+            group_seen: std::collections::HashMap::new(),
         }
     }
 
@@ -241,6 +253,7 @@ impl Agent {
         self.summary.clear();
         self.compacted = 0;
         self.active_groups.clear();
+        self.group_seen.clear();
     }
 
     fn sees_now(&self) -> bool {
@@ -420,7 +433,8 @@ impl Agent {
             json!({"role": "user", "content": format!("{previous}Conversation:\n{transcript}\n\n{COMPACT_PROMPT}")}),
         ];
         cb.compacting();
-        let Ok(stream) = self.client.chat_stream(&self.model, &prompt, None, None, Some(400)) else { return };
+        let opts = ChatOptions { max_tokens: Some(400), ..Default::default() };
+        let Ok(stream) = self.client.chat_stream(&self.model, &prompt, None, &opts) else { return };
         let mut text = String::new();
         for ev in stream {
             match ev {
@@ -476,7 +490,14 @@ impl Agent {
             wanted.extend(e.groups_for(text));
         }
         let actionable = !wanted.is_empty();
-        self.active_groups.extend(wanted.into_iter().map(String::from));
+        self.turn_no += 1;
+        let now = self.turn_no;
+        // Groups not used in the last two turns go (more_tools or a keyword brings them back).
+        let seen = self.group_seen.clone();
+        self.active_groups.retain(|g| seen.get(g).is_some_and(|t| now - t <= GROUP_IDLE_TURNS));
+        for g in wanted {
+            self.activate(g);
+        }
         let turn_start = self.messages.len();
         self.messages.push(json!({"role": "user", "content": with_images(text, &images)}));
         let mut turn = Turn::default();
@@ -494,20 +515,48 @@ impl Agent {
             if self.cancelled() {
                 return Ok(());
             }
-            let schemas = self.tool_schemas();
-            let (content, calls) = match self.stream(schemas.as_deref(), cb) {
+            let forced = turn.forced.take();
+            let schemas = match &forced {
+                Some(only) => Some(self.forced_schemas(only)),
+                None => self.tool_schemas(),
+            };
+            let (content, calls) = match self.stream(schemas.as_deref(), forced.is_some(), cb) {
                 Err(e) if schemas.is_some() && matches!(e.status, Some(400 | 422)) => {
                     self.use_tools = false;
                     cb.notice(&format!("{} can't use tools, so it can only chat.", self.model));
-                    self.stream(None, cb)?
+                    self.stream(None, false, cb)?
                 }
                 other => other?,
             };
+            // Calls written into the reply as text are calls.
+            let (content, calls) = if calls.is_empty() && schemas.is_some() && self.repair_args {
+                let names: Vec<String> = self.available_tools().into_iter().map(|t| t.name).chain([ASK_USER.to_string()]).collect();
+                let known: Vec<&str> = names.iter().map(String::as_str).collect();
+                let (found, rest) = crate::repair::calls_in_text(&content, &known);
+                if found.is_empty() { (content, calls) } else {
+                    cb.retract();
+                    if !rest.is_empty() {
+                        cb.text(&rest);
+                    }
+                    let calls = found.into_iter().enumerate()
+                        .map(|(i, (name, arguments))| ToolCall { id: format!("text-call-{i}"), name, arguments }).collect();
+                    (rest, calls)
+                }
+            } else { (content, calls) };
             let mut assistant = json!({"role": "assistant", "content": content});
             if !calls.is_empty() {
                 assistant["tool_calls"] = calls.iter().map(|c| json!({"id": c.id, "type": "function",
                     "function": {"name": c.name, "arguments": if c.arguments.is_empty() { "{}" } else { &c.arguments }}}))
                     .collect();
+            }
+            if self.force_completion && calls.is_empty() && !self.cancelled() && !turn.was_forced
+                && self.use_tools && asks_for_action(text) && let Some(finish) = turn.unfinished() {
+                // It looked something up for an action and stopped: ask again with only the
+                // tools that finish it, a call required (ask_user if it can't tell which).
+                cb.retract();
+                turn.was_forced = true;
+                turn.forced = Some(finish);
+                continue;
             }
             if self.nudge && calls.is_empty() && !self.cancelled() && turn.nudge_at.is_none() && turn.tools_ran == 0
                 && self.use_tools && actionable && claims_action(&content) {
@@ -532,6 +581,15 @@ impl Agent {
                 && let Some(call) = calls.iter().find(|c| c.name == ESCALATE) {
                     return self.escalate(call, text, cb);
                 }
+            if let Some(call) = calls.iter().find(|c| c.name == ASK_USER) {
+                // The question is the reply.
+                let q = call.parsed_arguments().ok().and_then(|a| a.get("question").and_then(Value::as_str).map(String::from))
+                    .unwrap_or_else(|| "Which one do you mean?".into());
+                cb.text(&q);
+                self.messages.pop();
+                self.messages.push(json!({"role": "assistant", "content": q}));
+                return Ok(());
+            }
             for call in &calls {
                 if call.name == groups::MORE_TOOLS {
                     let result = self.add_groups(call);
@@ -541,7 +599,14 @@ impl Agent {
                 let key = format!("{}{}", call.name, call.parsed_arguments().map(|a| Value::Object(a).to_string()).unwrap_or_default());
                 let result = if turn.failed.contains(&key) { REPEATED.to_string() } else { self.run_call(call, cb) };
                 if let Some(g) = groups::leads_to(&call.name) {
-                    self.active_groups.insert(g.to_string());
+                    self.activate(g);
+                }
+                let own = groups::group_of(&call.name);
+                if own != groups::CORE {
+                    self.activate(own);
+                }
+                if !result.starts_with("Error") {
+                    turn.done.push(call.name.clone());
                 }
                 turn.tools_ran += 1;
                 if result.starts_with("Error") {
@@ -577,6 +642,21 @@ impl Agent {
         Ok(())
     }
 
+    /// Only these tools (those available), plus ask_user for when several fit.
+    fn forced_schemas(&self, only: &[&str]) -> Vec<Value> {
+        let mut v: Vec<Value> = self.available_tools().into_iter().filter(|t| only.contains(&t.name.as_str()))
+            .map(|t| t.schema()).collect();
+        v.push(json!({"type": "function", "function": {"name": ASK_USER,
+            "description": "Ask the user a short question when you can't tell which one they mean.",
+            "parameters": {"type": "object", "properties": {"question": {"type": "string"}}, "required": ["question"]}}}));
+        v
+    }
+
+    fn activate(&mut self, group: &str) {
+        self.active_groups.insert(group.to_string());
+        self.group_seen.insert(group.to_string(), self.turn_no);
+    }
+
     /// The model asked for more tool groups: they come with the next request.
     fn add_groups(&mut self, call: &ToolCall) -> String {
         let args = call.parsed_arguments().unwrap_or_default();
@@ -590,7 +670,9 @@ impl Agent {
         if added.is_empty() {
             return format!("Error: name one or more groups: {}", known.join(", "));
         }
-        self.active_groups.extend(added.iter().cloned());
+        for g in &added {
+            self.activate(g);
+        }
         format!("Added the {} tools. Use them now.", added.join(", "))
     }
 
@@ -645,10 +727,14 @@ impl Agent {
         Ok(())
     }
 
-    fn stream(&mut self, schemas: Option<&[Value]>, cb: &dyn Callbacks) -> Result<(String, Vec<ToolCall>), FlmError> {
+    fn stream(&mut self, schemas: Option<&[Value]>, force: bool, cb: &dyn Callbacks) -> Result<(String, Vec<ToolCall>), FlmError> {
         let conversation = self.conversation();
-        let temperature = schemas.and(self.tool_temperature);
-        let stream = self.client.chat_stream(&self.model, &conversation, schemas, temperature, Some(MAX_REPLY_TOKENS))?;
+        let opts = ChatOptions {
+            temperature: schemas.and(self.tool_temperature),
+            max_tokens: Some(MAX_REPLY_TOKENS),
+            tool_choice: force.then(|| json!("required")),
+        };
+        let stream = self.client.chat_stream(&self.model, &conversation, schemas, &opts)?;
         let mut content = String::new();
         let mut calls = vec![];
         for ev in stream {
@@ -736,6 +822,31 @@ struct Turn {
     errors: Vec<String>,
     /// Where the "you didn't actually do it" nudge sits, to take it out after.
     nudge_at: Option<usize>,
+    /// Tools that ran fine, in order (to see if a lookup was followed up).
+    done: Vec<String>,
+    /// This round may only call these, and must call one.
+    forced: Option<Vec<&'static str>>,
+    was_forced: bool,
+}
+
+impl Turn {
+    /// The finishing tools for a lookup that ran and wasn't followed up.
+    fn unfinished(&self) -> Option<Vec<&'static str>> {
+        let (i, lookup) = self.done.iter().enumerate().rev().find(|(_, t)| !crate::tools::completes(t).is_empty())?;
+        let finish = crate::tools::completes(lookup);
+        (!self.done[i + 1..].iter().any(|t| finish.contains(&t.as_str()))).then(|| finish.to_vec())
+    }
+}
+
+/// A request to do something, not a question ("turn on tap to click", not
+/// "what's my battery?"), in English or Polish.
+fn asks_for_action(text: &str) -> bool {
+    const QUESTION: [&str; 34] = ["what", "what's", "whats", "how", "is", "are", "do", "does", "did", "can", "could",
+        "when", "where", "who", "which", "why", "will", "should", "show", "list", "tell", "am",
+        "co", "czy", "jak", "jaki", "jaka", "kiedy", "gdzie", "kto", "który", "ile", "dlaczego", "pokaż"];
+    let t = text.trim().to_lowercase();
+    let first = t.split_whitespace().next().unwrap_or("").trim_matches(|c: char| !c.is_alphanumeric() && c != '\'');
+    !t.ends_with('?') && !QUESTION.contains(&first)
 }
 
 /// A short reply that says an action was done ("Done!", "I've sent it",
@@ -1032,6 +1143,68 @@ mod tests {
         let rec = Rec::default();
         a.ask("how have you been?", &rec, &[]).unwrap();
         assert!(!rec.log.lock().unwrap().contains(&"retract".to_string()));
+    }
+
+    #[test]
+    fn an_action_that_stopped_after_a_lookup_is_finished() {
+        let _h = temp_home();
+        let flm = FakeFlm::start(vec![
+            (200, tool_reply("get_status", "{}", "c1")),
+            (200, text_reply("The volume is at 70%.")),
+            (200, tool_reply("set_volume", r#"{"percent": 50}"#, "c2")),
+            (200, text_reply("Turned it down to 50%.")),
+        ]);
+        let mut tools = test_tools()();
+        tools.push(Tool::new("get_status", "Status", obj(json!({}), &[]), Risk::Safe, |_, _| Ok("Volume 70%.".into()),
+                             |_| "Status".into()));
+        let mut a = Agent::new(Arc::new(FlmClient::new(&flm.url)), "test-model", Arc::new(move || tools.clone()));
+        a.machine = Some("About this computer: test".into());
+        let rec = Rec::default();
+        a.ask("turn it down a bit", &rec, &[]).unwrap();
+        let reqs = flm.requests();
+        // The third request is forced: only the finishing tools, a call required.
+        assert_eq!(reqs[2]["tool_choice"], "required");
+        let names: Vec<&str> = reqs[2]["tools"].as_array().unwrap().iter().map(|t| t["function"]["name"].as_str().unwrap()).collect();
+        assert!(names.contains(&"set_volume") && names.contains(&ASK_USER) && !names.contains(&"get_status"), "{names:?}");
+        assert!(rec.log.lock().unwrap().contains(&"tool:set_volume:true:50%".to_string()));
+        assert_eq!(a.messages.last().unwrap()["content"], "Turned it down to 50%.");
+        // A question isn't forced.
+        let flm = FakeFlm::start(vec![(200, tool_reply("get_status", "{}", "c1")), (200, text_reply("It's at 70%."))]);
+        let mut tools = test_tools()();
+        tools.push(Tool::new("get_status", "Status", obj(json!({}), &[]), Risk::Safe, |_, _| Ok("Volume 70%.".into()),
+                             |_| "Status".into()));
+        let mut a = Agent::new(Arc::new(FlmClient::new(&flm.url)), "test-model", Arc::new(move || tools.clone()));
+        a.ask("how loud is it?", &Rec::default(), &[]).unwrap();
+        assert_eq!(flm.requests().len(), 2);
+        assert!(asks_for_action("ścisz trochę") && !asks_for_action("co mam jutro?") && !asks_for_action("Am I free at 1"));
+    }
+
+    #[test]
+    fn ask_user_and_calls_written_as_text() {
+        let _h = temp_home();
+        let flm = FakeFlm::start(vec![
+            (200, text_reply("<|tool_call>call:set_volume{percent:30}<tool_call|>")),
+            (200, text_reply("Volume is 30%.")),
+        ]);
+        let mut a = agent(&flm);
+        let rec = Rec::default();
+        a.ask("set the volume to 30", &rec, &[]).unwrap();
+        let log = rec.log.lock().unwrap().clone();
+        assert!(log.contains(&"tool:set_volume:true:30%".to_string()) && log.contains(&"retract".to_string()), "{log:?}");
+        assert_eq!(a.messages.last().unwrap()["content"], "Volume is 30%.");
+    }
+
+    #[test]
+    fn idle_tool_groups_are_dropped() {
+        let _h = temp_home();
+        let flm = FakeFlm::start(vec![(200, text_reply("ok")), (200, text_reply("ok")), (200, text_reply("ok")), (200, text_reply("ok"))]);
+        let mut a = agent(&flm);
+        a.ask("turn the volume up", &Rec::default(), &[]).unwrap();
+        assert!(a.active_groups.contains("settings"));
+        for _ in 0..3 {
+            a.ask("hello", &Rec::default(), &[]).unwrap();
+        }
+        assert!(!a.active_groups.contains("settings"), "unused for three turns");
     }
 
     #[test]

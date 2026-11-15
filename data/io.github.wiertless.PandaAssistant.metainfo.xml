@@ -28,6 +28,7 @@
           <li>Knows your Bluetooth devices, other devices and saved networks by name, so "my headphones" just works</li>
           <li>Clearer rules for the model: it checks instead of saying it can't, and acts instead of saying it will</li>
           <li>Finding files and settings works whatever words you use</li>
+          <li>Finishes what it starts: after finding a setting or a device it goes on to change or connect it, or asks which one</li>
         </ul>
       </description>
     </release>

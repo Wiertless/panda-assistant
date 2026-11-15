@@ -41,6 +41,16 @@ impl std::fmt::Display for FlmError {
 
 impl std::error::Error for FlmError {}
 
+/// Sampling and constraints for one request.
+#[derive(Debug, Clone, Default)]
+pub struct ChatOptions {
+    pub temperature: Option<f64>,
+    pub max_tokens: Option<u32>,
+    /// "required" makes the server's constrained decoding produce a tool call
+    /// (FastFlowLM 1.0.10+, llama.cpp); servers without it just ignore it.
+    pub tool_choice: Option<Value>,
+}
+
 /// The embedding model FLM serves next to the chat model, when installed.
 pub const EMBED_MODEL: &str = "embed-gemma:300m";
 
@@ -494,18 +504,21 @@ impl FlmClient {
             .collect())
     }
 
-    pub fn chat_stream(&self, model: &str, messages: &[Value], tools: Option<&[Value]>, temperature: Option<f64>,
-                       max_tokens: Option<u32>) -> Result<ChatStream, FlmError> {
+    pub fn chat_stream(&self, model: &str, messages: &[Value], tools: Option<&[Value]>, opts: &ChatOptions)
+                       -> Result<ChatStream, FlmError> {
         *self.last_model.lock().unwrap() = Some(model.to_string());
         let mut body = json!({"model": model, "messages": messages, "stream": true});
         if let Some(t) = tools.filter(|t| !t.is_empty()) {
             body["tools"] = Value::Array(t.to_vec());
         }
-        if let Some(t) = temperature {
+        if let Some(t) = opts.temperature {
             body["temperature"] = json!(t);
         }
-        if let Some(n) = max_tokens {
+        if let Some(n) = opts.max_tokens {
             body["max_tokens"] = json!(n);
+        }
+        if let Some(c) = &opts.tool_choice {
+            body["tool_choice"] = c.clone();
         }
         let resp = self
             .agent

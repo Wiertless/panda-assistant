@@ -43,6 +43,24 @@ pub fn norm_name(text: &str) -> String {
     NON_WORD.replace_all(&POSSESSIVE.replace_all(&lower, ""), " ").trim().to_string()
 }
 
+/// The tools that finish what a lookup started ("change it", "connect it"),
+/// for requests that ask for an action: a turn that stops after the lookup
+/// is asked again with only these (and ask_user).
+pub fn completes(lookup: &str) -> &'static [&'static str] {
+    match lookup {
+        "find_settings" | "get_setting" => &["change_setting"],
+        "list_bluetooth" => &["connect_bluetooth", "disconnect_bluetooth"],
+        "list_networks" => &["connect_network", "disconnect_network"],
+        "list_devices" => &["send_file", "send_text"],
+        "find_files" | "search_file_contents" | "list_folder" =>
+            &["send_file", "read_document", "read_file", "open_file", "show_in_files"],
+        "list_app_actions" => &["run_app_action"],
+        "get_status" => &["set_volume", "set_mute", "set_brightness", "set_dark_mode", "set_do_not_disturb",
+                          "set_night_light", "set_power_mode", "set_wifi", "set_bluetooth"],
+        _ => &[],
+    }
+}
+
 /// What to do with a lookup's result, appended to it so the model keeps the
 /// thread ("found it" → "now use it"). Only for results that found something.
 pub fn next_step(tool: &str) -> Option<&'static str> {
@@ -190,7 +208,7 @@ steps: short numbered steps.",
         Tool::new("get_status", "Get dark mode, Do Not Disturb, Wi-Fi, volume and brightness state.", obj(json!({}), &[]),
                   Safe, settings::get_status, |_| "Read settings".into()),
         Tool::new("web_search", "Search the web for current information, facts, news, prices or how-tos. \
-Returns titles, links and short snippets.", obj(json!({"query": {"type": "string", "description": "What to search for"}}), &["query"]),
+Returns titles, links and short snippets. Not for the user's own files, settings or devices: use the tools for those.", obj(json!({"query": {"type": "string", "description": "What to search for"}}), &["query"]),
                   Safe, web::web_search, text("query", |q| format!("Search the web for “{q}”"))),
         Tool::new("read_web_page", "Read the text of a web page, e.g. a search result, to answer from it.",
                   obj(json!({"url": {"type": "string"}}), &["url"]), Safe, web::read_web_page,
@@ -292,9 +310,9 @@ date like 2026-11-20.", obj(json!({"when": {"type": "string"}}), &[]), Safe, per
         Tool::new("find_contact", "Find a contact's email addresses and phone numbers by name.",
                   obj(json!({"name": {"type": "string"}}), &["name"]), Safe, personal::find_contact,
                   text("name", |n| format!("Look up {}", or(n, "a contact")))),
-        Tool::new("media_control", "Control music and video players: play, pause, play_pause, next (skip to the next \
-song), previous (go back), stop, or status (only to say what's playing).", obj(json!({"action": {"type": "string", "enum": ["play", "pause", "play_pause", "next",
-                  "previous", "stop", "status"]}, "player": {"type": "string", "description": "Optional, e.g. Spotify"}}), &["action"]),
+        Tool::new("media_control", "Control music and video players: play, pause, play_pause, next_track (skip this \
+song), previous_track (go back a song), stop, or status (only to say what's playing).", obj(json!({"action": {"type": "string", "enum": ["play", "pause", "play_pause", "next_track",
+                  "previous_track", "stop", "status"]}, "player": {"type": "string", "description": "Optional, e.g. Spotify"}}), &["action"]),
                   Safe, connect::media_control, text("action", |a| format!("Media: {}", a.replace('_', "/")))),
         Tool::new("run_command", "Run a shell command inside the user's 'zed' toolbox container (Fedora with dev \
 tools; the home folder is shared). For building, compiling, git, scripts. Output is returned.",

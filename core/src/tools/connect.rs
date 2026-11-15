@@ -396,8 +396,8 @@ pub fn media_control(_: &Context, args: &Args) -> ToolResult {
         });
     }
     let method = match action.as_str() {
-        "play" => "Play", "pause" => "Pause", "play_pause" | "toggle" => "PlayPause", "next" => "Next",
-        "previous" => "Previous", "stop" => "Stop",
+        "play" => "Play", "pause" => "Pause", "play_pause" | "toggle" => "PlayPause",
+        "next" | "next_track" | "skip" => "Next", "previous" | "previous_track" | "back" => "Previous", "stop" => "Stop",
         _ => return Err("action must be play, pause, play_pause, next, previous, stop or status".into()),
     };
     let player = choose_player(&all, &arg_str(args, "player"))?;

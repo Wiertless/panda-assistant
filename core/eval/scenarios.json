@@ -9,6 +9,14 @@
      "enabled": "true"
     }
    }
+  ],
+  "tags": [
+   "single"
+  ],
+  "paraphrases": [
+   "switch to the dark theme",
+   "make everything dark please",
+   "enable dark style"
   ]
  },
  {
@@ -21,6 +29,14 @@
      "enabled": "true"
     }
    }
+  ],
+  "tags": [
+   "single",
+   "polish"
+  ],
+  "paraphrases": [
+   "przełącz na ciemny motyw",
+   "ustaw ciemny wygląd"
   ]
  },
  {
@@ -33,6 +49,14 @@
      "percent": "30"
     }
    }
+  ],
+  "tags": [
+   "single"
+  ],
+  "paraphrases": [
+   "volume 30",
+   "make the sound 30 percent",
+   "ustaw głośność na 30"
   ]
  },
  {
@@ -58,6 +82,14 @@
      "device": "airpods"
     }
    }
+  ],
+  "tags": [
+   "single",
+   "resolve"
+  ],
+  "paraphrases": [
+   "hook up my airpods",
+   "połącz słuchawki airpods"
   ]
  },
  {
@@ -99,6 +131,14 @@
      "path": "Zrzut ekranu"
     }
    }
+  ],
+  "tags": [
+   "chain",
+   "resolve"
+  ],
+  "paraphrases": [
+   "screenshot this and put it on my phone",
+   "grab the screen and send it to my iphone"
   ]
  },
  {
@@ -138,6 +178,15 @@
   ],
   "forbid": [
    "send_text"
+  ],
+  "tags": [
+   "chain",
+   "near-tool",
+   "resolve"
+  ],
+  "paraphrases": [
+   "put the lease pdf on my phone",
+   "wyślij umowę najmu na telefon"
   ]
  },
  {
@@ -168,6 +217,13 @@
      "text": "coffee"
     }
    }
+  ],
+  "tags": [
+   "single",
+   "near-tool"
+  ],
+  "paraphrases": [
+   "text my phone a shopping list: milk, eggs, bread, coffee"
   ]
  },
  {
@@ -186,6 +242,14 @@
   ],
   "answer": [
    "dentist"
+  ],
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "paraphrases": [
+   "anything on tomorrow?",
+   "what's on my calendar for tomorrow"
   ]
  },
  {
@@ -201,6 +265,14 @@
   ],
   "answer": [
    "dentyst"
+  ],
+  "tags": [
+   "single",
+   "answer",
+   "polish"
+  ],
+  "paraphrases": [
+   "jakie mam jutro spotkania?"
   ]
  },
  {
@@ -216,6 +288,14 @@
   ],
   "answer": [
    "62"
+  ],
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "paraphrases": [
+   "battery?",
+   "ile mam baterii?"
   ]
  },
  {
@@ -228,12 +308,26 @@
      "fact": "fish"
     }
    }
+  ],
+  "tags": [
+   "memory"
+  ],
+  "paraphrases": [
+   "note that I use fish as my shell",
+   "zapamiętaj, że używam fish"
   ]
  },
  {
   "name": "chit-chat",
   "prompt": "hi! how are you?",
-  "no_tools": true
+  "no_tools": true,
+  "tags": [
+   "no-tool"
+  ],
+  "paraphrases": [
+   "good morning!",
+   "cześć, co tam?"
+  ]
  },
  {
   "name": "web",
@@ -252,6 +346,13 @@
   ],
   "answer": [
    "norris"
+  ],
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "paraphrases": [
+   "who's the 2026 F1 world champion?"
   ]
  },
  {
@@ -264,6 +365,14 @@
      "name": "firefox"
     }
    }
+  ],
+  "tags": [
+   "single",
+   "near-tool"
+  ],
+  "paraphrases": [
+   "launch firefox",
+   "otwórz firefoxa"
   ]
  },
  {
@@ -289,6 +398,12 @@
      "name": "spotify"
     }
    }
+  ],
+  "tags": [
+   "recover"
+  ],
+  "paraphrases": [
+   "open spotifu"
   ]
  },
  {
@@ -298,9 +413,17 @@
    {
     "tool": "media_control",
     "args": {
-     "action": "next"
+     "action": "next_track|next"
     }
    }
+  ],
+  "tags": [
+   "enum"
+  ],
+  "paraphrases": [
+   "next song",
+   "skip",
+   "następna piosenka"
   ]
  },
  {
@@ -313,6 +436,13 @@
      "folder": "projects"
     }
    }
+  ],
+  "tags": [
+   "single"
+  ],
+  "paraphrases": [
+   "terminal in ~/Projects",
+   "otwórz terminal w folderze Projects"
   ]
  },
  {
@@ -329,6 +459,13 @@
      "key": "text-scaling-factor"
     }
    }
+  ],
+  "tags": [
+   "chain"
+  ],
+  "paraphrases": [
+   "the text is too small, make it larger",
+   "powiększ czcionkę"
   ]
  },
  {
@@ -339,6 +476,13 @@
   ],
   "forbid": [
    "web_search"
+  ],
+  "tags": [
+   "no-tool",
+   "answer"
+  ],
+  "paraphrases": [
+   "15 percent of 240?"
   ]
  },
  {
@@ -357,6 +501,13 @@
   ],
   "answer": [
    "600"
+  ],
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "paraphrases": [
+   "give me Ola's number"
   ]
  },
  {
@@ -386,6 +537,14 @@
      "name": "biuro"
     }
    }
+  ],
+  "tags": [
+   "memory",
+   "resolve"
+  ],
+  "paraphrases": [
+   "get me on the office network",
+   "połącz z siecią w biurze"
   ]
  },
  {
@@ -401,6 +560,13 @@
   ],
   "answer": [
    "długa|dluga"
+  ],
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "paraphrases": [
+   "what did I copy earlier, the address?"
   ]
  },
  {
@@ -442,6 +608,10 @@
      "path": "Zrzut ekranu"
     }
    }
+  ],
+  "tags": [
+   "multi-turn",
+   "chain"
   ]
  },
  {
@@ -476,6 +646,10 @@
      "text": "dentist"
     }
    }
+  ],
+  "tags": [
+   "multi-turn",
+   "near-tool"
   ]
  },
  {
@@ -494,6 +668,10 @@
   ],
   "forbid": [
    "set_mute"
+  ],
+  "tags": [
+   "multi-turn",
+   "enum"
   ]
  },
  {
@@ -535,6 +713,13 @@
      "path": "Zrzut ekranu"
     }
    }
+  ],
+  "tags": [
+   "chain",
+   "polish"
+  ],
+  "paraphrases": [
+   "wyślij mi na telefon zrzut ekranu"
   ]
  },
  {
@@ -583,6 +768,12 @@
      "enabled": "true"
     }
    }
+  ],
+  "tags": [
+   "chain"
+  ],
+  "paraphrases": [
+   "screenshot to my phone, then do not disturb on"
   ]
  },
  {
@@ -603,6 +794,15 @@
   ],
   "answer": [
    "4 500|4500|4,500"
+  ],
+  "tags": [
+   "chain",
+   "near-tool",
+   "answer"
+  ],
+  "paraphrases": [
+   "what's the deposit in my lease?",
+   "ile wynosi kaucja w mojej umowie najmu?"
   ]
  },
  {
@@ -636,7 +836,14 @@
     }
    }
   ],
-  "known": "- Paired Bluetooth devices: Sony WH-1000XM5, MX Master 3\n- Saved networks: Home 5G"
+  "known": "- Paired Bluetooth devices: Sony WH-1000XM5, MX Master 3\n- Saved networks: Home 5G",
+  "tags": [
+   "recover",
+   "resolve"
+  ],
+  "paraphrases": [
+   "connect the headphones"
+  ]
  },
  {
   "name": "am I free",
@@ -651,6 +858,13 @@
   ],
   "answer": [
    "lunch|ola"
+  ],
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "paraphrases": [
+   "do I have anything at 1 pm tomorrow?"
   ]
  },
  {
@@ -688,6 +902,13 @@
   ],
   "answer": [
    "600"
+  ],
+  "tags": [
+   "memory",
+   "answer"
+  ],
+  "paraphrases": [
+   "call details for my sister?"
   ]
  },
  {
@@ -704,6 +925,13 @@
      "value": "true"
     }
    }
+  ],
+  "tags": [
+   "chain"
+  ],
+  "paraphrases": [
+   "enable tap-to-click on the touchpad",
+   "włącz klikanie stuknięciem"
   ]
  },
  {
@@ -712,7 +940,14 @@
    "turn on dark mode"
   ],
   "prompt": "thanks!",
-  "no_tools": true
+  "no_tools": true,
+  "tags": [
+   "no-tool",
+   "multi-turn"
+  ],
+  "paraphrases": [
+   "great, thank you"
+  ]
  },
  {
   "name": "implicit memory",
@@ -724,6 +959,13 @@
      "fact": "kuba"
     }
    }
+  ],
+  "tags": [
+   "memory"
+  ],
+  "paraphrases": [
+   "please call me Kuba from now on",
+   "mów do mnie Kuba"
   ]
  },
  {
@@ -742,6 +984,14 @@
   ],
   "forbid": [
    "set_mute"
+  ],
+  "tags": [
+   "chain",
+   "polish"
+  ],
+  "paraphrases": [
+   "ciszej proszę",
+   "a bit quieter"
   ]
  },
  {
@@ -755,6 +1005,12 @@
   ],
   "answer": [
    "airpods|sony|which|które|ktore"
+  ],
+  "tags": [
+   "ask"
+  ],
+  "paraphrases": [
+   "connect headphones"
   ]
  }
 ]

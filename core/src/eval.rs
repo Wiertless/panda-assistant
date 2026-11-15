@@ -31,6 +31,7 @@ pub struct Variant {
     pub examples: Option<bool>,
     pub repair_args: Option<bool>,
     pub nudge: Option<bool>,
+    pub force_completion: Option<bool>,
     pub system_prompt: Option<String>,
     /// Whether the prompt lists the devices and networks (default yes).
     pub known: Option<bool>,
@@ -114,6 +115,12 @@ pub struct Scenario {
     /// The expected calls may come in any order (independent steps).
     #[serde(default)]
     pub unordered: bool,
+    /// What it tests (single, chain, near-tool, enum, no-tool, ask, multi-turn…), for per-capability scores.
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// Other wordings of the prompt, each judged as a scenario of its own.
+    #[serde(default)]
+    pub paraphrases: Vec<String>,
 }
 
 pub struct Outcome {
@@ -222,6 +229,7 @@ pub fn run(client: &Arc<FlmClient>, model: &str, sees: bool, v: &Variant, s: &Sc
     agent.examples = v.examples.unwrap_or(agent.examples);
     agent.repair_args = v.repair_args.unwrap_or(agent.repair_args);
     agent.nudge = v.nudge.unwrap_or(agent.nudge);
+    agent.force_completion = v.force_completion.unwrap_or(agent.force_completion);
     agent.system_prompt = v.system_prompt.clone();
     let known = s.known.as_deref().unwrap_or(KNOWN);
     agent.machine = Some(if v.known.unwrap_or(true) { format!("{MACHINE}\n{known}") } else { MACHINE.into() });
@@ -256,7 +264,14 @@ pub fn load(path: Option<&str>) -> Result<Vec<Scenario>, String> {
         Some(p) => std::fs::read_to_string(p).map_err(|e| format!("{p}: {e}"))?,
         None => SCENARIOS.to_string(),
     };
-    serde_json::from_str(&text).map_err(|e| format!("scenarios: {e}"))
+    let base: Vec<Scenario> = serde_json::from_str(&text).map_err(|e| format!("scenarios: {e}"))?;
+    // Each paraphrase is the same scenario in other words.
+    Ok(base.into_iter().flat_map(|s| {
+        let others: Vec<Scenario> = s.paraphrases.iter().enumerate()
+            .map(|(i, p)| Scenario { name: format!("{} ~{}", s.name, i + 2), prompt: p.clone(), paraphrases: vec![], ..s.clone() })
+            .collect();
+        std::iter::once(Scenario { paraphrases: vec![], ..s }).chain(others)
+    }).collect())
 }
 
 /// `assistantd --eval [--url URL] [--model M] [--variant NAME] [--repeat N] [--scenarios FILE] [--only NAME] [--sees] [--json FILE]`
@@ -274,7 +289,10 @@ pub fn main(args: &[String]) -> i32 {
         }
     };
     if let Some(only) = opt("--only") {
-        scenarios.retain(|s| s.name.contains(&only));
+        scenarios.retain(|s| s.name.contains(&only) || s.tags.contains(&only));
+    }
+    if args.iter().any(|a| a == "--no-paraphrases") {
+        scenarios.retain(|s| !s.name.contains(" ~"));
     }
     if url.is_none() {
         // The NPU: start FastFlowLM with this model, as the service would.
@@ -306,16 +324,29 @@ pub fn main(args: &[String]) -> i32 {
         println!("{mark:>3} {:<24} {secs:>5.1}s  {}{}", s.name,
                  if calls.is_empty() { "(no tools)".into() } else { calls.join(" → ") },
                  if shown.passed { String::new() } else { format!("\n    {}", shown.why) });
-        rows.push((s.name.clone(), ok, secs, runs));
+        rows.push((s.name.clone(), ok, secs, runs, s.tags.clone()));
     }
     let passed: usize = rows.iter().map(|r| r.1).sum();
     let total = rows.len() * repeat;
     let secs: f64 = rows.iter().map(|r| r.2).sum();
     println!("{model}: {passed}/{total} passed ({:.0}%), {:.1}s per request on average",
              100.0 * passed as f64 / total.max(1) as f64, secs / rows.len().max(1) as f64);
+    // Per capability: where it's weak, not just how much.
+    let mut by_tag: std::collections::BTreeMap<String, (usize, usize)> = Default::default();
+    for (_, ok, _, _, tags) in &rows {
+        for t in tags {
+            let e = by_tag.entry(t.clone()).or_default();
+            e.0 += ok;
+            e.1 += repeat;
+        }
+    }
+    let tag_line: Vec<String> = by_tag.iter().map(|(t, (ok, n))| format!("{t} {ok}/{n}")).collect();
+    println!("by capability: {}", tag_line.join(", "));
     if let Some(path) = opt("--json") {
         let report = json!({"model": model, "variant": variant_name, "passed": passed, "total": total, "repeat": repeat,
-            "seconds": secs, "scenarios": rows.iter().map(|(name, ok, secs, runs)| {
+            "seconds": secs, "capabilities": by_tag.iter().map(|(t, (ok, n))| (t.clone(), json!({"passed": ok, "total": n})))
+                .collect::<serde_json::Map<_, _>>(),
+            "scenarios": rows.iter().map(|(name, ok, secs, runs, _)| {
                 let shown = runs.iter().find(|o| !o.passed).unwrap_or(&runs[0]);
                 json!({"name": name, "passed": *ok == repeat, "passed_runs": ok, "runs": repeat, "why": shown.why,
                        "seconds": secs, "calls": shown.calls.iter().map(|(n, a)| json!({"tool": n, "args": a})).collect::<Vec<_>>()})
@@ -332,6 +363,15 @@ mod tests {
 
     fn args(v: Value) -> Args {
         serde_json::from_value(v).unwrap()
+    }
+
+    #[test]
+    fn paraphrases_become_scenarios() {
+        let all = load(None).unwrap();
+        let dark: Vec<&Scenario> = all.iter().filter(|s| s.name.starts_with("dark mode ~") || s.name == "dark mode").collect();
+        assert!(dark.len() >= 3);
+        assert!(dark.iter().all(|s| s.expect[0].tool == "set_dark_mode" && s.tags == ["single"]));
+        assert!(all.iter().all(|s| !s.tags.is_empty()), "every scenario says what it tests");
     }
 
     #[test]

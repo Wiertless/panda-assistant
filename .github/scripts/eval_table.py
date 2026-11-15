@@ -14,6 +14,17 @@ print("| Model | Passed | s/request |")
 print("|---|---|---|")
 for r in reports:
     print(f"| `{r['label']}` | **{r['passed']}/{r['total']}** ({100 * r['passed'] / max(r['total'], 1):.0f}%) | {r['seconds'] / max(len(r['scenarios']), 1):.1f} |")
+caps = sorted({c for r in reports for c in r.get("capabilities", {})})
+if caps:
+    print()
+    print("| Capability | " + " | ".join(f"`{r['label']}`" for r in reports) + " |")
+    print("|---|" + "---|" * len(reports))
+    for c in caps:
+        cells = []
+        for r in reports:
+            v = r.get("capabilities", {}).get(c)
+            cells.append("—" if not v else f"{v['passed']}/{v['total']}")
+        print(f"| {c} | " + " | ".join(cells) + " |")
 print()
 print("| Scenario | " + " | ".join(f"`{r['label']}`" for r in reports) + " |")
 print("|---|" + "---|" * len(reports))
