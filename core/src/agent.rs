@@ -19,6 +19,7 @@ pub const TOOL_TEMPERATURE: f64 = 0.2;
 const FAILURES_BEFORE_HANDOFF: usize = 3;
 const NUDGE: &str = "(You said it's done, but no tool ran, so nothing happened yet. Call the tool now to do it, \
 or say plainly that you can't.)";
+const ANSWER_NOW: &str = "(Now answer the user from these results, in a sentence or two.)";
 const REPEATED: &str = "Error: you already tried exactly this and it failed. Don't repeat it: change the arguments, \
 look the options up with another tool, or tell the user what's wrong.";
 
@@ -503,6 +504,13 @@ impl Agent {
                 cb.retract();
                 turn.nudge_at = Some(self.messages.len());
                 self.messages.push(json!({"role": "user", "content": NUDGE}));
+                continue;
+            }
+            if self.nudge && calls.is_empty() && !self.cancelled() && turn.nudge_at.is_none() && turn.tools_ran > 0
+                && content.trim().is_empty() {
+                // Tools ran but it said nothing: ask for the answer.
+                turn.nudge_at = Some(self.messages.len());
+                self.messages.push(json!({"role": "user", "content": ANSWER_NOW}));
                 continue;
             }
             self.messages.push(assistant);
@@ -993,6 +1001,15 @@ mod tests {
         assert!(reqs[1]["messages"].as_array().unwrap().iter().any(|m| m["content"] == NUDGE));
         assert!(!a.messages.iter().any(|m| m["content"] == NUDGE || m["content"] == "Done! The volume is at 30%."));
         assert_eq!(a.messages.last().unwrap()["content"], "Volume set to 30%.");
+        // Tools ran but the answer was empty: it's asked for one.
+        let flm = FakeFlm::start(vec![
+            (200, tool_reply("get_datetime", "{}", "c1")), (200, text_reply("")), (200, text_reply("It's 22:00.")),
+        ]);
+        let mut a = agent(&flm);
+        a.ask("what time is it?", &Rec::default(), &[]).unwrap();
+        assert_eq!(a.messages.last().unwrap()["content"], "It's 22:00.");
+        assert!(!a.messages.iter().any(|m| m["content"] == ANSWER_NOW));
+        assert!(flm.requests()[2]["messages"].as_array().unwrap().iter().any(|m| m["content"] == ANSWER_NOW));
         // Chit-chat that sounds like a claim isn't nudged.
         let flm = FakeFlm::start(vec![(200, text_reply("I've been well, thanks!"))]);
         let mut a = agent(&flm);

@@ -51,21 +51,22 @@ pub const GROUPS: [(&str, &str, &[&str]); 11] = [
 /// One worked example per group, shown while the group is active: small models
 /// copy an example far more reliably than they follow a rule.
 pub const EXAMPLES: [(&str, &str); 11] = [
-    (CORE, "\"take a screenshot and send it to my phone\" → save_screenshot, then send_file with the path it returned \
-and the phone's name (from what you remember, or list_devices)."),
-    ("settings", "\"make the text bigger\" → find_settings(query \"text size\"), then change_setting with the schema and key \
-it found and a bigger value."),
-    ("files", "\"how much is the deposit in my lease?\" → find_files(name \"lease\"), then read_document with the path it \
-found, then answer from the text."),
-    ("system", "\"how much space is left?\" → get_system_info, then answer with the number."),
-    ("devices", "\"connect my headphones\" → connect_bluetooth(device \"headphones\"); if the error lists the paired \
-devices, call it again with the right one."),
-    ("personal", "\"am I free at 1 tomorrow?\" → get_events(when \"tomorrow\"), then answer from the events."),
-    ("apps", "\"open spotfy\" → open_app(name \"spotfy\"); the error lists close names, so call it again with \"Spotify\"."),
+    (CORE, "\"grab the screen and put it on my tablet\" → save_screenshot, then send_file with the path it returned \
+and the tablet's name (from what you remember, or list_devices)."),
+    ("settings", "\"turn off the animations\" → find_settings(query \"animations\"), then change_setting with the schema \
+and key it found and the new value."),
+    ("files", "\"what's the total on my last invoice?\" → find_files(name \"invoice\"), then read_document with the newest \
+path, then answer from its text."),
+    ("system", "\"is my disk getting full?\" → get_system_info, then answer with the numbers."),
+    ("devices", "\"connect the speaker\" → connect_bluetooth(device \"speaker\"); if the error lists the paired devices, \
+call it again with the one that is a speaker."),
+    ("personal", "\"anything on Friday afternoon?\" → get_events(when \"friday\"), then answer from the events."),
+    ("apps", "\"open thunderbrd\" → open_app(name \"thunderbrd\"); the error lists close names, so call it again with \
+\"Thunderbird\"."),
     ("web", "\"who won yesterday's match?\" → web_search, then read_web_page on the best result if the snippets don't say."),
     ("memory", "\"forget my old address\" → forget(fact \"address\")."),
     ("commands", "\"build my project\" → run_command with the build command, in the project's folder."),
-    ("clipboard", "\"what was the link I copied?\" → clipboard_history(query \"http\"), then answer with it."),
+    ("clipboard", "\"paste the link I copied before\" → clipboard_history(query \"http\"), then answer with it."),
 ];
 
 pub fn example_for(group: &str) -> Option<&'static str> {
