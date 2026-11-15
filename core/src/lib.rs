@@ -1,8 +1,10 @@
 //! The Assistant's core: talks to FastFlowLM, runs the agent loop and tools,
 //! and keeps memory, skills and chats. `assistantd` exposes it over D-Bus.
 
+pub mod activity;
 pub mod agent;
 pub mod context;
+pub mod eval;
 pub mod flm;
 pub mod mcp;
 pub mod paths;

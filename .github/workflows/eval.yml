@@ -1,0 +1,106 @@
+name: eval
+# Scores models on the assistant's scenarios (core/eval/scenarios.json) with
+# llama.cpp on the CPU, since runners have no NPU. Same prompt, tool schemas
+# and routing as on the laptop; quantization differs from FastFlowLM's, so
+# treat the scores as a comparison, and run `assistantd --eval` there for the
+# real thing.
+on:
+  workflow_dispatch:
+    inputs:
+      only:
+        description: Run only scenarios whose name contains this
+        required: false
+  push:
+    branches: [main]
+    paths:
+      - core/src/agent.rs
+      - core/src/eval.rs
+      - core/src/tools/**
+      - core/eval/**
+      - .github/workflows/eval.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eval-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install build dependencies
+        run: sudo apt-get update -q && sudo apt-get install -y -q libglib2.0-dev libgdk-pixbuf-2.0-dev
+      - name: Build assistantd
+        run: cargo build --release --locked -p assistant-core
+      - uses: actions/upload-artifact@v4
+        with:
+          name: assistantd
+          path: target/release/assistantd
+
+  eval:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { model: "gemma4-it:e2b", search: "gemma-4-E2B-it" }
+          - { model: "qwen3.5:2b", search: "Qwen3.5-2B" }
+          - { model: "qwen3.5:4b", search: "Qwen3.5-4B" }
+          - { model: "qwen3-it:4b", search: "Qwen3-4B-Instruct-2507" }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@v4
+        with:
+          name: assistantd
+      - name: Find and download the GGUF
+        id: gguf
+        run: |
+          read -r repo file < <(python3 .github/scripts/find_gguf.py "${{ matrix.search }}")
+          echo "Using $repo / $file"
+          echo "source=$repo/$file" >> "$GITHUB_OUTPUT"
+          mkdir -p models
+          curl -sSfL --retry 3 -o models/model.gguf "https://huggingface.co/$repo/resolve/main/$file"
+      - name: Start llama.cpp
+        run: |
+          docker run -d --name llama -p 8080:8080 -v "$PWD/models:/models" ghcr.io/ggml-org/llama.cpp:server \
+            -m /models/model.gguf --jinja -c 8192 -np 1 --host 0.0.0.0 --port 8080
+          for i in $(seq 1 120); do curl -sf localhost:8080/health && break; sleep 5; done
+          curl -sf localhost:8080/health || { docker logs llama; exit 1; }
+      - name: Run the scenarios
+        run: |
+          chmod +x assistantd
+          only=()
+          if [ -n "${{ inputs.only }}" ]; then only=(--only "${{ inputs.only }}"); fi
+          ./assistantd --eval --url http://127.0.0.1:8080 --model "${{ matrix.model }}" --json report.json "${only[@]}"
+      - name: Summary
+        if: always()
+        run: |
+          [ -f report.json ] || exit 0
+          { echo "### ${{ matrix.model }} (${{ steps.gguf.outputs.source }})"; python3 .github/scripts/eval_table.py report.json; } >> "$GITHUB_STEP_SUMMARY"
+          cp report.json "report-$(echo '${{ matrix.model }}' | tr ':' '_').json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: report-${{ strategy.job-index }}
+          path: report-*.json
+          if-no-files-found: ignore
+
+  summary:
+    needs: eval
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: report-*
+          merge-multiple: true
+      - name: All models
+        run: |
+          ls report-*.json >/dev/null 2>&1 || { echo "No reports." >> "$GITHUB_STEP_SUMMARY"; exit 0; }
+          { echo "## Model scores"; python3 .github/scripts/eval_table.py report-*.json; } >> "$GITHUB_STEP_SUMMARY"
