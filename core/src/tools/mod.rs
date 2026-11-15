@@ -117,9 +117,10 @@ pub fn all() -> Vec<Tool> {
     use Risk::*;
     let path = || obj(json!({"path": {"type": "string"}}), &["path"]);
     vec![
-        Tool::new("open_app", "Open an app by its name ('Zed') or by what it is: browser, email, files, calendar, \
-music, video, photos, text editor, pdf, terminal or settings opens the user's default app for it.",
-                  obj(json!({"name": {"type": "string", "description": "App name or kind of app"}}), &["name"]),
+        Tool::new("open_app", "Open an app. When the user names an app ('Firefox', 'Spotify', 'Zed'), pass that exact \
+name, even if it looks misspelled. Only when they name none, pass the kind (browser, email, files, calendar, music, \
+video, photos, text editor, pdf, terminal, settings) to open their default app for it.",
+                  obj(json!({"name": {"type": "string", "description": "The app's name as the user said it, or a kind of app"}}), &["name"]),
                   Safe, apps::open_app, text("name", |n| format!("Open {}", or(n, "an app")))),
         Tool::new("open_url", "Open a web address in the default browser.", obj(json!({"url": {"type": "string"}}), &["url"]),
                   Safe, apps::open_url, text("url", |u| format!("Open {}", or(u, "a link")))),
@@ -242,7 +243,8 @@ an answer, a list, an address, a link. For the last answer, pass its text.",
         Tool::new("disconnect_network", "Disconnect a connected network or VPN by name.",
                   obj(json!({"name": {"type": "string"}}), &["name"]), Safe, connect::disconnect_network,
                   text("name", |n| format!("Disconnect {}", or(n, "a network")))),
-        Tool::new("list_bluetooth", "List paired Bluetooth devices (headphones, mice…) and which are connected.",
+        Tool::new("list_bluetooth", "List paired Bluetooth devices (headphones, mice…) and which are connected. \
+To connect one, call connect_bluetooth right away (it finds the device by everyday name).",
                   obj(json!({}), &[]), Safe, connect::list_bluetooth, |_| "List Bluetooth devices".into()),
         Tool::new("connect_bluetooth", "Connect a paired Bluetooth device by name, e.g. 'AirPods'. \
 Turns Bluetooth on if needed.", obj(json!({"device": {"type": "string"}}), &["device"]), Safe,
@@ -272,8 +274,8 @@ date like 2026-11-20.", obj(json!({"when": {"type": "string"}}), &[]), Safe, per
         Tool::new("find_contact", "Find a contact's email addresses and phone numbers by name.",
                   obj(json!({"name": {"type": "string"}}), &["name"]), Safe, personal::find_contact,
                   text("name", |n| format!("Look up {}", or(n, "a contact")))),
-        Tool::new("media_control", "Control music and video players: play, pause, play_pause, next, previous, stop, \
-or status (what's playing).", obj(json!({"action": {"type": "string", "enum": ["play", "pause", "play_pause", "next",
+        Tool::new("media_control", "Control music and video players: play, pause, play_pause, next (skip to the next \
+song), previous (go back), stop, or status (only to say what's playing).", obj(json!({"action": {"type": "string", "enum": ["play", "pause", "play_pause", "next",
                   "previous", "stop", "status"]}, "player": {"type": "string", "description": "Optional, e.g. Spotify"}}), &["action"]),
                   Safe, connect::media_control, text("action", |a| format!("Media: {}", a.replace('_', "/")))),
         Tool::new("run_command", "Run a shell command inside the user's 'zed' toolbox container (Fedora with dev \

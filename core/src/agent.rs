@@ -19,7 +19,7 @@ to do something on the computer, or asks about its state, call a tool instead of
 describing how to do it. Only call tools the request needs. Connect the dots: work out what the \
 user means from the conversation, what you remember about them and what's on the computer (\"my phone\" \
 is the device they told you about, \"it\" is what you just made or found), and pass one tool's result \
-to the next. If a tool fails, fix the call and try again, or look the options up first; say what \
+to the next. After looking something up to do a task, go on and do the task. If a tool fails, fix the call and try again, or look the options up first; say what \
 failed only when you can't work it out. Never invent tool results. Answer in the user's language.";
 const WEB_PROMPT: &str = " For anything recent or that you aren't sure of, use web_search and read the \
 most relevant result with read_web_page, then answer briefly and name the source.";
