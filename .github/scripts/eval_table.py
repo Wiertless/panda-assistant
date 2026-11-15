@@ -10,10 +10,25 @@ reports.sort(key=lambda r: (-r["passed"], r["seconds"]))
 names = []
 for r in reports:
     names += [s["name"] for s in r["scenarios"] if s["name"] not in names]
-print("| Model | Passed | s/request |")
-print("|---|---|---|")
+print("| Model | Passed | Scenarios fully passed | Not offered by routing | s/request |")
+print("|---|---|---|---|---|")
 for r in reports:
-    print(f"| `{r['label']}` | **{r['passed']}/{r['total']}** ({100 * r['passed'] / max(r['total'], 1):.0f}%) | {r['seconds'] / max(len(r['scenarios']), 1):.1f} |")
+    clusters = f"{r['clusters_passed']}/{r['clusters']}" if "clusters" in r else "—"
+    print(f"| `{r['label']}` | **{r['passed']}/{r['total']}** ({100 * r['passed'] / max(r['total'], 1):.0f}%) | {clusters} "
+          f"| {r.get('unrouted', '—')} | {r['seconds'] / max(len(r['scenarios']), 1):.1f} |")
+# What one variant fixed and broke against another (same model): totals hide offsetting changes.
+by_model = {}
+for r in reports:
+    by_model.setdefault(r["model"], []).append(r)
+for model, rs in by_model.items():
+    base = next((r for r in rs if r.get("variant", "baseline") == "baseline"), None)
+    for r in rs:
+        if base is None or r is base:
+            continue
+        ok = lambda rep, n: next((s["passed"] for s in rep["scenarios"] if s["name"] == n), None)
+        fixed = [s["name"] for s in r["scenarios"] if s["passed"] and ok(base, s["name"]) is False]
+        broke = [s["name"] for s in r["scenarios"] if not s["passed"] and ok(base, s["name"]) is True]
+        print(f"\n`{r['label']}` vs baseline: fixed {len(fixed)} ({', '.join(fixed) or '—'}); broke {len(broke)} ({', '.join(broke) or '—'})")
 caps = sorted({c for r in reports for c in r.get("capabilities", {})})
 if caps:
     print()

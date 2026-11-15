@@ -29,5 +29,9 @@
   "no-forcing": {
     "about": "Like baseline, without re-asking with only the finishing tools after a lookup.",
     "force_completion": false
+  },
+  "reply-tool": {
+    "about": "Like baseline, but the first round must call a tool, with reply(text) as one of them (smolagents, Apple, Rasa).",
+    "reply_tool": true
   }
 }

@@ -35,8 +35,9 @@ on:
 permissions:
   contents: read
 
+# A push supersedes the last push's run; runs started by hand are left alone.
 concurrency:
-  group: eval-${{ github.ref }}
+  group: eval-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'push' }}
   cancel-in-progress: true
 
 jobs:

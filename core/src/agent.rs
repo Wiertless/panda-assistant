@@ -21,6 +21,10 @@ const FAILURES_BEFORE_HANDOFF: usize = 3;
 const NUDGE: &str = "(You said it's done, but no tool ran, so nothing happened yet. Call the tool now to do it, \
 or say plainly that you can't.)";
 pub const ASK_USER: &str = "ask_user";
+/// Answering is a tool too (smolagents' final_answer, Goose's noop, Apple's
+/// required mode): the first round must call one, so talking instead of
+/// acting is a choice among tools, not the easy way out.
+pub const REPLY: &str = "reply";
 const ANSWER_NOW: &str = "(Now answer the user from these results, in a sentence or two.)";
 const REPEATED: &str = "Error: you already tried exactly this and it failed. Don't repeat it: change the arguments, \
 look the options up with another tool, or tell the user what's wrong.";
@@ -202,6 +206,8 @@ pub struct Agent {
     /// Ask again, with only the finishing tools and a call required, when an
     /// action request stopped after a lookup.
     pub force_completion: bool,
+    /// The first round of a turn must call a tool, `reply` among them.
+    pub reply_tool: bool,
     /// Turns counted, and the last turn each tool group was used: groups idle
     /// for a while are dropped, so the tool list doesn't only grow.
     pub turn_no: usize,
@@ -241,6 +247,7 @@ impl Agent {
             repair_args: true,
             nudge: true,
             force_completion: true,
+            reply_tool: false,
             turn_no: 0,
             group_seen: std::collections::HashMap::new(),
         }
@@ -468,6 +475,7 @@ impl Agent {
         h.compacted = 0;
         h.smarter_model = None;
         h.force_completion = false; // the bigger model doesn't need pushing
+        h.reply_tool = false;
         h
     }
 
@@ -512,22 +520,44 @@ impl Agent {
 
     fn run_turn(&mut self, text: &str, actionable: bool, turn_start: usize, turn: &mut Turn, cb: &dyn Callbacks)
                 -> Result<(), FlmError> {
-        for _ in 0..MAX_ROUNDS {
+        for round in 0..MAX_ROUNDS {
             if self.cancelled() {
                 return Ok(());
             }
             let forced = turn.forced.take();
-            let schemas = match &forced {
+            let mut schemas = match &forced {
                 Some(only) => Some(self.forced_schemas(only)),
                 None => self.tool_schemas(),
             };
-            let (content, calls) = match self.stream(schemas.as_deref(), forced.is_some(), cb) {
+            let reply_round = self.reply_tool && round == 0 && forced.is_none() && schemas.is_some();
+            if reply_round && let Some(s) = schemas.as_mut() {
+                s.push(json!({"type": "function", "function": {"name": REPLY,
+                    "description": "Answer the user in words: small talk and general knowledge only. Never for \
+the user's contacts, files, documents, calendar, settings, devices, or anything they ask you to do or remember.",
+                    "parameters": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}}}));
+            }
+            let (content, calls) = match self.stream(schemas.as_deref(), forced.is_some() || reply_round, cb) {
                 Err(e) if schemas.is_some() && matches!(e.status, Some(400 | 422)) => {
                     self.use_tools = false;
                     cb.notice(&format!("{} can't use tools, so it can only chat.", self.model));
                     self.stream(None, false, cb)?
                 }
                 other => other?,
+            };
+            // A reply call is the answer, as if the model had written it.
+            let (content, calls) = match calls.iter().position(|c| c.name == REPLY) {
+                Some(i) if calls.len() == 1 => {
+                    let text = calls[i].parsed_arguments().ok().and_then(|a| a.get("text").and_then(Value::as_str).map(String::from))
+                        .unwrap_or_default();
+                    cb.text(&text);
+                    (text, vec![])
+                }
+                Some(i) => {
+                    let mut rest = calls;
+                    rest.remove(i); // acting wins over answering
+                    (content, rest)
+                }
+                None => (content, calls),
             };
             // Calls written into the reply as text are calls.
             let (content, calls) = if calls.is_empty() && schemas.is_some() && self.repair_args {
@@ -1199,6 +1229,26 @@ mod tests {
         a.ask("how loud is it?", &Rec::default(), &[]).unwrap();
         assert_eq!(flm.requests().len(), 2);
         assert!(asks_for_action("ścisz trochę") && !asks_for_action("co mam jutro?") && !asks_for_action("Am I free at 1"));
+    }
+
+    #[test]
+    fn reply_is_a_tool_on_the_first_round() {
+        let _h = temp_home();
+        let flm = FakeFlm::start(vec![
+            (200, tool_reply(REPLY, r#"{"text": "Hi! All good."}"#, "c1")),
+            (200, tool_reply("set_volume", r#"{"percent": 20}"#, "c2")), (200, text_reply("Volume 20%.")),
+        ]);
+        let mut a = agent(&flm);
+        a.reply_tool = true;
+        let rec = Rec::default();
+        a.ask("hi, how are you?", &rec, &[]).unwrap();
+        assert_eq!(a.messages.last().unwrap()["content"], "Hi! All good.");
+        assert!(rec.log.lock().unwrap().contains(&"text:Hi! All good.".to_string()));
+        a.ask("volume 20", &Rec::default(), &[]).unwrap();
+        let r = flm.requests();
+        assert_eq!((r[0]["tool_choice"].as_str(), r[2]["tool_choice"].as_str()), (Some("required"), None), "first round only");
+        assert!(r[0]["tools"].as_array().unwrap().iter().any(|t| t["function"]["name"] == REPLY));
+        assert!(!a.messages.iter().any(|m| m["tool_calls"][0]["function"]["name"] == REPLY), "a reply is kept as text");
     }
 
     #[test]

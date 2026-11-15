@@ -32,6 +32,7 @@ pub struct Variant {
     pub repair_args: Option<bool>,
     pub nudge: Option<bool>,
     pub force_completion: Option<bool>,
+    pub reply_tool: Option<bool>,
     pub system_prompt: Option<String>,
     /// Whether the prompt lists the devices and networks (default yes).
     pub known: Option<bool>,
@@ -126,6 +127,9 @@ pub struct Scenario {
 pub struct Outcome {
     pub name: String,
     pub passed: bool,
+    /// The expected tools were among those first offered (core or routed by
+    /// the request's words): a miss when not is the router's, not the model's.
+    pub routed: bool,
     pub why: String,
     pub calls: Vec<(String, Args)>,
     pub seconds: f64,
@@ -230,12 +234,19 @@ pub fn run(client: &Arc<FlmClient>, model: &str, sees: bool, v: &Variant, s: &Sc
     agent.repair_args = v.repair_args.unwrap_or(agent.repair_args);
     agent.nudge = v.nudge.unwrap_or(agent.nudge);
     agent.force_completion = v.force_completion.unwrap_or(agent.force_completion);
+    agent.reply_tool = v.reply_tool.unwrap_or(agent.reply_tool);
     agent.system_prompt = v.system_prompt.clone();
     let known = s.known.as_deref().unwrap_or(KNOWN);
     agent.machine = Some(if v.known.unwrap_or(true) { format!("{MACHINE}\n{known}") } else { MACHINE.into() });
     let facts: Vec<String> = s.memory.iter().map(|f| format!("- {f}")).collect();
     agent.notes = Some(if facts.is_empty() { String::new() } else { format!("What you remember about the user:\n{}", facts.join("\n")) });
     agent.sees = Arc::new(move |_| sees);
+    let mut offered: Vec<&str> = vec![crate::tools::groups::CORE];
+    for p in s.before.iter().chain([&s.prompt]) {
+        offered.extend(crate::tools::groups::groups_for(p));
+    }
+    let routed = s.expect.iter().chain(&s.also)
+        .all(|e| e.tool.split('|').any(|t| offered.contains(&crate::tools::groups::group_of(t))));
     let started = Instant::now();
     let mut result = Ok(());
     for earlier in &s.before {
@@ -256,7 +267,7 @@ pub fn run(client: &Arc<FlmClient>, model: &str, sees: bool, v: &Variant, s: &Sc
         Err(e) => Err(format!("request failed: {}", e.message)),
         Ok(()) => judge(s, &calls, &answer),
     };
-    Outcome { name: s.name.clone(), passed: verdict.is_ok(), why: verdict.err().unwrap_or_default(), calls, seconds }
+    Outcome { name: s.name.clone(), passed: verdict.is_ok(), routed, why: verdict.err().unwrap_or_default(), calls, seconds }
 }
 
 pub fn load(path: Option<&str>) -> Result<Vec<Scenario>, String> {
@@ -321,9 +332,10 @@ pub fn main(args: &[String]) -> i32 {
         let shown = runs.iter().find(|o| !o.passed).unwrap_or(&runs[0]);
         let calls: Vec<&str> = shown.calls.iter().map(|(n, _)| n.as_str()).collect();
         let mark = if ok == repeat { "✓".to_string() } else if ok == 0 { "✗".to_string() } else { format!("{ok}/{repeat}") };
+        let routing = if shown.routed { "" } else { " [tool not offered by routing]" };
         println!("{mark:>3} {:<24} {secs:>5.1}s  {}{}", s.name,
                  if calls.is_empty() { "(no tools)".into() } else { calls.join(" → ") },
-                 if shown.passed { String::new() } else { format!("\n    {}", shown.why) });
+                 if shown.passed { String::new() } else { format!("\n    {}{routing}", shown.why) });
         rows.push((s.name.clone(), ok, secs, runs, s.tags.clone()));
     }
     let passed: usize = rows.iter().map(|r| r.1).sum();
@@ -342,13 +354,25 @@ pub fn main(args: &[String]) -> i32 {
     }
     let tag_line: Vec<String> = by_tag.iter().map(|(t, (ok, n))| format!("{t} {ok}/{n}")).collect();
     println!("by capability: {}", tag_line.join(", "));
+    // Paraphrases of one scenario are one thing: a cluster passes when all its wordings do.
+    let mut clusters: std::collections::BTreeMap<String, bool> = Default::default();
+    for (name, ok, ..) in &rows {
+        let base = name.split(" ~").next().unwrap_or(name).to_string();
+        let all = clusters.entry(base).or_insert(true);
+        *all &= *ok == repeat;
+    }
+    let clusters_ok = clusters.values().filter(|v| **v).count();
+    let unrouted = rows.iter().filter(|r| r.3.iter().any(|o| !o.routed)).count();
+    println!("scenarios fully passed: {clusters_ok}/{}; prompts whose tool routing didn't offer: {unrouted}", clusters.len());
     if let Some(path) = opt("--json") {
         let report = json!({"model": model, "variant": variant_name, "passed": passed, "total": total, "repeat": repeat,
+            "clusters_passed": clusters_ok, "clusters": clusters.len(), "unrouted": unrouted,
             "seconds": secs, "capabilities": by_tag.iter().map(|(t, (ok, n))| (t.clone(), json!({"passed": ok, "total": n})))
                 .collect::<serde_json::Map<_, _>>(),
             "scenarios": rows.iter().map(|(name, ok, secs, runs, _)| {
                 let shown = runs.iter().find(|o| !o.passed).unwrap_or(&runs[0]);
                 json!({"name": name, "passed": *ok == repeat, "passed_runs": ok, "runs": repeat, "why": shown.why,
+                       "routed": runs.iter().all(|o| o.routed),
                        "seconds": secs, "calls": shown.calls.iter().map(|(n, a)| json!({"tool": n, "args": a})).collect::<Vec<_>>()})
             }).collect::<Vec<_>>()});
         let _ = std::fs::write(&path, serde_json::to_string_pretty(&report).unwrap());
