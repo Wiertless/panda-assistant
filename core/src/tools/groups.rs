@@ -67,8 +67,8 @@ pub const EXAMPLES: [(&str, &str); 12] = [
 and the tablet's name (from what you remember, or list_devices)."),
     ("settings", "\"turn off the animations\" → find_settings(query \"animations\"), then change_setting with the schema \
 and key it found and the new value."),
-    ("files", "\"what's the total on my last invoice?\" → find_files(name \"invoice\"), then read_document with the newest \
-path, then answer from its text."),
+    ("files", "\"what's the total on my last invoice?\" → find_files(name \"invoice\"), then ask_document with the newest \
+path and the question."),
     ("system", "\"is my disk getting full?\" → get_system_info, then answer with the numbers."),
     ("devices", "\"connect the speaker\" → connect_bluetooth(device \"speaker\"); if the error lists the paired devices, \
 call it again with the one that is a speaker."),
@@ -153,7 +153,7 @@ pub fn group_of(tool: &str) -> &'static str {
         | "set_bluetooth" => "settings",
         "clipboard_history" => "clipboard",
         "list_reminders" | "cancel_reminder" => "reminders",
-        "list_folder" | "read_file" | "read_document" | "search_file_contents" | "look_at_image" => "files",
+        "list_folder" | "read_file" | "read_document" | "ask_document" | "search_file_contents" | "look_at_image" => "files",
         "get_battery" | "get_system_info" => "system",
         "list_networks" | "connect_network" | "disconnect_network" | "list_bluetooth" | "connect_bluetooth"
         | "disconnect_bluetooth" | "list_devices" | "send_file" | "send_text" => "devices",

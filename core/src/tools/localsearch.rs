@@ -210,20 +210,35 @@ pub fn search_file_contents(_: &Context, args: &Args) -> ToolResult {
     search_with(s, &s.connect()?, &arg_str(args, "query"))
 }
 
-pub fn read_document(_: &Context, args: &Args) -> ToolResult {
-    let path = home_path(&arg_str(args, "path"), true)?;
+/// A document's text: plain text read directly, others from GNOME's index,
+/// PDFs from pdftotext (up to `pages`) when not indexed yet.
+pub fn document_text(path: &Path, pages: u32) -> Result<String, ToolError> {
     if !path.is_file() {
-        return Err(format!("{} isn't a file", short(&path)).into());
+        return Err(format!("{} isn't a file", short(path)).into());
     }
-    let mut text = sparql().ok().and_then(|s| Some(indexed_text_with(s, &s.connect().ok()?, &path))).unwrap_or_default();
+    let plain = path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+        ["txt", "md", "markdown", "csv", "log", "org", "rst", "json", "toml", "yaml", "yml", "ini", "html", "htm"]
+            .contains(&e.to_lowercase().as_str())
+    });
+    if plain {
+        let bytes = std::fs::read(path).map_err(|e| ToolError(e.to_string()))?;
+        return Ok(String::from_utf8_lossy(&bytes[..bytes.len().min(2_000_000)]).to_string());
+    }
+    let mut text = sparql().ok().and_then(|s| Some(indexed_text_with(s, &s.connect().ok()?, path))).unwrap_or_default();
     if text.trim().is_empty() && path.extension().is_some_and(|e| e.eq_ignore_ascii_case("pdf"))
-        && let Ok(out) = super::run::output(&["pdftotext", "-l", "20", &path.to_string_lossy(), "-"],
-                                            std::time::Duration::from_secs(20), None) {
+        && let Ok(out) = super::run::output(&["pdftotext", "-layout", "-l", &pages.to_string(), &path.to_string_lossy(), "-"],
+                                            std::time::Duration::from_secs(40), None) {
             text = out.stdout;
         }
     if text.trim().is_empty() {
-        return Err(format!("no text is available for {} (it may not be indexed yet)", short(&path)).into());
+        return Err(format!("no text is available for {} (it may not be indexed yet)", short(path)).into());
     }
+    Ok(text)
+}
+
+pub fn read_document(_: &Context, args: &Args) -> ToolResult {
+    let path = home_path(&arg_str(args, "path"), true)?;
+    let text = document_text(&path, 20)?;
     let mut lines = vec![];
     let mut blank = 0;
     for l in text.trim().lines() {

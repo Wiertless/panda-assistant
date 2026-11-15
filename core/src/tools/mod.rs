@@ -12,6 +12,7 @@ use crate::tool::{Args, Risk, Tool, ToolError, arg_str, obj};
 pub mod apps;
 pub mod brains;
 pub mod connect;
+pub mod docs;
 pub mod files;
 pub mod groups;
 pub mod intents;
@@ -53,7 +54,7 @@ pub fn completes(lookup: &str) -> &'static [&'static str] {
         "list_networks" => &["connect_network", "disconnect_network"],
         "list_devices" => &["send_file", "send_text"],
         "find_files" | "search_file_contents" | "list_folder" =>
-            &["send_file", "read_document", "read_file", "open_file", "show_in_files"],
+            &["send_file", "ask_document", "read_document", "read_file", "open_file", "show_in_files"],
         "list_app_actions" => &["run_app_action"],
         "get_status" => &["set_volume", "set_mute", "set_brightness", "set_dark_mode", "set_do_not_disturb",
                           "set_night_light", "set_power_mode", "set_wifi", "set_bluetooth"],
@@ -65,7 +66,7 @@ pub fn completes(lookup: &str) -> &'static [&'static str] {
 /// a calendar invite, the clipboard, another app. After one runs, text in
 /// the chat may be written to steer the model.
 pub fn reads_untrusted(tool: &str) -> bool {
-    matches!(tool, "web_search" | "read_web_page" | "read_document" | "read_file" | "search_file_contents" | "get_events"
+    matches!(tool, "web_search" | "read_web_page" | "read_document" | "ask_document" | "read_file" | "search_file_contents" | "get_events"
         | "clipboard_history" | "read_window" | "look_at_image" | "find_contact") || tool.contains("__")
 }
 
@@ -86,7 +87,7 @@ pub const UNDOABLE: [&str; 13] = ["create_event", "set_dark_mode", "set_do_not_d
 pub fn next_step(tool: &str) -> Option<&'static str> {
     Some(match tool {
         "find_files" | "search_file_contents" | "list_folder" =>
-            "(To send one, pass its exact path to send_file; to read it, read_document or read_file.)",
+            "(To send one, pass its exact path to send_file; to answer what it says, ask_document with the question.)",
         "list_devices" => "(To send something, pass one of these names to send_file or send_text.)",
         "list_networks" => "(To connect, pass the network's name to connect_network.)",
         "list_bluetooth" => "(To connect, pass the device's name to connect_bluetooth.)",
@@ -341,6 +342,11 @@ using GNOME's file index. Returns files and matching snippets.", obj(json!({"que
         Tool::new("get_events", "Get calendar events. when: today, tomorrow, this week, next week, a weekday or a \
 date like 2026-11-20.", obj(json!({"when": {"type": "string"}}), &[]), Safe, personal::get_events,
                   text("when", |w| format!("Check the calendar ({})", or(w, "today")))),
+        Tool::new("ask_document", "Answer a question about what a document says, or summarize it (PDF, office \
+document, text), however long: it reads the parts that matter. path from find_files.",
+                  obj(json!({"path": {"type": "string"}, "question": {"type": "string", "description": "The user's question, or \"summarize\""}}),
+                      &["path", "question"]),
+                  Safe, docs::ask_document, text("path", |p| format!("Read {}", base_name(&or(p, "a document"))))),
         Tool::new("create_event", "Add an event to the user's calendar. start: HH:MM, a weekday and time (\"friday \
 13:00\"), or YYYY-MM-DD HH:MM, local time; minutes (default 60) or end.",
                   obj(json!({"title": {"type": "string"}, "start": {"type": "string"}, "minutes": {"type": "number"},
@@ -404,7 +410,7 @@ mod tests {
     #[test]
     fn same_tools_and_risks_as_the_python_app() {
         let names: Vec<String> = all().into_iter().map(|t| t.name).collect();
-        assert_eq!(names.len(), 62, "{names:?}");
+        assert_eq!(names.len(), 63, "{names:?}");
         let risky: Vec<String> = all().into_iter().filter(|t| t.risk == Risk::Confirm).map(|t| t.name).collect();
         assert_eq!(risky, ["run_command"]);
     }

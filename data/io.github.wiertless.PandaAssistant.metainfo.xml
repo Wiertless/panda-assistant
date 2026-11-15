@@ -27,6 +27,7 @@
           <li>Reminders and timers, with Snooze and Done in the notification; they survive restarts and reboots</li>
           <li>Undo: "undo that", or the Undo button on an action, puts a setting, the volume, brightness, Wi-Fi or a reminder back</li>
           <li>Adds events to your calendar and opens email drafts in your mail app</li>
+          <li>Answers questions about long documents and summarizes them</li>
         </ul>
       </description>
     </release>

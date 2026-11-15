@@ -782,11 +782,12 @@
   "stubs": {
    "find_files": "~/Dokumenty/lease-2026.pdf",
    "search_file_contents": "~/Dokumenty/lease-2026.pdf (mentions: deposit)",
-   "read_document": "LEASE AGREEMENT ... §4 Deposit: the Tenant pays a deposit of 4 500 zł before moving in ..."
+   "read_document": "LEASE AGREEMENT ... §4 Deposit: the Tenant pays a deposit of 4 500 zł before moving in ...",
+   "ask_document": "From ~/Dokumenty/lease-2026.pdf: The deposit is 4 500 zł, paid before moving in."
   },
   "expect": [
    {
-    "tool": "read_document|read_file",
+    "tool": "read_document|read_file|ask_document",
     "args": {
      "path": "lease-2026.pdf"
     }
@@ -1132,6 +1133,34 @@
   ],
   "paraphrases": [
    "napisz maila do Jakuba że się spóźnię 10 minut"
+  ]
+ },
+ {
+  "name": "summarize document",
+  "prompt": "summarize my lease",
+  "tags": [
+   "chain",
+   "answer"
+  ],
+  "stubs": {
+   "find_files": "~/Dokumenty/lease-2026.pdf",
+   "search_file_contents": "~/Dokumenty/lease-2026.pdf",
+   "ask_document": "Summary of ~/Dokumenty/lease-2026.pdf: a 12-month lease of a flat at ul. Długa 5, rent 3 200 zł a month, deposit 4 500 zł, notice 3 months."
+  },
+  "expect": [
+   {
+    "tool": "ask_document",
+    "args": {
+     "path": "lease-2026",
+     "question": "summar|streszcz|podsumuj"
+    }
+   }
+  ],
+  "answer": [
+   "3 200|3200|4 500|4500"
+  ],
+  "paraphrases": [
+   "streść moją umowę najmu"
   ]
  }
 ]

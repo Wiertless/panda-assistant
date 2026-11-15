@@ -50,7 +50,12 @@ pub struct Context {
     pub reminders_changed: Option<Hook>,
     /// What the last changes replaced, newest last, so "undo that" can put it back.
     pub undo: Arc<Mutex<Vec<UndoStep>>>,
+    /// Ask the model a one-off question in a fresh context (system, user) ->
+    /// answer, for tools that work on long text (documents, a selection).
+    pub ask_model: Option<AskModel>,
 }
+
+pub type AskModel = Arc<dyn Fn(&str, &str) -> Result<String, ToolError> + Send + Sync>;
 
 #[cfg(test)]
 mod undo_tests {

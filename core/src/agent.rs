@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 
 use crate::flm::{ChatOptions, FlmClient, FlmError, StreamEvent, ToolCall, strip_think};
 use crate::store;
-use crate::tool::{Context, Risk, Tool};
+use crate::tool::{Context, Risk, Tool, ToolError};
 use crate::tools::groups;
 
 pub const MAX_ROUNDS: usize = 8; // room to look something up and retry
@@ -481,6 +481,11 @@ impl Agent {
 
     /// Run one user turn to completion. Blocking.
     pub fn ask(&mut self, text: &str, cb: &dyn Callbacks, images: &[String]) -> Result<(), FlmError> {
+        // Tools that work on long text (documents) ask the model in a fresh context of their own.
+        let (client, model) = (self.client.clone(), self.model.clone());
+        self.ctx.ask_model = Some(Arc::new(move |system: &str, user: &str| {
+            one_shot(&client, &model, system, user).map_err(|e| ToolError(e.message))
+        }));
         self.cancel.store(false, Ordering::SeqCst);
         self.drop_old_images();
         if self.use_tools || !self.messages.is_empty() {
@@ -875,6 +880,19 @@ fn reply_schema() -> Value {
         "description": "Answer the user in words: small talk and general knowledge only. Never for \
 the user's contacts, files, documents, calendar, settings, devices, or anything they ask you to do or remember.",
         "parameters": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}}})
+}
+
+/// One question in a fresh context, no tools: the answer text.
+pub fn one_shot(client: &FlmClient, model: &str, system: &str, user: &str) -> Result<String, FlmError> {
+    let messages = [json!({"role": "system", "content": system}), json!({"role": "user", "content": user})];
+    let opts = ChatOptions { temperature: Some(TOOL_TEMPERATURE), max_tokens: Some(MAX_REPLY_TOKENS), tool_choice: None };
+    let mut text = String::new();
+    for ev in client.chat_stream(model, &messages, None, &opts)? {
+        if let StreamEvent::Text(t) = ev? {
+            text.push_str(&t);
+        }
+    }
+    Ok(strip_think(&text).trim().to_string())
 }
 
 /// What happened so far in one turn.
