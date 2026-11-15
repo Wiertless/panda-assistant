@@ -112,6 +112,23 @@ impl Core {
     pub fn unload(&self) {
         self.call_async("Unload", None);
     }
+    pub fn restart(&self) {
+        self.call_async("Restart", None);
+    }
+    /// End turns whose service went away without finishing them.
+    pub fn finish_all(&self, error: &str) {
+        let turns: Vec<Rc<dyn Turn>> = self.turns.borrow_mut().drain().map(|(_, t)| t).collect();
+        for t in turns {
+            t.on_finished(error);
+        }
+    }
+    /// The service process currently answering (its unique bus name), if any.
+    pub fn owner(&self) -> Option<String> {
+        self.bus.call_sync(Some("org.freedesktop.DBus"), "/org/freedesktop/DBus", "org.freedesktop.DBus", "GetNameOwner",
+                           Some(&(BUS_NAME,).to_variant()), Some(glib::VariantTy::new("(s)").unwrap()),
+                           gio::DBusCallFlags::NONE, 2000, None::<&gio::Cancellable>)
+            .ok().and_then(|v| v.child_value(0).get::<String>())
+    }
     pub fn reload(&self) {
         self.call_async("Reload", None);
     }

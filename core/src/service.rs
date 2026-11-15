@@ -52,6 +52,7 @@ pub const INTROSPECTION: &str = r#"
     <method name="Reload"/>
     <method name="Unload"/>
     <method name="Load"/>
+    <method name="Restart"/>
     <method name="Connections"><arg type="s" name="json" direction="out"/></method>
     <method name="Pending">
       <arg type="s" name="chat_id" direction="in"/>
@@ -513,6 +514,27 @@ impl Service {
         self.load_models();
     }
 
+    /// Start over: stop the turn, the model server and connected apps, then
+    /// exit; D-Bus starts a fresh service on the next call.
+    pub fn restart(self: &Arc<Self>) {
+        self.stop();
+        self.cancel_idle();
+        let me = self.clone();
+        std::thread::spawn(move || {
+            for _ in 0..100 {
+                if !me.shared.busy.load(Ordering::SeqCst) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            me.shared.mcp.stop_all();
+            me.shared.client.stop_server();
+            me.set_state("Not loaded");
+            let _ = me.conn.flush_sync(None::<&gio::Cancellable>);
+            std::process::exit(0);
+        });
+    }
+
     pub fn unload(self: &Arc<Self>) {
         if self.shared.busy.load(Ordering::SeqCst) {
             return;
@@ -636,6 +658,10 @@ impl Service {
             "Unload" => {
                 self.unload();
                 reply(None)
+            }
+            "Restart" => {
+                reply(None);
+                self.restart();
             }
             _ => invocation.return_dbus_error("org.freedesktop.DBus.Error.UnknownMethod", method),
         }

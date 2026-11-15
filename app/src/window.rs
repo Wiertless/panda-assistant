@@ -141,6 +141,7 @@ impl Window {
         menu.append_submenu(Some("_Model"), &model_menu);
         let mem = gio::Menu::new();
         mem.append(Some("_Unload Model"), Some("win.unload"));
+        mem.append(Some("_Restart Assistant"), Some("win.restart"));
         menu.append_section(None, &mem);
         let tail = gio::Menu::new();
         tail.append(Some("_Preferences"), Some("win.preferences"));
@@ -184,6 +185,7 @@ impl Window {
             .margin_top(6).margin_bottom(16).margin_start(12).margin_end(12).build();
 
         let banner = adw::Banner::builder().revealed(false).build();
+        banner.set_action_name(Some("win.restart"));
         let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
         content.append(&banner);
         content.append(&stack);
@@ -279,7 +281,8 @@ impl Window {
         self.setup_zoom();
 
         // Window actions.
-        let actions: [(&str, Box<dyn Fn()>); 10] = [
+        let actions: [(&str, Box<dyn Fn()>); 11] = [
+            ("restart", Box::new(on!(|s: &Rc<Self>| s.restart()))),
             ("new-chat", Box::new(on!(|s: &Rc<Self>| s.new_chat()))),
             ("focus-entry", Box::new(on!(|s: &Rc<Self>| { s.entry.grab_focus(); }))),
             ("stop", Box::new(on!(|s: &Rc<Self>| s.stop()))),
@@ -672,6 +675,7 @@ impl Window {
             Ok(st) => self.set_state(st["state"].as_str().unwrap_or("Not loaded")),
             Err(e) => {
                 self.banner.set_title(&e);
+                self.banner.set_button_label(Some("Restart"));
                 self.banner.set_revealed(true);
                 return;
             }
@@ -697,6 +701,7 @@ impl Window {
     fn fill_models(&self, mut models: Vec<Model>) {
         if models.is_empty() {
             self.banner.set_title("No models found. Is FastFlowLM installed?");
+            self.banner.set_button_label(Some("Restart"));
             self.banner.set_revealed(true);
         }
         let current = self.st.borrow().model.clone();
@@ -718,6 +723,7 @@ impl Window {
         self.show_state();
         let st = self.st.borrow();
         self.banner.set_revealed(false);
+        self.banner.set_button_label(None); // only errors offer Restart
         if let Some(m) = st.models.iter().find(|m| m.name == st.model).filter(|m| !m.labels.is_empty()) {
             if m.single_turn() {
                 self.banner.set_title("This model doesn't remember earlier messages and can't take actions");
@@ -764,6 +770,38 @@ impl Window {
         self.core.load();
         let flag = self.loading.clone();
         glib::timeout_add_seconds_local_once(5, move || flag.set(false));
+    }
+
+    /// Restart the service (model server and connected apps too), then pick
+    /// the chat back up from disk with fresh settings.
+    pub fn restart(self: &Rc<Self>) {
+        if self.st.borrow().busy {
+            self.stop();
+        }
+        let before = self.core.owner();
+        self.banner.set_revealed(false);
+        self.set_state("Restarting…");
+        self.core.restart();
+        let w = Rc::downgrade(self);
+        let started = std::time::Instant::now();
+        glib::timeout_add_local(std::time::Duration::from_millis(300), move || {
+            let Some(s) = w.upgrade() else { return glib::ControlFlow::Break };
+            let gone = before.is_none() || s.core.owner() != before;
+            if !gone && started.elapsed() < std::time::Duration::from_secs(20) {
+                return glib::ControlFlow::Continue;
+            }
+            s.core.finish_all("The assistant was restarted");
+            let id = s.st.borrow().chat_id.clone();
+            s.st.borrow_mut().chat_id = String::new(); // so open_chat reloads it
+            if store::load_chat(&id).is_some() {
+                s.open_chat(&id);
+            } else {
+                s.st.borrow_mut().chat_id = id;
+            }
+            s.load_models(); // also starts the new service
+            s.toast(if gone { "Assistant restarted" } else { "The service didn't restart; try again" });
+            glib::ControlFlow::Break
+        });
     }
 
     pub fn unload(&self, manual: bool) {
