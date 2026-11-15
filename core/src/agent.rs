@@ -467,6 +467,7 @@ impl Agent {
         h.messages = vec![];
         h.compacted = 0;
         h.smarter_model = None;
+        h.force_completion = false; // the bigger model doesn't need pushing
         h
     }
 
@@ -549,21 +550,23 @@ impl Agent {
                     "function": {"name": c.name, "arguments": if c.arguments.is_empty() { "{}" } else { &c.arguments }}}))
                     .collect();
             }
-            if self.force_completion && calls.is_empty() && !self.cancelled() && !turn.was_forced
-                && self.use_tools && asks_for_action(text) && let Some(finish) = turn.unfinished() {
-                // It looked something up for an action and stopped: ask again with only the
-                // tools that finish it, a call required (ask_user if it can't tell which).
-                cb.retract();
-                turn.was_forced = true;
-                turn.forced = Some(finish);
-                continue;
-            }
             if self.nudge && calls.is_empty() && !self.cancelled() && turn.nudge_at.is_none() && turn.tools_ran == 0
                 && self.use_tools && actionable && claims_action(&content) {
                 // It said it did something it didn't: take that back and ask it to act.
                 cb.retract();
                 turn.nudge_at = Some(self.messages.len());
                 self.messages.push(json!({"role": "user", "content": NUDGE}));
+                continue;
+            }
+            if self.force_completion && calls.is_empty() && !self.cancelled() && !turn.was_forced
+                && self.use_tools && asks_for_action(text)
+                && let Some(only) = turn.unfinished().or_else(|| (actionable && turn.tools_ran == 0).then(|| self.routed_names())) {
+                // It looked something up for an action and stopped, or answered an action request
+                // without any tool: ask again with only the tools that do it (those that finish the
+                // lookup, or the request's own groups), a call required, ask_user if unsure which.
+                cb.retract();
+                turn.was_forced = true;
+                turn.forced = Some(only);
                 continue;
             }
             if self.nudge && calls.is_empty() && !self.cancelled() && turn.nudge_at.is_none() && turn.tools_ran > 0
@@ -642,9 +645,17 @@ impl Agent {
         Ok(())
     }
 
+    /// The tools of the groups in play (not the core ones): what an action
+    /// request that matched those groups should be done with.
+    fn routed_names(&self) -> Vec<String> {
+        self.available_tools().into_iter()
+            .filter(|t| { let g = groups::group_of(&t.name); g != groups::CORE && self.active_groups.contains(g) })
+            .map(|t| t.name).collect()
+    }
+
     /// Only these tools (those available), plus ask_user for when several fit.
-    fn forced_schemas(&self, only: &[&str]) -> Vec<Value> {
-        let mut v: Vec<Value> = self.available_tools().into_iter().filter(|t| only.contains(&t.name.as_str()))
+    fn forced_schemas(&self, only: &[String]) -> Vec<Value> {
+        let mut v: Vec<Value> = self.available_tools().into_iter().filter(|t| only.contains(&t.name))
             .map(|t| t.schema()).collect();
         v.push(json!({"type": "function", "function": {"name": ASK_USER,
             "description": "Ask the user a short question when you can't tell which one they mean.",
@@ -825,16 +836,17 @@ struct Turn {
     /// Tools that ran fine, in order (to see if a lookup was followed up).
     done: Vec<String>,
     /// This round may only call these, and must call one.
-    forced: Option<Vec<&'static str>>,
+    forced: Option<Vec<String>>,
     was_forced: bool,
 }
 
 impl Turn {
     /// The finishing tools for a lookup that ran and wasn't followed up.
-    fn unfinished(&self) -> Option<Vec<&'static str>> {
+    fn unfinished(&self) -> Option<Vec<String>> {
         let (i, lookup) = self.done.iter().enumerate().rev().find(|(_, t)| !crate::tools::completes(t).is_empty())?;
         let finish = crate::tools::completes(lookup);
-        (!self.done[i + 1..].iter().any(|t| finish.contains(&t.as_str()))).then(|| finish.to_vec())
+        (!self.done[i + 1..].iter().any(|t| finish.contains(&t.as_str())))
+            .then(|| finish.iter().map(|s| s.to_string()).collect())
     }
 }
 
@@ -1094,7 +1106,7 @@ mod tests {
         let mut a = agent(&flm);
         a.ask("hello", &Rec::default(), &[]).unwrap();
         a.ask("give it to Marek", &Rec { allow: true, ..Default::default() }, &[]).unwrap();
-        a.ask("turn the volume up", &Rec::default(), &[]).unwrap();
+        a.ask("how loud is the volume?", &Rec::default(), &[]).unwrap();
         let reqs = flm.requests();
         // Core tools and the meta tool only.
         let first = names(&reqs[0]);
@@ -1168,6 +1180,18 @@ mod tests {
         assert!(names.contains(&"set_volume") && names.contains(&ASK_USER) && !names.contains(&"get_status"), "{names:?}");
         assert!(rec.log.lock().unwrap().contains(&"tool:set_volume:true:50%".to_string()));
         assert_eq!(a.messages.last().unwrap()["content"], "Turned it down to 50%.");
+        // An action request answered without any tool is forced too, with its groups' tools.
+        let flm = FakeFlm::start(vec![
+            (200, text_reply("Sure, the volume is now lower.")),
+            (200, tool_reply("set_volume", r#"{"percent": 40}"#, "c1")),
+            (200, text_reply("Volume 40%.")),
+        ]);
+        let mut a = agent(&flm);
+        a.nudge = false; // so the forcing, not the claim check, catches it
+        a.ask("turn the volume down", &Rec::default(), &[]).unwrap();
+        let r = flm.requests();
+        assert_eq!(r[1]["tool_choice"], "required");
+        assert!(r[1]["tools"].as_array().unwrap().iter().any(|t| t["function"]["name"] == "set_volume"));
         // A question isn't forced.
         let flm = FakeFlm::start(vec![(200, tool_reply("get_status", "{}", "c1")), (200, text_reply("It's at 70%."))]);
         let mut tools = test_tools()();
@@ -1199,7 +1223,7 @@ mod tests {
         let _h = temp_home();
         let flm = FakeFlm::start(vec![(200, text_reply("ok")), (200, text_reply("ok")), (200, text_reply("ok")), (200, text_reply("ok"))]);
         let mut a = agent(&flm);
-        a.ask("turn the volume up", &Rec::default(), &[]).unwrap();
+        a.ask("what's the volume?", &Rec::default(), &[]).unwrap();
         assert!(a.active_groups.contains("settings"));
         for _ in 0..3 {
             a.ask("hello", &Rec::default(), &[]).unwrap();

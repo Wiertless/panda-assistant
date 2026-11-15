@@ -166,10 +166,19 @@ pub fn leads_to(tool: &str) -> Option<&'static str> {
     }
 }
 
+/// Whether a word stem starts a word in `t` ("smaller" in "a smaller one",
+/// not "note" inside "denoted"); stems that start with a symbol (".com") match anywhere.
+fn has_stem(t: &str, stem: &str) -> bool {
+    if !stem.starts_with(char::is_alphanumeric) {
+        return t.contains(stem);
+    }
+    t.match_indices(stem).any(|(i, _)| t[..i].chars().next_back().is_none_or(|c| !c.is_alphanumeric()))
+}
+
 /// Groups the words of a message point at.
 pub fn groups_for(text: &str) -> Vec<&'static str> {
-    let t = format!(" {} ", text.to_lowercase());
-    GROUPS.iter().filter(|(_, _, words)| words.iter().any(|w| t.contains(w))).map(|(g, _, _)| *g).collect()
+    let t = text.to_lowercase();
+    GROUPS.iter().filter(|(_, _, words)| words.iter().any(|w| has_stem(&t, w.trim()))).map(|(g, _, _)| *g).collect()
 }
 
 /// The meta tool listing the groups not yet included.
@@ -194,6 +203,8 @@ mod tests {
         assert_eq!(groups_for("co mam jutro w kalendarzu?"), ["personal"]);
         assert_eq!(groups_for("włącz tryb ciemny"), ["settings"]);
         assert!(groups_for("hello there").is_empty());
+        assert!(groups_for("a denoted fact").is_empty(), "stems start words");
+        assert_eq!(groups_for("go to example.com"), ["web"]);
         assert!(groups_for("find the PDF about the lease").contains(&"files"));
         assert!(groups_for("open a terminal in Projects").contains(&"apps"));
         assert!(groups_for("what's the weather in Kraków").contains(&"apps"));
