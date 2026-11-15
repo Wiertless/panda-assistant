@@ -251,7 +251,7 @@ mod tests {
             assert!(g == CORE || names.contains(&g), "{} -> {g}", t.name);
         }
         let core = crate::tools::all().into_iter().filter(|t| group_of(&t.name) == CORE).count();
-        assert!(core <= 16, "core grew to {core} tools");
+        assert!(core <= 18, "core grew to {core} tools");
         for t in ["find_files", "find_settings"] {
             assert_eq!(group_of(t), CORE);
             assert!(leads_to(t).is_some_and(|g| names.contains(&g)));

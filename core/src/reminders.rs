@@ -154,6 +154,12 @@ pub fn set_reminder(ctx: &Context, args: &Args) -> ToolResult {
     }
     let r = add(due, &text)?;
     changed(ctx);
+    let (id, c) = (r.id.clone(), ctx.clone());
+    ctx.can_undo(&format!("Reminder: {}", r.text), move || {
+        remove(&id);
+        changed(&c);
+        Ok("the reminder is cancelled.".into())
+    });
     let mins = (due - now() + 30) / 60;
     let left = if mins < 60 { format!("in {mins} min") } else { format!("at {}", when(due)) };
     Ok(format!("Reminder set {left} ({}): {}", when(due), r.text))

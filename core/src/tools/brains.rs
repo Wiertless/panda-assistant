@@ -3,8 +3,21 @@
 use crate::store;
 use crate::tool::{Args, Context, ToolError, ToolResult, arg_str};
 
-pub fn remember(_: &Context, args: &Args) -> ToolResult {
-    store::remember(&arg_str(args, "fact")).map_err(ToolError)
+pub fn remember(ctx: &Context, args: &Args) -> ToolResult {
+    let fact = arg_str(args, "fact");
+    let out = store::remember(&fact).map_err(ToolError)?;
+    if out.starts_with("Remembered") {
+        ctx.can_undo(&format!("Remember “{}”", fact.trim()), move || {
+            store::forget(&fact);
+            Ok("forgotten again.".into())
+        });
+    }
+    Ok(out)
+}
+
+/// "Undo that": reverse the newest change (a setting, the volume, a reminder, a remembered fact…).
+pub fn undo(ctx: &Context, _: &Args) -> ToolResult {
+    ctx.undo_last()
 }
 
 pub fn forget(_: &Context, args: &Args) -> ToolResult {

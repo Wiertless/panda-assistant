@@ -48,6 +48,57 @@ pub struct Context {
     pub client_pid: Arc<std::sync::atomic::AtomicU32>,
     /// Reminders were added or removed: the service reschedules its timer.
     pub reminders_changed: Option<Hook>,
+    /// What the last changes replaced, newest last, so "undo that" can put it back.
+    pub undo: Arc<Mutex<Vec<UndoStep>>>,
+}
+
+#[cfg(test)]
+mod undo_tests {
+    use super::*;
+
+    #[test]
+    fn undo_newest_first() {
+        let ctx = Context::default();
+        let log = Arc::new(Mutex::new(vec![]));
+        for i in 0..25 {
+            let l = log.clone();
+            ctx.can_undo(&format!("change {i}"), move || { l.lock().unwrap().push(i); Ok(format!("{i} back.")) });
+        }
+        let copy = ctx.clone();
+        assert_eq!(copy.undo_last().unwrap(), "Undid “change 24”: 24 back.", "clones share the stack");
+        assert_eq!(ctx.undo_last().unwrap(), "Undid “change 23”: 23 back.");
+        for _ in 0..18 {
+            ctx.undo_last().unwrap();
+        }
+        assert!(ctx.undo_last().unwrap_err().0.contains("nothing to undo"), "only the last 20 are kept");
+    }
+}
+
+pub type UndoFn = Arc<dyn Fn() -> Result<String, ToolError> + Send + Sync>;
+
+#[derive(Clone)]
+pub struct UndoStep {
+    /// What the change was ("Dark mode on"), for "Undid: …".
+    pub what: String,
+    pub run: UndoFn,
+}
+
+const UNDO_KEEP: usize = 20;
+
+impl Context {
+    /// Record how to reverse a change that just happened.
+    pub fn can_undo(&self, what: &str, run: impl Fn() -> Result<String, ToolError> + Send + Sync + 'static) {
+        let mut u = self.undo.lock().unwrap();
+        u.push(UndoStep { what: what.to_string(), run: Arc::new(run) });
+        let extra = u.len().saturating_sub(UNDO_KEEP);
+        u.drain(..extra);
+    }
+
+    /// Reverse the newest change.
+    pub fn undo_last(&self) -> Result<String, ToolError> {
+        let step = self.undo.lock().unwrap().pop().ok_or("there's nothing to undo")?;
+        (step.run)().map(|done| format!("Undid “{}”: {done}", step.what.trim_end_matches('.')))
+    }
 }
 
 pub type RunFn = Arc<dyn Fn(&Context, &Args) -> ToolResult + Send + Sync>;

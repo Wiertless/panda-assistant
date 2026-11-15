@@ -61,6 +61,10 @@ pub fn completes(lookup: &str) -> &'static [&'static str] {
     }
 }
 
+/// Tools whose change `undo` can reverse (the window offers Undo on their pill).
+pub const UNDOABLE: [&str; 12] = ["set_dark_mode", "set_do_not_disturb", "set_night_light", "set_volume", "set_mute",
+    "set_brightness", "set_wifi", "set_bluetooth", "set_power_mode", "change_setting", "set_reminder", "remember"];
+
 /// What to do with a lookup's result, appended to it so the model keeps the
 /// thread ("found it" → "now use it"). Only for results that found something.
 pub fn next_step(tool: &str) -> Option<&'static str> {
@@ -216,6 +220,9 @@ Returns titles, links and short snippets. Not for the user's own files, settings
                   text("url", |u| format!("Read {}", or(u, "a page")))),
         Tool::new("copy_to_clipboard", "Copy text to the clipboard.", obj(json!({"text": {"type": "string"}}), &["text"]),
                   Safe, settings::copy_to_clipboard, |_| "Copy to clipboard".into()),
+        Tool::new("undo", "Undo the last change you made (a setting, the volume, brightness, Wi-Fi, a reminder, \
+something remembered) when the user says undo, revert, change it back or cofnij.", obj(json!({}), &[]), Safe,
+                  brains::undo, |_| "Undo the last change".into()),
         Tool::new("set_reminder", "Remind the user of something later, or set a timer (leave text empty). Give \
 in_minutes, or at as HH:MM or YYYY-MM-DD HH:MM in local time (today's date is in the prompt).",
                   obj(json!({"text": {"type": "string", "description": "What to remind them of"},
@@ -372,7 +379,7 @@ mod tests {
     #[test]
     fn same_tools_and_risks_as_the_python_app() {
         let names: Vec<String> = all().into_iter().map(|t| t.name).collect();
-        assert_eq!(names.len(), 59, "{names:?}");
+        assert_eq!(names.len(), 60, "{names:?}");
         let risky: Vec<String> = all().into_iter().filter(|t| t.risk == Risk::Confirm).map(|t| t.name).collect();
         assert_eq!(risky, ["run_command"]);
     }

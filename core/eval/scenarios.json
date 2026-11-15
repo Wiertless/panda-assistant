@@ -1070,5 +1070,25 @@
    "5 minute timer",
    "nastaw minutnik na 5 minut"
   ]
+ },
+ {
+  "name": "undo",
+  "before": [
+   "turn on dark mode"
+  ],
+  "prompt": "undo that",
+  "tags": [
+   "multi-turn",
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "undo"
+   }
+  ],
+  "paraphrases": [
+   "change it back",
+   "cofnij to"
+  ]
  }
 ]

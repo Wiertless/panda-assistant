@@ -23,37 +23,75 @@ fn gsettings_get(schema: &str, key: &str) -> Option<glib::Variant> {
     Some(gio::Settings::new(schema).value(key))
 }
 
+/// Set a key and remember its old value for undo.
+fn gsettings_change(ctx: &Context, what: &str, schema: &str, key: &str, value: glib::Variant) -> Result<(), ToolError> {
+    let old = gsettings_get(schema, key);
+    gsettings_set(schema, key, value)?;
+    if let Some(old) = old {
+        let (schema, key) = (schema.to_string(), key.to_string());
+        ctx.can_undo(what, move || {
+            gsettings_set(&schema, &key, old.clone())?;
+            Ok(format!("{key} is back to {}.", old.print(false)))
+        });
+    }
+    Ok(())
+}
+
+/// (volume percent, muted) of the default output.
+fn volume_now() -> Option<(u32, bool)> {
+    let out = run(&["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"], 5).ok()?;
+    let v: f64 = out.split_whitespace().nth(1)?.parse().ok()?;
+    Some(((v * 100.0).round() as u32, out.contains("MUTED")))
+}
+
 fn on_off(on: bool) -> &'static str {
     if on { "on" } else { "off" }
 }
 
-pub fn set_dark_mode(_: &Context, args: &Args) -> ToolResult {
+pub fn set_dark_mode(ctx: &Context, args: &Args) -> ToolResult {
     let on = arg_bool(args, "enabled")?;
-    gsettings_set("org.gnome.desktop.interface", "color-scheme", (if on { "prefer-dark" } else { "default" }).to_variant())?;
+    gsettings_change(ctx, &format!("Dark mode {}", on_off(on)), "org.gnome.desktop.interface", "color-scheme",
+                     (if on { "prefer-dark" } else { "default" }).to_variant())?;
     Ok(format!("Dark mode {}.", on_off(on)))
 }
 
-pub fn set_do_not_disturb(_: &Context, args: &Args) -> ToolResult {
+pub fn set_do_not_disturb(ctx: &Context, args: &Args) -> ToolResult {
     let on = arg_bool(args, "enabled")?;
-    gsettings_set("org.gnome.desktop.notifications", "show-banners", (!on).to_variant())?;
+    gsettings_change(ctx, &format!("Do Not Disturb {}", on_off(on)), "org.gnome.desktop.notifications", "show-banners",
+                     (!on).to_variant())?;
     Ok(format!("Do Not Disturb {}.", on_off(on)))
 }
 
-pub fn set_night_light(_: &Context, args: &Args) -> ToolResult {
+pub fn set_night_light(ctx: &Context, args: &Args) -> ToolResult {
     let on = arg_bool(args, "enabled")?;
-    gsettings_set("org.gnome.settings-daemon.plugins.color", "night-light-enabled", on.to_variant())?;
+    gsettings_change(ctx, &format!("Night Light {}", on_off(on)), "org.gnome.settings-daemon.plugins.color",
+                     "night-light-enabled", on.to_variant())?;
     Ok(format!("Night Light {}.", on_off(on)))
 }
 
-pub fn set_volume(_: &Context, args: &Args) -> ToolResult {
+pub fn set_volume(ctx: &Context, args: &Args) -> ToolResult {
     let pct = arg_percent(args, "percent", 0)?;
+    let before = volume_now();
     run(&["wpctl", "set-volume", "-l", "1.0", "@DEFAULT_AUDIO_SINK@", &format!("{pct}%")], 15)?;
+    if let Some((old, _)) = before {
+        ctx.can_undo(&format!("Volume {pct}%"), move || {
+            run(&["wpctl", "set-volume", "-l", "1.0", "@DEFAULT_AUDIO_SINK@", &format!("{old}%")], 15)?;
+            Ok(format!("volume is back to {old}%."))
+        });
+    }
     Ok(format!("Volume set to {pct}%."))
 }
 
-pub fn set_mute(_: &Context, args: &Args) -> ToolResult {
+pub fn set_mute(ctx: &Context, args: &Args) -> ToolResult {
     let on = arg_bool(args, "muted")?;
+    let before = volume_now();
     run(&["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", if on { "1" } else { "0" }], 15)?;
+    if let Some((_, was)) = before {
+        ctx.can_undo(if on { "Mute" } else { "Unmute" }, move || {
+            run(&["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", if was { "1" } else { "0" }], 15)?;
+            Ok(if was { "muted again." } else { "unmuted again." }.into())
+        });
+    }
     Ok(if on { "Muted." } else { "Unmuted." }.into())
 }
 
@@ -69,33 +107,58 @@ fn backlight() -> Result<(String, u32, u32), ToolError> {
     Err("no screen backlight found".into())
 }
 
-pub fn set_brightness(_: &Context, args: &Args) -> ToolResult {
-    let pct = arg_percent(args, "percent", 1)?;
-    let (dev, _, top) = backlight()?;
-    let value = ((top as f64 * pct as f64 / 100.0).round() as u32).max(1);
+fn set_backlight(dev: &str, value: u32) -> Result<(), ToolError> {
     dbus_call(true, "org.freedesktop.login1", "/org/freedesktop/login1/session/auto", "org.freedesktop.login1.Session",
-              "SetBrightness", Some(&("backlight", dev.as_str(), value).to_variant()), None, 5000)
-        .map_err(|e| ToolError(e.message().to_string()))?;
+              "SetBrightness", Some(&("backlight", dev, value).to_variant()), None, 5000)
+        .map(|_| ()).map_err(|e| ToolError(e.message().to_string()))
+}
+
+pub fn set_brightness(ctx: &Context, args: &Args) -> ToolResult {
+    let pct = arg_percent(args, "percent", 1)?;
+    let (dev, cur, top) = backlight()?;
+    let value = ((top as f64 * pct as f64 / 100.0).round() as u32).max(1);
+    set_backlight(&dev, value)?;
+    ctx.can_undo(&format!("Brightness {pct}%"), move || {
+        set_backlight(&dev, cur)?;
+        Ok(format!("brightness is back to {}%.", (cur as f64 * 100.0 / top.max(1) as f64).round()))
+    });
     Ok(format!("Brightness set to {pct}%."))
 }
 
-pub fn set_wifi(_: &Context, args: &Args) -> ToolResult {
+pub fn set_wifi(ctx: &Context, args: &Args) -> ToolResult {
     let on = arg_bool(args, "enabled")?;
+    let was = run(&["nmcli", "radio", "wifi"], 5).ok().map(|s| s.trim() == "enabled");
     run(&["nmcli", "radio", "wifi", on_off(on)], 15)?;
+    if let Some(was) = was {
+        ctx.can_undo(&format!("Wi-Fi {}", on_off(on)), move || {
+            run(&["nmcli", "radio", "wifi", on_off(was)], 15)?;
+            Ok(format!("Wi-Fi is {} again.", on_off(was)))
+        });
+    }
     Ok(format!("Wi-Fi {}.", on_off(on)))
 }
 
-pub fn set_bluetooth(_: &Context, args: &Args) -> ToolResult {
-    let on = arg_bool(args, "enabled")?;
+fn bluetooth_airplane(on: bool) -> Result<(), ToolError> {
     set_property(false, "org.gnome.SettingsDaemon.Rfkill", "/org/gnome/SettingsDaemon/Rfkill",
-                 "org.gnome.SettingsDaemon.Rfkill", "BluetoothAirplaneMode", (!on).to_variant())
-        .map_err(|e| ToolError(e.message().to_string()))?;
+                 "org.gnome.SettingsDaemon.Rfkill", "BluetoothAirplaneMode", on.to_variant())
+        .map_err(|e| ToolError(e.message().to_string()))
+}
+
+pub fn set_bluetooth(ctx: &Context, args: &Args) -> ToolResult {
+    let on = arg_bool(args, "enabled")?;
+    bluetooth_airplane(!on)?;
+    ctx.can_undo(&format!("Bluetooth {}", on_off(on)), move || {
+        bluetooth_airplane(on)?;
+        Ok(format!("Bluetooth is {} again.", on_off(!on)))
+    });
     Ok(format!("Bluetooth {}.", on_off(on)))
 }
 
 pub const POWER_MODES: [(&str, &str); 3] = [("power-saver", "Power Saver"), ("balanced", "Balanced"), ("performance", "Performance")];
 
-pub fn set_power_mode(_: &Context, args: &Args) -> ToolResult {
+pub fn set_power_mode(ctx: &Context, args: &Args) -> ToolResult {
+    let was = super::run::get_property(true, "net.hadess.PowerProfiles", "/net/hadess/PowerProfiles", "net.hadess.PowerProfiles",
+                                       "ActiveProfile").ok().and_then(|v| v.get::<String>());
     let mode = arg_str(args, "mode").trim().to_lowercase().replace(' ', "-");
     let label = POWER_MODES.iter().find(|(m, _)| *m == mode).map(|(_, l)| *l)
         .ok_or("mode must be power-saver, balanced or performance")?;
@@ -104,7 +167,17 @@ pub fn set_power_mode(_: &Context, args: &Args) -> ToolResult {
     for (name, path) in [("org.freedesktop.UPower.PowerProfiles", "/org/freedesktop/UPower/PowerProfiles"),
                          ("net.hadess.PowerProfiles", "/net/hadess/PowerProfiles")] {
         match set_property(true, name, path, name, "ActiveProfile", mode.to_variant()) {
-            Ok(()) => return Ok(format!("Power mode set to {label}.")),
+            Ok(()) => {
+                if let Some(was) = was.clone() {
+                    let (name, path) = (name.to_string(), path.to_string());
+                    ctx.can_undo(&format!("Power mode {label}"), move || {
+                        set_property(true, &name, &path, &name, "ActiveProfile", was.to_variant())
+                            .map_err(|e| ToolError(e.message().to_string()))?;
+                        Ok(format!("power mode is back to {was}."))
+                    });
+                }
+                return Ok(format!("Power mode set to {label}."));
+            }
             Err(e) => last = e.message().to_string(),
         }
     }
@@ -197,7 +270,7 @@ pub fn get_setting(_: &Context, args: &Args) -> ToolResult {
     Ok(format!("{} {} = {}", s.id(), k.name(), value.print(false)))
 }
 
-pub fn change_setting(_: &Context, args: &Args) -> ToolResult {
+pub fn change_setting(ctx: &Context, args: &Args) -> ToolResult {
     let s = schema(&arg_str(args, "schema"))?;
     let k = key(&s, &arg_str(args, "key"))?;
     let raw = arg_str(args, "value").trim().to_string();
@@ -210,9 +283,16 @@ pub fn change_setting(_: &Context, args: &Args) -> ToolResult {
     if !k.range_check(&value) {
         return Err(format!("{raw} isn't an allowed value for {}", k.name()).into());
     }
-    gio::Settings::new_full(&s, None::<&gio::SettingsBackend>, None).set_value(&k.name(), &value)
-        .map_err(|e| ToolError(e.to_string()))?;
+    let settings = gio::Settings::new_full(&s, None::<&gio::SettingsBackend>, None);
+    let old = settings.value(&k.name());
+    settings.set_value(&k.name(), &value).map_err(|e| ToolError(e.to_string()))?;
     gio::Settings::sync();
+    let (id, name) = (s.id().to_string(), k.name().to_string());
+    ctx.can_undo(&format!("{name} = {}", value.print(false)), move || {
+        gio::Settings::new(&id).set_value(&name, &old).map_err(|e| ToolError(e.to_string()))?;
+        gio::Settings::sync();
+        Ok(format!("{name} is back to {}.", old.print(false)))
+    });
     Ok(format!("Set {} {} to {}.", s.id(), k.name(), value.print(false)))
 }
 

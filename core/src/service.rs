@@ -53,6 +53,7 @@ pub const INTROSPECTION: &str = r#"
     <method name="Unload"/>
     <method name="Load"/>
     <method name="Restart"/>
+    <method name="Undo"><arg type="s" name="result" direction="out"/></method>
     <method name="SnoozeReminder"><arg type="s" name="id" direction="in"/></method>
     <method name="DismissReminder"><arg type="s" name="id" direction="in"/></method>
     <method name="Connections"><arg type="s" name="json" direction="out"/></method>
@@ -750,6 +751,11 @@ impl Service {
             "Unload" => {
                 self.unload();
                 reply(None)
+            }
+            "Undo" => {
+                let ctx = self.shared.tool_ctx.lock().unwrap().clone();
+                let out = ctx.undo_last().unwrap_or_else(|e| e.0);
+                reply(Some((out,).to_variant()))
             }
             "SnoozeReminder" | "DismissReminder" => {
                 let (id,): (String,) = params.get().unwrap_or_default();

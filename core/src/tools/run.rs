@@ -65,6 +65,14 @@ pub fn dbus_call(system: bool, name: &str, path: &str, iface: &str, method: &str
 }
 
 /// Set a D-Bus property.
+/// A D-Bus property's value.
+pub fn get_property(system: bool, name: &str, path: &str, iface: &str, prop: &str) -> Result<glib::Variant, glib::Error> {
+    use glib::prelude::*;
+    let v = dbus_call(system, name, path, "org.freedesktop.DBus.Properties", "Get", Some(&(iface, prop).to_variant()),
+                      Some(glib::VariantTy::new("(v)").unwrap()), 5000)?;
+    Ok(v.child_value(0).as_variant().unwrap_or(v))
+}
+
 pub fn set_property(system: bool, name: &str, path: &str, iface: &str, prop: &str, value: glib::Variant)
                     -> Result<(), glib::Error> {
     use glib::prelude::*;

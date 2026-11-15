@@ -331,6 +331,19 @@ impl Turn for Reply {
             let text: String = if short { result.to_string() } else { result.chars().take(200).collect() };
             self.pill("dialog-warning-symbolic", &text, true, None)
         };
+        if ok && assistant_core::tools::UNDOABLE.contains(&name) && let Some(win) = self.win.upgrade() {
+            // Undo right on the action: the service reverses its newest change.
+            let undo = gtk::Button::builder().icon_name("edit-undo-symbolic").tooltip_text("Undo").valign(gtk::Align::Center).build();
+            undo.add_css_class("flat");
+            undo.add_css_class("circular");
+            let w = win.weak();
+            undo.connect_clicked(move |b| if let Some(w) = w.upgrade() {
+                b.set_sensitive(false);
+                let msg = w.core.undo();
+                w.toast(&msg);
+            });
+            pill.append(&undo);
+        }
         self.before_spinner(&pill);
         let mut i = self.inner.borrow_mut();
         i.label = None; // text after an action starts a new message

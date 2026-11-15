@@ -120,6 +120,15 @@ impl Core {
                  gio::DBusCallFlags::NONE, 10000, None::<&gio::Cancellable>, move |_| done());
     }
 
+    /// Reverse the newest change; what happened, for a toast.
+    pub fn undo(&self) -> String {
+        match self.call("Undo", None, Some("(s)")) {
+            Ok(Some(v)) => v.child_value(0).get::<String>().unwrap_or_default(),
+            Ok(None) => String::new(),
+            Err(e) => e,
+        }
+    }
+
     pub fn restart(&self) {
         self.call_async("Restart", None);
     }
