@@ -498,6 +498,50 @@ impl FlmClient {
         }
     }
 
+    /// Stop every `flm serve` this user runs, not just ours: one left over
+    /// from a crashed service (it runs in its own session, so it outlives
+    /// us) or started by hand keeps the NPU and the port. TERM first, KILL
+    /// after 5 s, then wait for the port to close. Returns how many it stopped.
+    pub fn stop_all_servers(&self) -> usize {
+        let mine = self.stop_server();
+        let pids = flm_serve_pids();
+        for pid in &pids {
+            // SAFETY: plain kill(2) on a pid we just read as this user's flm serve.
+            unsafe { libc_kill(*pid, 15) };
+        }
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline && pids.iter().any(|p| alive(*p)) {
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        for pid in pids.iter().filter(|p| alive(**p)) {
+            // SAFETY: as above; it ignored SIGTERM.
+            unsafe { libc_kill(*pid, 9) };
+        }
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline && self.is_up() {
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        usize::from(mine) + pids.len()
+    }
+
+    /// Stop whatever FLM is running and start it again with this model.
+    pub fn restart_server(&self, model: &str, ctx_len: Option<u32>) -> Result<(), FlmError> {
+        self.stop_all_servers();
+        self.ensure_server(model, ctx_len, Duration::from_secs(300)).map(|_| ())
+    }
+
+    /// The end of FLM's log, and a hint when it points at the NPU driver
+    /// (a restart of FLM can't fix that; reloading the driver or a reboot can).
+    pub fn diagnose(&self) -> String {
+        let tail = log_tail(&Self::log_path(), 6);
+        if npu_driver_trouble(&tail) {
+            format!("{tail}\n\nThe NPU driver looks stuck, which restarting FastFlowLM can't fix. Reboot, or reload it: \
+sudo modprobe -r amdxdna && sudo modprobe amdxdna")
+        } else {
+            tail
+        }
+    }
+
     pub fn list_models(&self) -> Result<Vec<Model>, FlmError> {
         let flm = which("flm").ok_or_else(|| FlmError::new("FastFlowLM (flm) is not installed."))?;
         let out = Command::new(flm).arg("list").stdin(Stdio::null()).output()
@@ -583,6 +627,45 @@ impl Drop for FlmClient {
     fn drop(&mut self) {
         self.stop_server();
     }
+}
+
+/// Errors that mean the server, not the request, is broken.
+pub fn server_trouble(e: &FlmError) -> bool {
+    let m = e.message.to_lowercase();
+    e.status.is_some_and(|s| s >= 500) || m.contains("can't reach fastflowlm") || m.contains("connection")
+        || m.contains("timed out") || m.contains("timeout") || m.contains("stopped while") || m.contains("broken pipe")
+        || m.contains("unexpected end") || m.contains("reset by peer")
+}
+
+fn npu_driver_trouble(log: &str) -> bool {
+    let l = log.to_lowercase();
+    ["amdxdna", "xrt", "/dev/accel", "hwctx", "failed to open device", "no npu", "device busy", "ert_cmd", "aie"]
+        .iter().any(|w| l.contains(w)) && (l.contains("error") || l.contains("fail") || l.contains("timeout"))
+}
+
+fn own_uid() -> Option<String> {
+    fs::read_to_string("/proc/self/status").ok()?.lines().find(|l| l.starts_with("Uid:"))
+        .and_then(|l| l.split_whitespace().nth(1).map(String::from))
+}
+
+/// This user's `flm serve` processes.
+fn flm_serve_pids() -> Vec<i32> {
+    let Some(uid) = own_uid() else { return vec![] };
+    let me = std::process::id() as i32;
+    fs::read_dir("/proc").into_iter().flatten().flatten().filter_map(|e| {
+        let pid: i32 = e.file_name().to_str()?.parse().ok()?;
+        let status = fs::read_to_string(e.path().join("status")).ok()?;
+        let owner = status.lines().find(|l| l.starts_with("Uid:"))?.split_whitespace().nth(1)?.to_string();
+        let cmd = fs::read(e.path().join("cmdline")).ok()?;
+        let args: Vec<String> = cmd.split(|b| *b == 0).map(|a| String::from_utf8_lossy(a).to_string()).collect();
+        let is_flm = args.first().is_some_and(|a| Path::new(a).file_name().is_some_and(|n| n == "flm"));
+        (pid != me && owner == uid && is_flm && args.get(1).is_some_and(|a| a == "serve")).then_some(pid)
+    }).collect()
+}
+
+fn alive(pid: i32) -> bool {
+    Path::new(&format!("/proc/{pid}")).exists()
+        && !fs::read_to_string(format!("/proc/{pid}/status")).unwrap_or_default().contains("State:\tZ")
 }
 
 fn stop_child(mut child: Child) {
@@ -688,6 +771,11 @@ mod tests {
         assert_eq!(default_model(&installed), "gemma4-it:e2b", "the preferred one isn't downloaded");
         assert_eq!(default_model(&[Model::new("qwen3.5:4b", true, &[])]), DEFAULT_MODEL);
         assert_eq!(default_model(&[]), DEFAULT_MODEL);
+        assert!(server_trouble(&FlmError { message: "FLM returned 500: oops".into(), status: Some(500) }));
+        assert!(server_trouble(&FlmError::new("Can't reach FastFlowLM at http://127.0.0.1:52625: io: Connection refused")));
+        assert!(!server_trouble(&FlmError { message: "FLM returned 400: bad tools".into(), status: Some(400) }));
+        assert!(npu_driver_trouble("[XRT] ERROR: failed to open device /dev/accel/accel0"));
+        assert!(!npu_driver_trouble("loading model qwen3.5:4b ... ok"));
         let list = "Models:\n  - gemma4-it:e2b ✅\n  - qwen3.5:9b ⏬\n";
         assert_eq!(parse_flm_list(list), vec![("gemma4-it:e2b".into(), true), ("qwen3.5:9b".into(), false)]);
         let labels = parse_model_labels(r#"{"models": {"qwen3.5": {"9b": {"label": ["vision", "tool-calling"]}}}}"#);

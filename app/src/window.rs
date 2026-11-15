@@ -792,9 +792,14 @@ impl Window {
         let started = std::time::Instant::now();
         glib::timeout_add_local(std::time::Duration::from_millis(300), move || {
             let Some(s) = w.upgrade() else { return glib::ControlFlow::Break };
-            let gone = before.is_none() || s.core.owner() != before;
+            let mut gone = before.is_none() || s.core.owner() != before;
             if !gone && started.elapsed() < std::time::Duration::from_secs(20) {
                 return glib::ControlFlow::Continue;
+            }
+            if !gone {
+                // It hung: kill it and every flm serve, and start over.
+                s.core.kill_service();
+                gone = true;
             }
             s.core.finish_all("The assistant was restarted");
             let id = s.st.borrow().chat_id.clone();

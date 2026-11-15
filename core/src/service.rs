@@ -497,7 +497,8 @@ impl Service {
             if *shared.state.lock().unwrap() != "Loaded" {
                 me.set_state("Loading…");
             }
-            let result = shared.client.ensure_server(&agent.model, Some(cfg.ctx_len), Duration::from_secs(300))
+            let before = (agent.messages.len(), agent.summary.clone(), agent.compacted);
+            let attempt = |agent: &mut Agent| shared.client.ensure_server(&agent.model, Some(cfg.ctx_len), Duration::from_secs(300))
                 .and_then(|_| {
                     me.set_state("Loaded");
                     if agent.use_tools {
@@ -507,6 +508,23 @@ impl Service {
                     }
                     agent.ask(&text, &cb, &images)
                 });
+            let mut result = attempt(&mut agent);
+            // FastFlowLM itself broke (not the request): stop every flm serve, start it
+            // again and ask once more, from where the turn began.
+            if let Err(e) = &result && flm::server_trouble(e) && !shared.cancel.load(Ordering::SeqCst) {
+                cb.retract();
+                cb.notice("FastFlowLM stopped working, so it's being restarted…");
+                me.set_state("Loading…");
+                agent.messages.truncate(before.0);
+                (agent.summary, agent.compacted) = (before.1.clone(), before.2);
+                result = shared.client.restart_server(&agent.model, Some(cfg.ctx_len)).and_then(|_| attempt(&mut agent));
+            }
+            let result = result.map_err(|mut e| {
+                if flm::server_trouble(&e) {
+                    e.message += &shared.client.diagnose();
+                }
+                e
+            });
             let error = result.err().map(|e| e.message).unwrap_or_default();
             if !error.is_empty() && !shared.client.is_up() {
                 me.set_state("Not loaded");
@@ -566,7 +584,8 @@ impl Service {
                 std::thread::sleep(Duration::from_millis(100));
             }
             me.shared.mcp.stop_all();
-            me.shared.client.stop_server();
+            // Every flm serve, not just ours: a stale one is usually why a restart was needed.
+            me.shared.client.stop_all_servers();
             me.set_state("Not loaded");
             let _ = me.conn.flush_sync(None::<&gio::Cancellable>);
             std::process::exit(0);

@@ -123,6 +123,21 @@ impl Core {
             t.on_finished(error);
         }
     }
+    /// Last resort when the service hangs: kill its process (D-Bus starts a
+    /// new one on the next call) and every flm serve, from here.
+    pub fn kill_service(&self) {
+        let pid = self.owner().and_then(|owner| {
+            self.bus.call_sync(Some("org.freedesktop.DBus"), "/org/freedesktop/DBus", "org.freedesktop.DBus",
+                               "GetConnectionUnixProcessID", Some(&(owner,).to_variant()),
+                               Some(glib::VariantTy::new("(u)").unwrap()), gio::DBusCallFlags::NONE, 2000,
+                               None::<&gio::Cancellable>).ok()
+        }).and_then(|v| v.child_value(0).get::<u32>());
+        if let Some(pid) = pid {
+            let _ = std::process::Command::new("kill").args(["-KILL", &pid.to_string()]).status();
+        }
+        assistant_core::flm::FlmClient::from_env().stop_all_servers();
+    }
+
     /// The service process currently answering (its unique bus name), if any.
     pub fn owner(&self) -> Option<String> {
         self.bus.call_sync(Some("org.freedesktop.DBus"), "/org/freedesktop/DBus", "org.freedesktop.DBus", "GetNameOwner",

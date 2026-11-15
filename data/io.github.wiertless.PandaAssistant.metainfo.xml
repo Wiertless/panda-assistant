@@ -27,6 +27,7 @@
           <li>The model picks between acting and answering every time, so small models act far more reliably</li>
           <li>Contacts, family and Polish volume words ("ścisz") find the right tools</li>
           <li>Qwen 3.5 4B is the default model when it's installed</li>
+          <li>When FastFlowLM breaks, it's restarted and the question asked again; Restart now stops every FastFlowLM server, even one left over from a crash</li>
         </ul>
       </description>
     </release>
