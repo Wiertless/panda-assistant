@@ -97,9 +97,18 @@ pub fn remove(id: &str) -> Option<Reminder> {
 pub fn parse_at(text: &str, now: &glib::DateTime) -> Option<glib::DateTime> {
     static ISO_T: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r"(\d)t(\d)").unwrap());
     let t = ISO_T.replace_all(&text.trim().to_lowercase(), "$1 $2").replace("  ", " ");
+    const DAYS: [[&str; 2]; 7] = [["monday", "poniedział"], ["tuesday", "wtor"], ["wednesday", "środ"], ["thursday", "czwart"],
+                                  ["friday", "piąt"], ["saturday", "sobot"], ["sunday", "niedziel"]];
+    let t = t.trim_start_matches("on ").trim_start_matches("next ").trim_start_matches("w ").trim_start_matches("we ").to_string();
+    let weekday = |w: &str| DAYS.iter().position(|d| w.starts_with(d[0]) || w.starts_with(d[1]) || (w.len() >= 3 && d[0].starts_with(w)));
     let (day_word, rest) = match t.split_once(' ') {
         Some((d, r)) if ["tomorrow", "jutro"].contains(&d) => (Some(1), r.to_string()),
         Some((d, r)) if ["today", "dziś", "dzis", "dzisiaj"].contains(&d) => (Some(0), r.to_string()),
+        Some((d, r)) if let Some(w) = weekday(d) => {
+            // The next such day (a week ahead when it's today).
+            let ahead = (w as i32 - (now.day_of_week() - 1)).rem_euclid(7);
+            (Some(if ahead == 0 { 7 } else { ahead }), r.trim_start_matches("o ").trim_start_matches("at ").to_string())
+        }
         _ => (None, t.clone()),
     };
     let hm = |s: &str| -> Option<(i32, i32)> {
@@ -206,6 +215,9 @@ mod tests {
         assert_eq!(at("2026-11-20 08:05").as_deref(), Some("2026-11-20 08:05"));
         assert_eq!(at("2026-11-20T08:05").as_deref(), Some("2026-11-20 08:05"));
         assert_eq!(at("5pm").as_deref(), Some("2026-11-15 17:00"));
+        assert_eq!(at("friday 13:00").as_deref(), Some("2026-11-20 13:00"), "2026-11-15 is a Sunday");
+        assert_eq!(at("w piątek o 13:00").as_deref(), Some("2026-11-20 13:00"));
+        assert_eq!(at("sunday 10:00").as_deref(), Some("2026-11-22 10:00"), "today's weekday means next week");
         assert!(at("soon").is_none());
     }
 

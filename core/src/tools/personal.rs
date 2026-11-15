@@ -333,3 +333,166 @@ TEL;X-EVOLUTION-E164=600100200,\"+48\";TYPE=CELL:+48 600 100 200\r\nORG:ACME;Sal
         assert_eq!(any_field_query("a\"b"), r#"(contains "x-evolution-any-field" "a\"b")"#);
     }
 }
+
+// -- writing: calendar events and email drafts ----------------------------------------
+
+const SOURCES_BUS: &str = "org.gnome.evolution.dataserver.Sources5";
+const CAL_IFACE_EDS: &str = "org.gnome.evolution.dataserver.Calendar";
+/// The calendar factory's bus name carries EDS's API version; newest first.
+const CAL_FACTORIES: [&str; 3] = ["org.gnome.evolution.dataserver.Calendar8", "org.gnome.evolution.dataserver.Calendar7",
+                                  "org.gnome.evolution.dataserver.Calendar9"];
+
+/// Calendars that take events: the user's default first, then the others
+/// (not birthdays or weather), as (uid, name).
+fn calendars(bus: &gio::DBusConnection) -> Result<Vec<(String, String)>, ToolError> {
+    type Objects = BTreeMap<glib::variant::ObjectPath, BTreeMap<String, BTreeMap<String, glib::Variant>>>;
+    let reply = bus.call_sync(Some(SOURCES_BUS), "/org/gnome/evolution/dataserver/SourceManager",
+        "org.freedesktop.DBus.ObjectManager", "GetManagedObjects", None, Some(glib::VariantTy::new("(a{oa{sa{sv}}})").unwrap()),
+        gio::DBusCallFlags::NONE, 10000, None::<&gio::Cancellable>)
+        .map_err(|_| ToolError("the calendar needs Evolution Data Server, which isn't running".into()))?;
+    let (objects,): (Objects,) = reply.get().unwrap_or_default();
+    let mut cals: Vec<(String, String)> = objects.values().filter_map(|ifaces| {
+        let src = ifaces.get("org.gnome.evolution.dataserver.Source")?;
+        let uid = src.get("UID")?.get::<String>()?;
+        let data = src.get("Data")?.get::<String>()?;
+        let enabled = !data.lines().any(|l| l.trim().eq_ignore_ascii_case("Enabled=false"));
+        let skip = ["BackendName=contacts", "BackendName=weather"].iter().any(|b| data.contains(b));
+        let name = data.lines().find_map(|l| l.strip_prefix("DisplayName=")).unwrap_or(&uid).to_string();
+        (data.contains("[Calendar]") && enabled && !skip).then_some((uid, name))
+    }).collect();
+    // EDS keeps the default calendar here; check the key exists (GLib aborts on unknown keys).
+    let default = gio::SettingsSchemaSource::default().and_then(|s| s.lookup("org.gnome.Evolution.DefaultSources", true))
+        .filter(|schema| schema.has_key("default-calendar"))
+        .map(|_| gio::Settings::new("org.gnome.Evolution.DefaultSources").string("default-calendar").to_string()).unwrap_or_default();
+    cals.sort_by_key(|(uid, _)| (uid != &default, uid != "system-calendar"));
+    if cals.is_empty() {
+        return Err("no calendar to add to: set one up in GNOME Calendar or Online Accounts".into());
+    }
+    Ok(cals)
+}
+
+/// Open a calendar: (bus name, object path).
+fn open_calendar(bus: &gio::DBusConnection, uid: &str) -> Result<(String, String), glib::Error> {
+    let mut last = None;
+    for factory in CAL_FACTORIES {
+        match bus.call_sync(Some(factory), "/org/gnome/evolution/dataserver/CalendarFactory",
+                            "org.gnome.evolution.dataserver.CalendarFactory", "OpenCalendar", Some(&(uid,).to_variant()),
+                            Some(glib::VariantTy::new("(ss)").unwrap()), gio::DBusCallFlags::NONE, 15000, None::<&gio::Cancellable>) {
+            Ok(v) => {
+                let (path, name): (String, String) = v.get().unwrap_or_default();
+                bus.call_sync(Some(&name), &path, CAL_IFACE_EDS, "Open", None, None, gio::DBusCallFlags::NONE, 15000,
+                              None::<&gio::Cancellable>)?;
+                return Ok((name, path));
+            }
+            Err(e) => last = Some(e),
+        }
+    }
+    Err(last.unwrap())
+}
+
+fn ics_time(t: i64) -> String {
+    glib::DateTime::from_unix_utc(t).and_then(|d| d.format("%Y%m%dT%H%M%SZ")).map(|s| s.to_string()).unwrap_or_default()
+}
+
+fn ics_text(s: &str) -> String {
+    s.replace('\\', "\\\\").replace(';', "\\;").replace(',', "\\,").replace('\n', "\\n")
+}
+
+/// A VEVENT for EDS.
+pub fn vevent(uid: &str, title: &str, start: i64, end: i64, place: &str, now: i64) -> String {
+    let mut lines = vec!["BEGIN:VEVENT".to_string(), format!("UID:{uid}"), format!("DTSTAMP:{}", ics_time(now)),
+                         format!("DTSTART:{}", ics_time(start)), format!("DTEND:{}", ics_time(end)),
+                         format!("SUMMARY:{}", ics_text(title))];
+    if !place.trim().is_empty() {
+        lines.push(format!("LOCATION:{}", ics_text(place.trim())));
+    }
+    lines.push("END:VEVENT".into());
+    lines.join("\r\n")
+}
+
+/// create_event: a title and a start (like reminders: HH:MM, a weekday, a date), an end or minutes.
+pub fn create_event(ctx: &Context, args: &Args) -> ToolResult {
+    let title = arg_str(args, "title");
+    if title.trim().is_empty() {
+        return Err("give the event a title".into());
+    }
+    let now = glib::DateTime::now_local().map_err(|_| ToolError("no local time".into()))?;
+    let start_raw = arg_str(args, "start");
+    let start = crate::reminders::parse_at(&start_raw, &now)
+        .ok_or_else(|| ToolError(format!("couldn't read the start '{start_raw}': use HH:MM, a weekday and time, or YYYY-MM-DD HH:MM")))?
+        .to_unix();
+    let minutes = args.get("minutes").and_then(|v| v.as_f64().or_else(|| v.as_str()?.trim().parse().ok())).unwrap_or(60.0);
+    let end = match arg_str(args, "end") {
+        e if !e.trim().is_empty() => crate::reminders::parse_at(&e, &glib::DateTime::from_unix_local(start).unwrap_or(now))
+            .map(|d| d.to_unix()).filter(|e| *e > start).unwrap_or(start + (minutes * 60.0) as i64),
+        _ => start + (minutes * 60.0) as i64,
+    };
+    let bus = gio::bus_get_sync(gio::BusType::Session, None::<&gio::Cancellable>).map_err(|e| ToolError(e.message().into()))?;
+    let uid = format!("{}-{}@panda-assistant", crate::reminders::now(), glib::random_int());
+    let ics = vevent(&uid, &title, start, end, &arg_str(args, "place"), crate::reminders::now());
+    let mut last = String::new();
+    for (cal_uid, cal_name) in calendars(&bus)? {
+        let Ok((name, path)) = open_calendar(&bus, &cal_uid) else { continue };
+        match bus.call_sync(Some(&name), &path, CAL_IFACE_EDS, "CreateObjects", Some(&(vec![ics.clone()], 0u32).to_variant()),
+                            None, gio::DBusCallFlags::NONE, 20000, None::<&gio::Cancellable>) {
+            Ok(_) => {
+                let when = glib::DateTime::from_unix_local(start).and_then(|d| d.format("%a %e %b, %H:%M"))
+                    .map(|s| s.to_string().replace("  ", " ")).unwrap_or_default();
+                let (n, p, u) = (name.clone(), path.clone(), uid.clone());
+                ctx.can_undo(&format!("Add {} to the calendar", title.trim()), move || {
+                    let bus = gio::bus_get_sync(gio::BusType::Session, None::<&gio::Cancellable>).map_err(|e| ToolError(e.message().into()))?;
+                    // All occurrences ("all" is ECalObjModType's nick), no extra flags.
+                    bus.call_sync(Some(&n), &p, CAL_IFACE_EDS, "RemoveObjects", Some(&(vec![(u.clone(), String::new())], "all", 0u32).to_variant()),
+                                  None, gio::DBusCallFlags::NONE, 20000, None::<&gio::Cancellable>).map_err(|e| ToolError(e.message().into()))?;
+                    Ok("the event is gone.".into())
+                });
+                return Ok(format!("Added “{}” to {cal_name}: {when}, until {}.", title.trim(),
+                                  glib::DateTime::from_unix_local(end).and_then(|d| d.format("%H:%M")).map(|s| s.to_string()).unwrap_or_default()));
+            }
+            Err(e) => last = e.message().to_string(), // read-only calendar: try the next one
+        }
+    }
+    Err(format!("couldn't add the event{}", if last.is_empty() { String::new() } else { format!(": {last}") }).into())
+}
+
+fn percent(s: &str) -> String {
+    s.bytes().map(|b| if b.is_ascii_alphanumeric() || b"-._~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect()
+}
+
+/// draft_email: opens a ready-to-send draft in the user's mail app; they send it.
+pub fn draft_email(_: &Context, args: &Args) -> ToolResult {
+    let to_raw = arg_str(args, "to");
+    let mut to = to_raw.trim().to_string();
+    if !to.is_empty() && !to.contains('@') {
+        // A name: the address from their contacts.
+        let bus = gio::bus_get_sync(gio::BusType::Session, None::<&gio::Cancellable>).map_err(|e| ToolError(e.message().into()))?;
+        let found: Vec<String> = address_books(&bus).unwrap_or_default().iter()
+            .flat_map(|uid| query_book(&bus, uid, &any_field_query(&to)).unwrap_or_default())
+            .flat_map(|card| parse_vcard(&card).emails).collect();
+        to = found.first().cloned().ok_or_else(|| ToolError(format!("no email address for “{to_raw}” in your contacts; give the address")))?;
+    }
+    let mut query = vec![];
+    for (k, v) in [("subject", arg_str(args, "subject")), ("body", arg_str(args, "body"))] {
+        if !v.trim().is_empty() {
+            query.push(format!("{k}={}", percent(v.trim())));
+        }
+    }
+    let uri = format!("mailto:{}{}{}", percent(&to).replace("%40", "@"), if query.is_empty() { "" } else { "?" }, query.join("&"));
+    gio::AppInfo::launch_default_for_uri(&uri, None::<&gio::AppLaunchContext>)
+        .map_err(|e| ToolError(format!("no mail app opened it: {e}")))?;
+    Ok(format!("The draft is open in your mail app{}; check it and press Send.", if to.is_empty() { String::new() } else { format!(", to {to}") }))
+}
+
+#[cfg(test)]
+mod write_tests {
+    use super::*;
+
+    #[test]
+    fn events_and_mailto() {
+        let ics = vevent("u1@x", "Lunch, with Ola", 1_795_000_000, 1_795_003_600, "Bistro; Kraków", 1_794_000_000);
+        assert!(ics.starts_with("BEGIN:VEVENT\r\nUID:u1@x\r\n"));
+        assert!(ics.contains("SUMMARY:Lunch\\, with Ola") && ics.contains("LOCATION:Bistro\\; Kraków"));
+        assert!(ics.contains("DTSTART:20261118T") && ics.ends_with("END:VEVENT"));
+        assert_eq!(percent("Late, sorry! 10 min"), "Late%2C%20sorry%21%2010%20min");
+    }
+}

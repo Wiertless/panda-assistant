@@ -1090,5 +1090,48 @@
    "change it back",
    "cofnij to"
   ]
+ },
+ {
+  "name": "add event",
+  "prompt": "add lunch with Ola on Friday at 1pm",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "create_event",
+    "args": {
+     "title": "lunch",
+     "start": "13:00|1pm|1 pm|2026-11-20"
+    }
+   }
+  ],
+  "paraphrases": [
+   "dodaj do kalendarza obiad z Olą w piątek o 13",
+   "put lunch with Ola in my calendar, friday 13:00"
+  ]
+ },
+ {
+  "name": "email draft",
+  "prompt": "email Jakub that I'm running 10 minutes late",
+  "tags": [
+   "single",
+   "resolve"
+  ],
+  "stubs": {
+   "find_contact": "Jakub Nowak — email jakub@example.com, phone +48 600 200 300"
+  },
+  "expect": [
+   {
+    "tool": "draft_email",
+    "args": {
+     "to": "jakub",
+     "body": "late|spóźni"
+    }
+   }
+  ],
+  "paraphrases": [
+   "napisz maila do Jakuba że się spóźnię 10 minut"
+  ]
  }
 ]

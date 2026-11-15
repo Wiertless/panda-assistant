@@ -72,12 +72,13 @@ pub fn reads_untrusted(tool: &str) -> bool {
 /// Tools that send something out, keep something, or change the machine
 /// quietly: after untrusted text came in this turn, they ask first.
 pub fn guarded_after_untrusted(tool: &str) -> bool {
-    matches!(tool, "send_file" | "send_text" | "open_url" | "remember" | "save_skill" | "change_setting"
+    matches!(tool, "send_file" | "send_text" | "open_url" | "remember" | "save_skill" | "change_setting" | "create_event"
+        | "draft_email"
         | "run_app_action" | "copy_to_clipboard" | "connect_network") || tool.contains("__")
 }
 
 /// Tools whose change `undo` can reverse (the window offers Undo on their pill).
-pub const UNDOABLE: [&str; 12] = ["set_dark_mode", "set_do_not_disturb", "set_night_light", "set_volume", "set_mute",
+pub const UNDOABLE: [&str; 13] = ["create_event", "set_dark_mode", "set_do_not_disturb", "set_night_light", "set_volume", "set_mute",
     "set_brightness", "set_wifi", "set_bluetooth", "set_power_mode", "change_setting", "set_reminder", "remember"];
 
 /// What to do with a lookup's result, appended to it so the model keeps the
@@ -340,6 +341,15 @@ using GNOME's file index. Returns files and matching snippets.", obj(json!({"que
         Tool::new("get_events", "Get calendar events. when: today, tomorrow, this week, next week, a weekday or a \
 date like 2026-11-20.", obj(json!({"when": {"type": "string"}}), &[]), Safe, personal::get_events,
                   text("when", |w| format!("Check the calendar ({})", or(w, "today")))),
+        Tool::new("create_event", "Add an event to the user's calendar. start: HH:MM, a weekday and time (\"friday \
+13:00\"), or YYYY-MM-DD HH:MM, local time; minutes (default 60) or end.",
+                  obj(json!({"title": {"type": "string"}, "start": {"type": "string"}, "minutes": {"type": "number"},
+                             "end": {"type": "string"}, "place": {"type": "string"}}), &["title", "start"]),
+                  Safe, personal::create_event, text("title", |t| format!("Add “{}” to the calendar", or(t, "an event")))),
+        Tool::new("draft_email", "Open a ready email draft in the user's mail app; they check it and press Send. to: an \
+address, or a contact's name (looked up in their contacts).",
+                  obj(json!({"to": {"type": "string"}, "subject": {"type": "string"}, "body": {"type": "string"}}), &["body"]),
+                  Safe, personal::draft_email, text("to", |t| format!("Draft an email to {}", or(t, "someone")))),
         Tool::new("find_contact", "Find a contact's email addresses and phone numbers by name.",
                   obj(json!({"name": {"type": "string"}}), &["name"]), Safe, personal::find_contact,
                   text("name", |n| format!("Look up {}", or(n, "a contact")))),
@@ -394,7 +404,7 @@ mod tests {
     #[test]
     fn same_tools_and_risks_as_the_python_app() {
         let names: Vec<String> = all().into_iter().map(|t| t.name).collect();
-        assert_eq!(names.len(), 60, "{names:?}");
+        assert_eq!(names.len(), 62, "{names:?}");
         let risky: Vec<String> = all().into_iter().filter(|t| t.risk == Risk::Confirm).map(|t| t.name).collect();
         assert_eq!(risky, ["run_command"]);
     }
