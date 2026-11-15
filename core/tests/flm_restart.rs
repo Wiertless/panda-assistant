@@ -21,8 +21,8 @@ fn a_stray_flm_serve_is_stopped() {
     let mut child = Command::new(&flm).arg("serve").current_dir(dir.path())
         .stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
     std::thread::sleep(Duration::from_millis(300));
-    // Nothing listens on this port, so it doesn't wait for one to close.
-    let client = FlmClient::new("http://127.0.0.1:9");
+    // FLM's default port, which the stand-in "serves" on; nothing listens there here.
+    let client = FlmClient::new("http://127.0.0.1:52625");
     let started = Instant::now();
     assert_eq!(client.stop_all_servers(), 1);
     assert!(child.wait().is_ok(), "the stray server exited");

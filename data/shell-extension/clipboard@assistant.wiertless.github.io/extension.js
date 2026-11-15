@@ -13,9 +13,13 @@ const PATH = '/io/github/wiertless/PandaAssistant/Clipboard';
 const IFACE = `<node><interface name="io.github.wiertless.PandaAssistant.Clipboard1">
   <method name="History"><arg type="as" name="clips" direction="out"/></method>
   <method name="Clear"/>
+  <method name="Set"><arg type="s" name="text" direction="in"/></method>
+  <method name="Selection"><arg type="s" name="text" direction="out"/></method>
 </interface></node>`;
 const KEEP = 20;
 const MAX_CHARS = 4000;
+// Older copies are dropped: what you copied this morning isn't "earlier".
+const MAX_AGE_MS = 2 * 60 * 60 * 1000;
 // Password managers mark secrets with this (KeePassXC, Bitwarden, 1Password…).
 const SECRET = 'x-kde-passwordManagerHint';
 const TEXT = ['text/plain', 'text/plain;charset=utf-8', 'UTF8_STRING', 'STRING', 'TEXT'];
@@ -29,7 +33,13 @@ class History {
         if (!text || !text.trim())
             return;
         text = text.slice(0, MAX_CHARS);
-        this.clips = [text, ...this.clips.filter(c => c !== text)].slice(0, KEEP);
+        this.clips = [{text, at: Date.now()}, ...this.clips.filter(c => c.text !== text)].slice(0, KEEP);
+    }
+
+    _fresh() {
+        const now = Date.now();
+        this.clips = this.clips.filter(c => now - c.at < MAX_AGE_MS);
+        return this.clips.map(c => c.text);
     }
 
     // Only assistantd gets an answer: other apps on the bus can't read it.
@@ -51,7 +61,27 @@ class History {
             invocation.return_dbus_error('org.freedesktop.DBus.Error.AccessDenied', 'Only Assistant may read this');
             return;
         }
-        invocation.return_value(new GLib.Variant('(as)', [this.clips]));
+        invocation.return_value(new GLib.Variant('(as)', [this._fresh()]));
+    }
+
+    // Put text on the clipboard for Assistant when its window isn't open.
+    SetAsync([text], invocation) {
+        if (!this._allowed(invocation)) {
+            invocation.return_dbus_error('org.freedesktop.DBus.Error.AccessDenied', 'Only Assistant may set this');
+            return;
+        }
+        St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, text);
+        invocation.return_value(null);
+    }
+
+    // The text highlighted right now in any app (the primary selection).
+    SelectionAsync(_params, invocation) {
+        if (!this._allowed(invocation)) {
+            invocation.return_dbus_error('org.freedesktop.DBus.Error.AccessDenied', 'Only Assistant may read this');
+            return;
+        }
+        St.Clipboard.get_default().get_text(St.ClipboardType.PRIMARY, (_c, text) =>
+            invocation.return_value(new GLib.Variant('(s)', [(text || '').slice(0, 20000)])));
     }
 
     ClearAsync(_params, invocation) {

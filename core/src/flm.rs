@@ -504,7 +504,8 @@ impl FlmClient {
     /// after 5 s, then wait for the port to close. Returns how many it stopped.
     pub fn stop_all_servers(&self) -> usize {
         let mine = self.stop_server();
-        let pids = flm_serve_pids();
+        let port = self.base_url.rsplit(':').next().and_then(|p| p.trim_end_matches('/').parse::<u16>().ok());
+        let pids = flm_serve_pids(port);
         for pid in &pids {
             // SAFETY: plain kill(2) on a pid we just read as this user's flm serve.
             unsafe { libc_kill(*pid, 15) };
@@ -648,8 +649,15 @@ fn own_uid() -> Option<String> {
         .and_then(|l| l.split_whitespace().nth(1).map(String::from))
 }
 
-/// This user's `flm serve` processes.
-fn flm_serve_pids() -> Vec<i32> {
+/// The port an `flm serve` command line listens on (FLM's default when not given).
+fn serve_port(args: &[String]) -> u16 {
+    args.windows(2).find(|w| w[0] == "--port" || w[0] == "-p").and_then(|w| w[1].parse().ok())
+        .or_else(|| args.iter().find_map(|a| a.strip_prefix("--port=")?.parse().ok()))
+        .unwrap_or(52625)
+}
+
+/// This user's `flm serve` processes on `port` (one serving elsewhere, for other work, is left alone).
+fn flm_serve_pids(port: Option<u16>) -> Vec<i32> {
     let Some(uid) = own_uid() else { return vec![] };
     let me = std::process::id() as i32;
     fs::read_dir("/proc").into_iter().flatten().flatten().filter_map(|e| {
@@ -659,7 +667,8 @@ fn flm_serve_pids() -> Vec<i32> {
         let cmd = fs::read(e.path().join("cmdline")).ok()?;
         let args: Vec<String> = cmd.split(|b| *b == 0).map(|a| String::from_utf8_lossy(a).to_string()).collect();
         let is_flm = args.first().is_some_and(|a| Path::new(a).file_name().is_some_and(|n| n == "flm"));
-        (pid != me && owner == uid && is_flm && args.get(1).is_some_and(|a| a == "serve")).then_some(pid)
+        let ours = port.is_none_or(|p| serve_port(&args) == p);
+        (pid != me && owner == uid && is_flm && args.get(1).is_some_and(|a| a == "serve") && ours).then_some(pid)
     }).collect()
 }
 
@@ -775,6 +784,9 @@ mod tests {
         assert!(server_trouble(&FlmError::new("Can't reach FastFlowLM at http://127.0.0.1:52625: io: Connection refused")));
         assert!(!server_trouble(&FlmError { message: "FLM returned 400: bad tools".into(), status: Some(400) }));
         assert!(npu_driver_trouble("[XRT] ERROR: failed to open device /dev/accel/accel0"));
+        let a = |s: &str| s.split(' ').map(String::from).collect::<Vec<_>>();
+        assert_eq!((serve_port(&a("flm serve m")), serve_port(&a("flm serve m --port 9000")), serve_port(&a("flm serve m --port=9001"))),
+                   (52625, 9000, 9001));
         assert!(!npu_driver_trouble("loading model qwen3.5:4b ... ok"));
         let list = "Models:\n  - gemma4-it:e2b ✅\n  - qwen3.5:9b ⏬\n";
         assert_eq!(parse_flm_list(list), vec![("gemma4-it:e2b".into(), true), ("qwen3.5:9b".into(), false)]);

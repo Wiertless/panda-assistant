@@ -132,6 +132,14 @@ pub fn notify(conn: &gio::DBusConnection, title: &str, body: &str, chat_id: &str
     }
 }
 
+/// Set the clipboard with no window open, through the clipboard extension in
+/// GNOME Shell (which, on Wayland, is what may set it for the session).
+pub fn set_clipboard(conn: &gio::DBusConnection, text: &str) {
+    let _ = conn.call_sync(Some("org.gnome.Shell"), "/io/github/wiertless/PandaAssistant/Clipboard",
+                           "io.github.wiertless.PandaAssistant.Clipboard1", "Set", Some(&(text,).to_variant()), None,
+                           gio::DBusCallFlags::NONE, 3000, None::<&gio::Cancellable>);
+}
+
 /// A reminder that's due: Snooze and Done act on it without opening a window.
 pub fn notify_reminder(conn: &gio::DBusConnection, r: &crate::reminders::Reminder) {
     let n = glib::VariantDict::new(None);

@@ -208,9 +208,13 @@ pub fn get_status(_: &Context, _: &Args) -> ToolResult {
 // code (extensions) or lock the user out (lockdown, screensaver lock).
 const SETTINGS_PREFIXES: [&str; 5] = ["org.gnome.desktop.", "org.gnome.settings-daemon.plugins.", "org.gnome.mutter",
                                       "org.gnome.shell.keybindings", "org.gnome.nautilus."];
-const BLOCKED_KEYS: [&str; 5] = ["enabled-extensions", "disabled-extensions", "disable-user-extensions",
-                                 "development-tools", "allow-extension-installation"];
-const BLOCKED_SCHEMAS: [&str; 2] = ["org.gnome.desktop.lockdown", "org.gnome.desktop.screensaver"];
+const BLOCKED_KEYS: [&str; 6] = ["enabled-extensions", "disabled-extensions", "disable-user-extensions",
+                                 "development-tools", "allow-extension-installation", "custom-keybindings"];
+// Settings that run commands (custom shortcuts, the default terminal), let
+// others in (remote desktop, sharing) or guard the session stay out of reach.
+const BLOCKED_SCHEMAS: [&str; 6] = ["org.gnome.desktop.lockdown", "org.gnome.desktop.screensaver",
+    "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding", "org.gnome.desktop.default-applications",
+    "org.gnome.desktop.remote-desktop", "org.gnome.settings-daemon.plugins.sharing"];
 
 fn allowed_schema(id: &str) -> bool {
     SETTINGS_PREFIXES.iter().any(|p| id.starts_with(p)) && !BLOCKED_SCHEMAS.iter().any(|b| id.starts_with(b))
@@ -222,8 +226,13 @@ fn schema(name: &str) -> Result<gio::SettingsSchema, ToolError> {
         return Err(format!("{} isn't a desktop setting the assistant may use",
                            if name.is_empty() { "that schema" } else { name }).into());
     }
-    gio::SettingsSchemaSource::default().and_then(|s| s.lookup(name, true))
-        .ok_or_else(|| format!("there is no settings schema called {name}; find_settings finds the right one").into())
+    let s = gio::SettingsSchemaSource::default().and_then(|s| s.lookup(name, true))
+        .ok_or_else(|| ToolError(format!("there is no settings schema called {name}; find_settings finds the right one")))?;
+    // Relocatable schemas (per-app, per-shortcut) need a path and aren't for the assistant.
+    if s.path().is_none() {
+        return Err(format!("{name} isn't a desktop setting the assistant may use").into());
+    }
+    Ok(s)
 }
 
 fn key(schema: &gio::SettingsSchema, key: &str) -> Result<gio::SettingsSchemaKey, ToolError> {
@@ -352,6 +361,21 @@ pub fn clipboard_history(_: &Context, args: &Args) -> ToolResult {
         .map_err(|_| ToolError("clipboard history is off: turn on the Assistant Clipboard extension in the Extensions app".into()))?;
     let clips: Vec<String> = reply.child_value(0).get().unwrap_or_default();
     Ok(format_clips(&clips, &arg_str(args, "query")))
+}
+
+#[cfg(test)]
+mod guard_tests {
+    use super::*;
+
+    #[test]
+    fn settings_that_run_commands_or_open_the_machine_are_blocked() {
+        for id in ["org.gnome.settings-daemon.plugins.media-keys.custom-keybinding", "org.gnome.desktop.default-applications.terminal",
+                   "org.gnome.desktop.remote-desktop.rdp", "org.gnome.desktop.screensaver", "org.gnome.system.proxy"] {
+            assert!(!allowed_schema(id), "{id}");
+        }
+        assert!(allowed_schema("org.gnome.desktop.interface"));
+        assert!(BLOCKED_KEYS.contains(&"custom-keybindings"));
+    }
 }
 
 #[cfg(test)]

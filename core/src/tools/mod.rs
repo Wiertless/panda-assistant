@@ -61,6 +61,21 @@ pub fn completes(lookup: &str) -> &'static [&'static str] {
     }
 }
 
+/// Tools that bring text from outside into the chat: a web page, a document,
+/// a calendar invite, the clipboard, another app. After one runs, text in
+/// the chat may be written to steer the model.
+pub fn reads_untrusted(tool: &str) -> bool {
+    matches!(tool, "web_search" | "read_web_page" | "read_document" | "read_file" | "search_file_contents" | "get_events"
+        | "clipboard_history" | "read_window" | "look_at_image" | "find_contact") || tool.contains("__")
+}
+
+/// Tools that send something out, keep something, or change the machine
+/// quietly: after untrusted text came in this turn, they ask first.
+pub fn guarded_after_untrusted(tool: &str) -> bool {
+    matches!(tool, "send_file" | "send_text" | "open_url" | "remember" | "save_skill" | "change_setting"
+        | "run_app_action" | "copy_to_clipboard" | "connect_network") || tool.contains("__")
+}
+
 /// Tools whose change `undo` can reverse (the window offers Undo on their pill).
 pub const UNDOABLE: [&str; 12] = ["set_dark_mode", "set_do_not_disturb", "set_night_light", "set_volume", "set_mute",
     "set_brightness", "set_wifi", "set_bluetooth", "set_power_mode", "change_setting", "set_reminder", "remember"];

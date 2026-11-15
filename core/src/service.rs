@@ -129,7 +129,9 @@ struct SignalCallbacks {
 
 impl SignalCallbacks {
     fn emit(&self, name: &str, args: Variant) {
-        let _ = self.conn.emit_signal(None, OBJECT_PATH, INTERFACE, name, Some(&args));
+        // Only the window following the chat hears it (answers and tool output stay private).
+        let Some(dest) = self.service.listener.lock().unwrap().clone() else { return };
+        let _ = self.conn.emit_signal(Some(&dest), OBJECT_PATH, INTERFACE, name, Some(&args));
     }
 }
 
@@ -210,6 +212,9 @@ pub struct Shared {
     pub tool_ctx: Mutex<Context>,
     /// Routing by meaning, once the embedding model is known to be installed.
     pub embedder: Mutex<Option<Arc<tools::groups::Embedder>>>,
+    /// The window following the chat (its bus name): turn signals and copied
+    /// text go to it alone, not to everything on the session bus.
+    pub listener: Arc<Mutex<Option<String>>>,
 }
 
 impl Shared {
@@ -231,6 +236,7 @@ impl Shared {
             mcp: Hub::new(),
             tool_ctx: Mutex::new(Context::default()),
             embedder: Mutex::new(None),
+            listener: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -352,14 +358,20 @@ impl Service {
     pub fn new(conn: gio::DBusConnection, client: Arc<FlmClient>) -> Arc<Self> {
         let shared = Shared::new(client);
         let emit = |conn: &gio::DBusConnection, name: &'static str, args: Option<Variant>| {
-            let c = conn.clone();
-            move || { let _ = c.emit_signal(None, OBJECT_PATH, INTERFACE, name, args.as_ref()); }
+            let (c, l) = (conn.clone(), shared.listener.clone());
+            move || if let Some(dest) = l.lock().unwrap().clone() {
+                let _ = c.emit_signal(Some(&dest), OBJECT_PATH, INTERFACE, name, args.as_ref());
+            }
         };
         {
             let mut ctx = shared.tool_ctx.lock().unwrap();
-            let c = conn.clone();
+            let (c, l) = (conn.clone(), shared.listener.clone());
             ctx.copy_to_clipboard = Some(Arc::new(move |text: &str| {
-                let _ = c.emit_signal(None, OBJECT_PATH, INTERFACE, "Clipboard", Some(&(text,).to_variant()));
+                if let Some(dest) = l.lock().unwrap().clone() {
+                    let _ = c.emit_signal(Some(&dest), OBJECT_PATH, INTERFACE, "Clipboard", Some(&(text,).to_variant()));
+                } else {
+                    search::set_clipboard(&c, text); // no window: GNOME Shell (the clipboard extension) sets it
+                }
             }));
             ctx.hide_window = Some(Arc::new(emit(&conn, "StepAside", None)));
             ctx.show_window = Some(Arc::new(emit(&conn, "StepBack", None)));
@@ -397,6 +409,15 @@ impl Service {
             glib::MainContext::default().invoke(move || if let Some(s) = w.upgrade() { s.schedule_reminders() });
         }));
         self.schedule_reminders();
+    }
+
+    /// Whether a bus name belongs to Assistant's own window (its executable).
+    fn is_window(&self, sender: &str) -> bool {
+        let pid = self.conn.call_sync(Some("org.freedesktop.DBus"), "/org/freedesktop/DBus", "org.freedesktop.DBus",
+            "GetConnectionUnixProcessID", Some(&(sender,).to_variant()), Some(glib::VariantTy::new("(u)").unwrap()),
+            gio::DBusCallFlags::NONE, 1000, None::<&gio::Cancellable>).ok().and_then(|v| v.child_value(0).get::<u32>());
+        pid.and_then(|p| std::fs::read_link(format!("/proc/{p}/exe")).ok())
+            .is_some_and(|exe| exe.file_name().is_some_and(|n| n == "panda-assistant"))
     }
 
     pub fn shared(&self) -> Arc<Shared> {
@@ -693,6 +714,8 @@ impl Service {
     fn handle(self: &Arc<Self>, method: &str, params: &Variant, invocation: gio::DBusMethodInvocation) {
         self.touch();
         let reply = |v: Option<Variant>| invocation.clone().return_value(v.as_ref());
+        let sender = invocation.sender().map(|s| s.to_string());
+        let from_window = sender.as_deref().is_some_and(|s| self.is_window(s));
         match method {
             "Ask" => {
                 let (chat_id, text, images): (String, String, Vec<String>) = params.get().unwrap_or_default();
@@ -704,6 +727,9 @@ impl Service {
                         .ok().and_then(|v| v.child_value(0).get::<u32>()).unwrap_or(0);
                     self.shared.tool_ctx.lock().unwrap().client_pid.store(pid, Ordering::SeqCst);
                 }
+                if from_window {
+                    *self.shared.listener.lock().unwrap() = sender.clone();
+                }
                 match self.ask(&chat_id, &text, images) {
                     Ok(id) => reply(Some((id,).to_variant())),
                     Err(e) => invocation.return_dbus_error("io.github.wiertless.PandaAssistant.Error.Busy", &e),
@@ -714,6 +740,11 @@ impl Service {
                 reply(None)
             }
             "Confirm" => {
+                // Only Assistant's own window answers an Allow card: another program on the bus
+                // could otherwise ask for a command and approve it itself.
+                if !from_window {
+                    return invocation.return_dbus_error("org.freedesktop.DBus.Error.AccessDenied", "only the Assistant window can confirm");
+                }
                 let (id, answer): (u32, String) = params.get().unwrap_or_default();
                 self.shared.answer(id, &answer);
                 reply(None)
@@ -742,6 +773,9 @@ impl Service {
             "Connections" => reply(Some((self.connections().to_string(),).to_variant())),
             "Pending" => {
                 let (chat_id,): (String,) = params.get().unwrap_or_default();
+                if from_window {
+                    *self.shared.listener.lock().unwrap() = sender.clone(); // it follows this turn now
+                }
                 reply(Some((self.shared.pending_for(&chat_id).to_string(),).to_variant()))
             }
             "Reload" => {
