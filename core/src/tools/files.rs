@@ -111,9 +111,27 @@ pub fn home_path(raw: &str, must_exist: bool) -> Result<PathBuf, ToolError> {
         return Err("hidden files and folders are off-limits".into());
     }
     if must_exist && !path.exists() {
-        return loosely(&path).ok_or_else(|| format!("{} doesn't exist", short(&path)).into());
+        return loosely(&path).ok_or_else(|| missing(&path).into());
     }
     Ok(path)
+}
+
+/// "X doesn't exist", plus what is there: similar names in the nearest folder
+/// that does exist, so the model can correct itself.
+fn missing(path: &Path) -> String {
+    let mut msg = format!("{} doesn't exist", short(path));
+    let Some(dir) = path.ancestors().skip(1).find(|d| d.is_dir()) else { return msg };
+    let wanted = path.strip_prefix(dir).ok().and_then(|r| r.components().next())
+        .map(|c| c.as_os_str().to_string_lossy().to_string()).unwrap_or_default();
+    let names: Vec<String> = fs::read_dir(dir).into_iter().flatten().flatten()
+        .map(|e| e.file_name().to_string_lossy().to_string()).filter(|n| !n.starts_with('.')).collect();
+    let close = super::close_to(&wanted, &names, 6);
+    if !close.is_empty() {
+        msg += &format!(". Similar in {}: {}", short(dir), close.join(", "));
+    } else {
+        msg += ". find_files searches for a file by name";
+    }
+    msg
 }
 
 /// Small models retype long names ("Zrzut ekranu z 2026-11-15 01-02-03.png")
@@ -268,6 +286,7 @@ mod tests {
         assert!(home_path("Projects/../../etc", true).is_err());
         assert!(home_path(".ssh/id_rsa", true).unwrap_err().0.contains("hidden"));
         assert!(home_path("nope.txt", true).unwrap_err().0.contains("doesn't exist"));
+        assert!(home_path("Projects/app/note.txt", true).unwrap_err().0.contains("Similar in ~/Projects/app: notes.txt"));
         let shots = home.join("Obrazy/Zrzuty ekranu");
         fs::create_dir_all(&shots).unwrap();
         fs::write(shots.join("Zrzut ekranu z 2026-11-15 01-02-03.png"), "png").unwrap();

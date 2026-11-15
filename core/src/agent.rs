@@ -11,13 +11,16 @@ use crate::store;
 use crate::tool::{Context, Risk, Tool};
 use crate::tools::groups;
 
-pub const MAX_ROUNDS: usize = 6;
+pub const MAX_ROUNDS: usize = 8; // room to look something up and retry
 
 const SYSTEM_PROMPT: &str = "You are the user's assistant, running locally on the user's laptop \
 (Fedora Silverblue with GNOME) on its NPU. Be brief and direct. When the user asks you \
 to do something on the computer, or asks about its state, call a tool instead of \
-describing how to do it. Only call tools the request needs. Never invent tool results; \
-if a tool fails, say what failed. Answer in the user's language.";
+describing how to do it. Only call tools the request needs. Connect the dots: work out what the \
+user means from the conversation, what you remember about them and what's on the computer (\"my phone\" \
+is the device they told you about, \"it\" is what you just made or found), and pass one tool's result \
+to the next. If a tool fails, fix the call and try again, or look the options up first; say what \
+failed only when you can't work it out. Never invent tool results. Answer in the user's language.";
 const WEB_PROMPT: &str = " For anything recent or that you aren't sure of, use web_search and read the \
 most relevant result with read_web_page, then answer briefly and name the source.";
 const MEMORY_PROMPT: &str = " When the user tells you a lasting preference or fact about themselves, or asks you \
@@ -557,7 +560,10 @@ impl Agent {
             }
         };
         let Some(tool) = self.available_tools().into_iter().find(|t| t.name == call.name) else {
-            let r = format!("Error: there is no tool named {}.", call.name);
+            let names: Vec<String> = self.available_tools().into_iter().map(|t| t.name).collect();
+            let close = crate::tools::close_to(&call.name, &names, 4);
+            let r = if close.is_empty() { format!("Error: there is no tool named {}.", call.name) }
+                    else { format!("Error: there is no tool named {}. Did you mean {}?", call.name, close.join(", ")) };
             cb.tool_finished(&call.name, &r, false);
             return r;
         };

@@ -98,7 +98,14 @@ pub fn find_app(name: &str) -> Result<gio::AppInfo, ToolError> {
             best = Some(app);
         }
     }
-    best.ok_or_else(|| format!("no installed app matches '{name}'").into())
+    best.ok_or_else(|| {
+        let names: Vec<String> = gio::AppInfo::all().iter().filter(|a| a.should_show())
+            .map(|a| a.display_name().to_string()).collect();
+        let close = super::close_to(name, &names, 6);
+        ToolError(if close.is_empty() { format!("no installed app matches '{name}'") } else {
+            format!("no installed app matches '{name}'. Close: {}", close.join(", "))
+        })
+    })
 }
 
 pub fn open_app(_: &Context, args: &Args) -> ToolResult {

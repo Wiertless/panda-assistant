@@ -43,6 +43,27 @@ pub fn norm_name(text: &str) -> String {
     NON_WORD.replace_all(&POSSESSIVE.replace_all(&lower, ""), " ").trim().to_string()
 }
 
+/// Names that share a word (or a word's start) with the query, best first, so
+/// an error can say "did you mean" instead of leaving the model stuck.
+pub fn close_to(query: &str, names: &[String], n: usize) -> Vec<String> {
+    let words = |s: &str| norm_name(&s.replace(['_', '-', '.'], " ")).split(' ')
+        .filter(|w| w.chars().count() >= 3).map(String::from).collect::<Vec<_>>();
+    let q = words(query);
+    let mut scored: Vec<(usize, &String)> = names.iter().map(|name| {
+        let ws = words(name);
+        let score = q.iter().filter(|w| ws.iter().any(|x| x.starts_with(w.as_str()) || w.starts_with(x.as_str()))).count();
+        (score, name)
+    }).filter(|(s, _)| *s > 0).collect();
+    scored.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.len().cmp(&b.1.len())));
+    let mut out: Vec<String> = vec![];
+    for (_, name) in scored {
+        if !out.contains(name) && out.len() < n {
+            out.push(name.clone());
+        }
+    }
+    out
+}
+
 /// The one name the query means: exact, then prefix, then substring, then all words.
 pub fn pick(query: &str, names: &[String], what: &str) -> Result<String, ToolError> {
     static FILLER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^(my|the|a|an|to|moje?|m[oó]j)\s+").unwrap());
@@ -273,6 +294,9 @@ mod tests {
         assert_eq!(pick("mx master", &names, "device").unwrap(), "MX Master 3");
         assert_eq!(pick("flip", &names, "device").unwrap(), "JBL Flip 5");
         assert!(pick("headphones", &names, "device").is_err());
+        let keys: Vec<String> = ["text-scaling-factor", "font-name", "cursor-size"].map(String::from).to_vec();
+        assert_eq!(close_to("text scale", &keys, 3), ["text-scaling-factor"]);
+        assert!(close_to("wallpaper", &keys, 3).is_empty());
         let peers: Vec<String> = ["jakubs-iphone", "framework", "ipad-mini"].map(String::from).to_vec();
         assert_eq!(pick("iphone (jakub)", &peers, "device").unwrap(), "jakubs-iphone");
         assert_eq!(pick("Jakub's iPhone", &peers, "device").unwrap(), "jakubs-iphone");

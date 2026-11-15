@@ -291,7 +291,7 @@ pub fn find_contact(_: &Context, args: &Args) -> ToolResult {
         }
     }
     let _ = bus.close_sync(None::<&gio::Cancellable>);
-    Ok(if found.is_empty() { format!("No contact matches “{name}”.") } else { found.into_iter().take(8).collect::<Vec<_>>().join("\n") })
+    Ok(if found.is_empty() { format!("No contact matches “{name}”. Try part of the name, or another name you know them by.") } else { found.into_iter().take(8).collect::<Vec<_>>().join("\n") })
 }
 
 #[cfg(test)]

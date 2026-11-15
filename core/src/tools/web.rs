@@ -243,7 +243,7 @@ pub fn web_search(_: &Context, args: &Args) -> ToolResult {
     }
     match search_wikipedia(&query) {
         Ok(hits) if !hits.is_empty() => Ok(format_results(&query, "Wikipedia", &hits)),
-        Ok(_) => Err(format!("no results{}", if errors.is_empty() { String::new() } else { format!(" ({})", errors.join("; ")) }).into()),
+        Ok(_) => Err(format!("no results; try fewer or different words{}", if errors.is_empty() { String::new() } else { format!(" ({})", errors.join("; ")) }).into()),
         Err(e) => {
             errors.push(e.0);
             Err(format!("no results ({})", errors.join("; ")).into())

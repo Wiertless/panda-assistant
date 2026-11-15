@@ -150,7 +150,7 @@ fn schema(name: &str) -> Result<gio::SettingsSchema, ToolError> {
                            if name.is_empty() { "that schema" } else { name }).into());
     }
     gio::SettingsSchemaSource::default().and_then(|s| s.lookup(name, true))
-        .ok_or_else(|| format!("there is no settings schema called {name}").into())
+        .ok_or_else(|| format!("there is no settings schema called {name}; find_settings finds the right one").into())
 }
 
 fn key(schema: &gio::SettingsSchema, key: &str) -> Result<gio::SettingsSchemaKey, ToolError> {
@@ -159,7 +159,11 @@ fn key(schema: &gio::SettingsSchema, key: &str) -> Result<gio::SettingsSchemaKey
         return Err(format!("{key} can't be changed by the assistant").into());
     }
     if !schema.has_key(key) {
-        return Err(format!("{} has no key {key}", schema.id()).into());
+        let keys: Vec<String> = schema.list_keys().iter().map(|k| k.to_string()).collect();
+        let close = super::close_to(key, &keys, 6);
+        return Err(format!("{} has no key {key}. {}", schema.id(),
+                           if close.is_empty() { "find_settings looks keys up by what they do".into() }
+                           else { format!("Close: {}", close.join(", ")) }).into());
     }
     Ok(schema.key(key))
 }
