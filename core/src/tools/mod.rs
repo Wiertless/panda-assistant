@@ -10,6 +10,7 @@ use serde_json::json;
 use crate::tool::{Args, Risk, Tool, ToolError, arg_str, obj};
 
 pub mod apps;
+pub mod compact;
 pub mod brains;
 pub mod connect;
 pub mod docs;

@@ -33,6 +33,8 @@ pub struct Variant {
     pub nudge: Option<bool>,
     pub force_completion: Option<bool>,
     pub reply_tool: Option<bool>,
+    /// "compact": the ~28 broad tools, all sent with every request (no routing).
+    pub tool_set: Option<String>,
     pub system_prompt: Option<String>,
     /// Whether the prompt lists the devices and networks (default yes).
     pub known: Option<bool>,
@@ -216,15 +218,18 @@ impl Callbacks for Quiet {
 pub fn run(client: &Arc<FlmClient>, model: &str, sees: bool, v: &Variant, s: &Scenario) -> Outcome {
     let calls: Arc<Mutex<Vec<(String, Args)>>> = Arc::default();
     let (log, stubs, descriptions) = (calls.clone(), Arc::new(s.stubs.clone()), Arc::new(v.descriptions.clone()));
+    let compact = v.tool_set.as_deref() == Some("compact");
     let source = Arc::new(move || {
-        crate::tools::all().into_iter().map(|t| {
+        let narrow: Vec<Tool> = crate::tools::all().into_iter().map(|t| {
             let (log, stubs, name) = (log.clone(), stubs.clone(), t.name.clone());
             let description = descriptions.get(&t.name).cloned().unwrap_or(t.description.clone());
             Tool { description, run: Arc::new(move |_, args: &Args| {
                 log.lock().unwrap().push((name.clone(), args.clone()));
                 stub_result(stubs.get(&name), args)
             }), ..t }
-        }).collect()
+        }).collect();
+        // The broad tools forward to the narrow stand-ins, so the judging stays the same.
+        if compact { crate::tools::compact::compact(narrow) } else { narrow }
     });
     let mut agent = Agent::new(client.clone(), model, source);
     if let Some(t) = v.tool_temperature {
@@ -236,6 +241,10 @@ pub fn run(client: &Arc<FlmClient>, model: &str, sees: bool, v: &Variant, s: &Sc
     agent.force_completion = v.force_completion.unwrap_or(agent.force_completion);
     agent.reply_tool = v.reply_tool.unwrap_or(agent.reply_tool);
     agent.system_prompt = v.system_prompt.clone();
+    if compact {
+        agent.route_tools = false; // everything goes along
+        agent.examples = false; // they name the narrow tools
+    }
     let known = s.known.as_deref().unwrap_or(KNOWN);
     agent.machine = Some(if v.known.unwrap_or(true) { format!("{MACHINE}\n{known}") } else { MACHINE.into() });
     let facts: Vec<String> = s.memory.iter().map(|f| format!("- {f}")).collect();

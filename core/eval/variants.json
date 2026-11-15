@@ -38,5 +38,9 @@
   "no-reply-tool": {
     "about": "Like baseline, but the model may answer in plain text on the first round (0.16.1 and before).",
     "reply_tool": false
+  },
+  "compact": {
+    "about": "Like baseline, with ~28 broad tools (set, connect, send, find, read, calendar…) all sent every time instead of 64 routed narrow ones.",
+    "tool_set": "compact"
   }
 }
