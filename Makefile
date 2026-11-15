@@ -23,7 +23,8 @@ install:
 	PREFIX=$(PREFIX) DESTDIR=$(DESTDIR) ./install.sh
 
 uninstall:
-	rm -rf $(DESTDIR)$(PREFIX)/libexec/panda-assistant
+	rm -rf $(DESTDIR)$(PREFIX)/libexec/panda-assistant \
+		$(DESTDIR)$(DATADIR)/gnome-shell/extensions/clipboard@assistant.wiertless.github.io
 	rm -f $(DESTDIR)$(BINDIR)/panda-assistant \
 		$(DESTDIR)$(DATADIR)/applications/$(APP_ID).desktop \
 		$(DESTDIR)$(DATADIR)/gnome-shell/search-providers/$(APP_ID).search-provider.ini \

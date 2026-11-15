@@ -23,6 +23,10 @@ install -D -m 0755 "$(pick assistantd)" "$DESTDIR$LIBEXECDIR/assistantd"
 install -D -m 0644 "data/$APP_ID.desktop" "$DESTDIR$DATADIR/applications/$APP_ID.desktop"
 install -D -m 0644 "data/$APP_ID.metainfo.xml" "$DESTDIR$DATADIR/metainfo/$APP_ID.metainfo.xml"
 install -D -m 0644 LICENSE "$DESTDIR$DATADIR/licenses/panda-assistant/LICENSE"
+# The clipboard history extension (enable it in Extensions, or SilverPanda does).
+ext=clipboard@assistant.wiertless.github.io
+install -D -m 0644 "data/shell-extension/$ext/metadata.json" "$DESTDIR$DATADIR/gnome-shell/extensions/$ext/metadata.json"
+install -D -m 0644 "data/shell-extension/$ext/extension.js" "$DESTDIR$DATADIR/gnome-shell/extensions/$ext/extension.js"
 install -D -m 0644 "data/$APP_ID.svg" "$DESTDIR$DATADIR/icons/hicolor/scalable/apps/$APP_ID.svg"
 install -D -m 0644 "data/$APP_ID.search-provider.ini" \
   "$DESTDIR$DATADIR/gnome-shell/search-providers/$APP_ID.search-provider.ini"

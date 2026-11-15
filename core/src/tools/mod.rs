@@ -179,6 +179,10 @@ Returns titles, links and short snippets.", obj(json!({"query": {"type": "string
                   text("url", |u| format!("Read {}", or(u, "a page")))),
         Tool::new("copy_to_clipboard", "Copy text to the clipboard.", obj(json!({"text": {"type": "string"}}), &["text"]),
                   Safe, settings::copy_to_clipboard, |_| "Copy to clipboard".into()),
+        Tool::new("clipboard_history", "What the user copied recently, newest first (text only). Use it for \"what I \
+copied\", \"the link from before\", \"paste that address\". query keeps only clips with those words.",
+                  obj(json!({"query": {"type": "string"}}), &[]), Safe, settings::clipboard_history,
+                  |_| "Look at what you copied".into()),
         Tool::new("set_dark_mode", "Turn the dark style on or off.", enabled(), Safe, settings::set_dark_mode,
                   onoff("enabled", "dark mode")),
         Tool::new("set_do_not_disturb", "Turn Do Not Disturb (hide notification banners) on or off.", enabled(), Safe,
@@ -221,6 +225,11 @@ e.g. true, 1.25, 'prefer-dark', 300.",
                   obj(json!({"path": {"type": "string"}, "device": {"type": "string", "description": "Device name"}}),
                       &["path", "device"]), Safe, connect::send_file, // Taildrop only reaches your own devices
                   |a| format!("Send {} to {}", base_name(&or(arg_str(a, "path"), "a file")), or(arg_str(a, "device"), "a device"))),
+        Tool::new("send_text", "Send text to one of the user's devices with Taildrop, as a note they can open there: \
+an answer, a list, an address, a link. For the last answer, pass its text.",
+                  obj(json!({"text": {"type": "string"}, "device": {"type": "string", "description": "Device name"},
+                             "title": {"type": "string", "description": "A short name for the note"}}), &["text", "device"]),
+                  Safe, connect::send_text, |a| format!("Send a note to {}", or(arg_str(a, "device"), "a device"))),
         Tool::new("set_wifi", "Turn Wi-Fi on or off. Turning it off disconnects the network.", enabled(), Safe,
                   settings::set_wifi, onoff("enabled", "Wi-Fi")),
         Tool::new("set_bluetooth", "Turn Bluetooth on or off. Turning it off disconnects Bluetooth devices.", enabled(),
@@ -309,7 +318,7 @@ mod tests {
     #[test]
     fn same_tools_and_risks_as_the_python_app() {
         let names: Vec<String> = all().into_iter().map(|t| t.name).collect();
-        assert_eq!(names.len(), 54, "{names:?}");
+        assert_eq!(names.len(), 56, "{names:?}");
         let risky: Vec<String> = all().into_iter().filter(|t| t.risk == Risk::Confirm).map(|t| t.name).collect();
         assert_eq!(risky, ["run_command"]);
     }

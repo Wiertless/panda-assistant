@@ -1,4 +1,4 @@
-//! Preferences (General, Memory, Skills, Connections) and Keyboard Shortcuts.
+//! Preferences (General, Memory, Skills, Connections, Activity) and Keyboard Shortcuts.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -8,7 +8,7 @@ use gtk::{gio, glib};
 use serde_json::{Value, json};
 
 use assistant_core::flm::pick_smarter_model;
-use assistant_core::{mcp, store};
+use assistant_core::{activity, mcp, store};
 
 use crate::config;
 use crate::window::Window;
@@ -54,6 +54,7 @@ pub fn show_preferences(win: &Rc<Window>) {
     dialog.add(&memory_page(win));
     dialog.add(&skills_page(win));
     dialog.add(&connections_page(win));
+    dialog.add(&activity_page());
     dialog.present(Some(&win.win));
 }
 
@@ -207,6 +208,55 @@ fn memory_page(win: &Rc<Window>) -> adw::PreferencesPage {
         }
     }
     fill(&facts, win);
+    page
+}
+
+/// Everything the assistant did, newest first.
+fn activity_page() -> adw::PreferencesPage {
+    let page = adw::PreferencesPage::builder().title("Activity").icon_name("document-open-recent-symbolic").build();
+    let rows = Rows::new(adw::PreferencesGroup::builder().title("What the Assistant Did")
+        .description("Every action, newest first. Kept on this computer only (the last 500).").build());
+    let clear = gtk::Button::builder().label("Clear").valign(gtk::Align::Center).build();
+    clear.add_css_class("flat");
+    rows.group.set_header_suffix(Some(&clear));
+    page.add(&rows.group);
+    fn fill(rows: &Rc<Rows>) {
+        rows.clear();
+        let entries = activity::recent(200);
+        if entries.is_empty() {
+            rows.add(&adw::ActionRow::builder().title("Nothing yet").subtitle("Actions show up here as they happen").build());
+        }
+        for e in entries {
+            let when = glib::DateTime::from_unix_local(e["time"].as_i64().unwrap_or(0)).ok()
+                .and_then(|t| t.format("%e %b, %H:%M").ok()).map(|s| s.trim().to_string()).unwrap_or_default();
+            let mut sub = vec![when];
+            match e["decision"].as_str() {
+                Some("declined") => sub.push("you cancelled it".into()),
+                Some("allowed") => sub.push("you allowed it".into()),
+                Some("always") => sub.push("you chose Always Allow".into()),
+                _ => {}
+            }
+            if e["from"] == "search" {
+                sub.push("from search".into());
+            }
+            let result = e["result"].as_str().unwrap_or("");
+            let row = adw::ActionRow::builder().title(esc(e["summary"].as_str().unwrap_or(""))).subtitle(esc(&sub.join(" · ")))
+                .tooltip_text(result).build();
+            let ok = e["ok"].as_bool().unwrap_or(false);
+            let icon = gtk::Image::from_icon_name(if ok { "object-select-symbolic" } else { "dialog-warning-symbolic" });
+            if !ok {
+                icon.add_css_class("warning");
+            }
+            row.add_prefix(&icon);
+            rows.add(&row);
+        }
+    }
+    fill(&rows);
+    let r = rows.clone();
+    clear.connect_clicked(move |_| {
+        activity::clear();
+        fill(&r);
+    });
     page
 }
 

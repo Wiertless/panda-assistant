@@ -1,70 +1,403 @@
 [
-  {"name": "dark mode", "prompt": "turn on dark mode",
-   "expect": [{"tool": "set_dark_mode", "args": {"enabled": "true"}}]},
-  {"name": "dark mode (pl)", "prompt": "włącz tryb ciemny",
-   "expect": [{"tool": "set_dark_mode", "args": {"enabled": "true"}}]},
-  {"name": "volume", "prompt": "set the volume to 30",
-   "expect": [{"tool": "set_volume", "args": {"percent": "30"}}]},
-  {"name": "airpods", "prompt": "connect my airpods",
-   "stubs": {"connect_bluetooth": [{"when": {"device": "airpods"}, "result": "Connected Jakub's AirPods Pro."},
-                                    {"error": "no paired device called that (known: Jakub's AirPods Pro, MX Master 3)"}]},
-   "expect": [{"tool": "connect_bluetooth", "args": {"device": "airpods"}}]},
-  {"name": "screenshot to phone", "prompt": "take a screenshot and send it to my phone",
-   "memory": ["The user's phone is the iPhone (Jakub)"],
-   "stubs": {
-     "save_screenshot": "Saved the screenshot as ~/Obrazy/Zrzuty ekranu/Zrzut ekranu z 2026-11-15 10-00-00.png. To send it, pass exactly that path to send_file.",
-     "list_devices": "jakubs-iphone (iOS, online)\nframework (linux, this device)",
-     "send_file": [{"when": {"device": "jakubs-iphone", "path": "zrzut ekranu z 2026-11-15"}, "result": "Sent Zrzut ekranu z 2026-11-15 10-00-00.png to jakubs-iphone with Taildrop."},
-                   {"when": {"device": "jakubs-iphone"}, "error": "that file doesn't exist"},
-                   {"error": "no device on the tailnet called that. Devices: jakubs-iphone (iOS), framework (linux)"}]},
-   "expect": [{"tool": "save_screenshot"}, {"tool": "send_file", "args": {"device": "jakubs-iphone", "path": "Zrzut ekranu"}}]},
-  {"name": "file to phone", "prompt": "send the lease pdf to my phone",
-   "memory": ["The user's phone is the iPhone (Jakub)"],
-   "stubs": {
-     "find_files": "~/Dokumenty/lease-2026.pdf",
-     "search_file_contents": "~/Dokumenty/lease-2026.pdf",
-     "list_devices": "jakubs-iphone (iOS, online)\nframework (linux, this device)",
-     "send_file": [{"when": {"device": "jakubs-iphone", "path": "lease-2026.pdf"}, "result": "Sent lease-2026.pdf to jakubs-iphone with Taildrop."},
-                   {"error": "no device on the tailnet called that, or no such file. Devices: jakubs-iphone (iOS), framework (linux)"}]},
-   "expect": [{"tool": "find_files|search_file_contents"}, {"tool": "send_file", "args": {"device": "jakubs-iphone", "path": "lease-2026.pdf"}}]},
-  {"name": "calendar tomorrow", "prompt": "what do I have tomorrow?",
-   "stubs": {"get_events": "Monday 2026-11-16:\n09:30–10:00 Dentist (Dr Nowak)\n13:00–14:00 Lunch with Ola"},
-   "expect": [{"tool": "get_events", "args": {"when": "tomorrow|2026-11-16|monday"}}], "answer": ["dentist"]},
-  {"name": "calendar (pl)", "prompt": "co mam jutro w kalendarzu?",
-   "stubs": {"get_events": "Monday 2026-11-16:\n09:30–10:00 Dentysta\n13:00–14:00 Lunch z Olą"},
-   "expect": [{"tool": "get_events"}], "answer": ["dentyst"]},
-  {"name": "battery", "prompt": "how much battery do I have left?",
-   "stubs": {"get_battery": "62%, discharging, about 3 h 40 min left"},
-   "expect": [{"tool": "get_battery|get_status|get_system_info"}], "answer": ["62"]},
-  {"name": "remember", "prompt": "remember that I use the fish shell",
-   "expect": [{"tool": "remember", "args": {"fact": "fish"}}]},
-  {"name": "chit-chat", "prompt": "hi! how are you?", "no_tools": true},
-  {"name": "web", "prompt": "who won the 2026 Formula 1 championship?",
-   "stubs": {"web_search": "1. 2026 Formula One World Championship – Wikipedia: ... Lando Norris won the drivers' title ...",
-             "read_web_page": "The 2026 drivers' championship was won by Lando Norris."},
-   "expect": [{"tool": "web_search", "args": {"query": "2026"}}], "answer": ["norris"]},
-  {"name": "open app", "prompt": "open firefox",
-   "expect": [{"tool": "open_app", "args": {"name": "firefox"}}]},
-  {"name": "typo recovery", "prompt": "open spotfy",
-   "stubs": {"open_app": [{"when": {"name": "spotify"}, "result": "Opened Spotify."},
-                          {"error": "no installed app matches that. Close: Spotify"}]},
-   "expect": [{"tool": "open_app", "args": {"name": "spotify"}}]},
-  {"name": "skip song", "prompt": "skip this song",
-   "expect": [{"tool": "media_control", "args": {"action": "next"}}]},
-  {"name": "terminal", "prompt": "open a terminal in my Projects folder",
-   "expect": [{"tool": "open_terminal", "args": {"folder": "projects"}}]},
-  {"name": "text size", "prompt": "make the text on screen bigger",
-   "stubs": {"find_settings": "org.gnome.desktop.interface text-scaling-factor = 1.0 — Text scaling factor (double)",
-             "get_setting": "1.0"},
-   "expect": [{"tool": "change_setting", "args": {"key": "text-scaling-factor"}}]},
-  {"name": "math", "prompt": "what's 15% of 240?", "answer": ["36"], "forbid": ["web_search"]},
-  {"name": "contact", "prompt": "what's Ola's phone number?",
-   "stubs": {"find_contact": "Ola Kowalska — phone +48 600 100 200, email ola@example.com"},
-   "expect": [{"tool": "find_contact", "args": {"name": "ola"}}], "answer": ["600"]},
-  {"name": "wifi network", "prompt": "connect to the office wifi",
-   "stubs": {"list_networks": "Home 5G (saved, connected)\nBiuro-Gosc (saved)\nPhone hotspot (saved)",
-             "connect_network": [{"when": {"name": "biuro"}, "result": "Connected to Biuro-Gosc."},
-                                 {"error": "no saved network called that (known: Home 5G, Biuro-Gosc, Phone hotspot)"}]},
-   "memory": ["The office Wi-Fi is the one called Biuro"],
-   "expect": [{"tool": "connect_network", "args": {"name": "biuro"}}]}
+ {
+  "name": "dark mode",
+  "prompt": "turn on dark mode",
+  "expect": [
+   {
+    "tool": "set_dark_mode",
+    "args": {
+     "enabled": "true"
+    }
+   }
+  ]
+ },
+ {
+  "name": "dark mode (pl)",
+  "prompt": "włącz tryb ciemny",
+  "expect": [
+   {
+    "tool": "set_dark_mode",
+    "args": {
+     "enabled": "true"
+    }
+   }
+  ]
+ },
+ {
+  "name": "volume",
+  "prompt": "set the volume to 30",
+  "expect": [
+   {
+    "tool": "set_volume",
+    "args": {
+     "percent": "30"
+    }
+   }
+  ]
+ },
+ {
+  "name": "airpods",
+  "prompt": "connect my airpods",
+  "stubs": {
+   "connect_bluetooth": [
+    {
+     "when": {
+      "device": "airpods"
+     },
+     "result": "Connected Jakub's AirPods Pro."
+    },
+    {
+     "error": "no paired device called that (known: Jakub's AirPods Pro, MX Master 3)"
+    }
+   ]
+  },
+  "expect": [
+   {
+    "tool": "connect_bluetooth",
+    "args": {
+     "device": "airpods"
+    }
+   }
+  ]
+ },
+ {
+  "name": "screenshot to phone",
+  "prompt": "take a screenshot and send it to my phone",
+  "memory": [
+   "The user's phone is the iPhone (Jakub)"
+  ],
+  "stubs": {
+   "save_screenshot": "Saved the screenshot as ~/Obrazy/Zrzuty ekranu/Zrzut ekranu z 2026-11-15 10-00-00.png. To send it, pass exactly that path to send_file.",
+   "list_devices": "jakubs-iphone (iOS, online)\nframework (linux, this device)",
+   "send_file": [
+    {
+     "when": {
+      "device": "jakubs-iphone",
+      "path": "zrzut ekranu z 2026-11-15"
+     },
+     "result": "Sent Zrzut ekranu z 2026-11-15 10-00-00.png to jakubs-iphone with Taildrop."
+    },
+    {
+     "when": {
+      "device": "jakubs-iphone"
+     },
+     "error": "that file doesn't exist"
+    },
+    {
+     "error": "no device on the tailnet called that. Devices: jakubs-iphone (iOS), framework (linux)"
+    }
+   ]
+  },
+  "expect": [
+   {
+    "tool": "save_screenshot"
+   },
+   {
+    "tool": "send_file",
+    "args": {
+     "device": "jakubs-iphone",
+     "path": "Zrzut ekranu"
+    }
+   }
+  ]
+ },
+ {
+  "name": "file to phone",
+  "prompt": "send the lease pdf to my phone",
+  "memory": [
+   "The user's phone is the iPhone (Jakub)"
+  ],
+  "stubs": {
+   "find_files": "~/Dokumenty/lease-2026.pdf",
+   "search_file_contents": "~/Dokumenty/lease-2026.pdf",
+   "list_devices": "jakubs-iphone (iOS, online)\nframework (linux, this device)",
+   "send_file": [
+    {
+     "when": {
+      "device": "jakubs-iphone",
+      "path": "lease-2026.pdf"
+     },
+     "result": "Sent lease-2026.pdf to jakubs-iphone with Taildrop."
+    },
+    {
+     "error": "no device on the tailnet called that, or no such file. Devices: jakubs-iphone (iOS), framework (linux)"
+    }
+   ]
+  },
+  "expect": [
+   {
+    "tool": "find_files|search_file_contents"
+   },
+   {
+    "tool": "send_file",
+    "args": {
+     "device": "jakubs-iphone",
+     "path": "lease-2026.pdf"
+    }
+   }
+  ]
+ },
+ {
+  "name": "note to phone",
+  "prompt": "send my shopping list to my phone: milk, eggs, bread and coffee",
+  "memory": [
+   "The user's phone is the iPhone (Jakub)"
+  ],
+  "stubs": {
+   "list_devices": "jakubs-iphone (iOS, online)\nframework (linux, this device)",
+   "send_text": [
+    {
+     "when": {
+      "device": "jakubs-iphone"
+     },
+     "result": "Sent Shopping list.txt to jakubs-iphone with Taildrop."
+    },
+    {
+     "error": "no device on the tailnet called that. Devices: jakubs-iphone (iOS), framework (linux)"
+    }
+   ]
+  },
+  "expect": [
+   {
+    "tool": "send_text",
+    "args": {
+     "device": "jakubs-iphone",
+     "text": "coffee"
+    }
+   }
+  ]
+ },
+ {
+  "name": "calendar tomorrow",
+  "prompt": "what do I have tomorrow?",
+  "stubs": {
+   "get_events": "Monday 2026-11-16:\n09:30–10:00 Dentist (Dr Nowak)\n13:00–14:00 Lunch with Ola"
+  },
+  "expect": [
+   {
+    "tool": "get_events",
+    "args": {
+     "when": "tomorrow|2026-11-16|monday"
+    }
+   }
+  ],
+  "answer": [
+   "dentist"
+  ]
+ },
+ {
+  "name": "calendar (pl)",
+  "prompt": "co mam jutro w kalendarzu?",
+  "stubs": {
+   "get_events": "Monday 2026-11-16:\n09:30–10:00 Dentysta\n13:00–14:00 Lunch z Olą"
+  },
+  "expect": [
+   {
+    "tool": "get_events"
+   }
+  ],
+  "answer": [
+   "dentyst"
+  ]
+ },
+ {
+  "name": "battery",
+  "prompt": "how much battery do I have left?",
+  "stubs": {
+   "get_battery": "62%, discharging, about 3 h 40 min left"
+  },
+  "expect": [
+   {
+    "tool": "get_battery|get_status|get_system_info"
+   }
+  ],
+  "answer": [
+   "62"
+  ]
+ },
+ {
+  "name": "remember",
+  "prompt": "remember that I use the fish shell",
+  "expect": [
+   {
+    "tool": "remember",
+    "args": {
+     "fact": "fish"
+    }
+   }
+  ]
+ },
+ {
+  "name": "chit-chat",
+  "prompt": "hi! how are you?",
+  "no_tools": true
+ },
+ {
+  "name": "web",
+  "prompt": "who won the 2026 Formula 1 championship?",
+  "stubs": {
+   "web_search": "1. 2026 Formula One World Championship – Wikipedia: ... Lando Norris won the drivers' title ...",
+   "read_web_page": "The 2026 drivers' championship was won by Lando Norris."
+  },
+  "expect": [
+   {
+    "tool": "web_search",
+    "args": {
+     "query": "2026"
+    }
+   }
+  ],
+  "answer": [
+   "norris"
+  ]
+ },
+ {
+  "name": "open app",
+  "prompt": "open firefox",
+  "expect": [
+   {
+    "tool": "open_app",
+    "args": {
+     "name": "firefox"
+    }
+   }
+  ]
+ },
+ {
+  "name": "typo recovery",
+  "prompt": "open spotfy",
+  "stubs": {
+   "open_app": [
+    {
+     "when": {
+      "name": "spotify"
+     },
+     "result": "Opened Spotify."
+    },
+    {
+     "error": "no installed app matches that. Close: Spotify"
+    }
+   ]
+  },
+  "expect": [
+   {
+    "tool": "open_app",
+    "args": {
+     "name": "spotify"
+    }
+   }
+  ]
+ },
+ {
+  "name": "skip song",
+  "prompt": "skip this song",
+  "expect": [
+   {
+    "tool": "media_control",
+    "args": {
+     "action": "next"
+    }
+   }
+  ]
+ },
+ {
+  "name": "terminal",
+  "prompt": "open a terminal in my Projects folder",
+  "expect": [
+   {
+    "tool": "open_terminal",
+    "args": {
+     "folder": "projects"
+    }
+   }
+  ]
+ },
+ {
+  "name": "text size",
+  "prompt": "make the text on screen bigger",
+  "stubs": {
+   "find_settings": "org.gnome.desktop.interface text-scaling-factor = 1.0 — Text scaling factor (double)",
+   "get_setting": "1.0"
+  },
+  "expect": [
+   {
+    "tool": "change_setting",
+    "args": {
+     "key": "text-scaling-factor"
+    }
+   }
+  ]
+ },
+ {
+  "name": "math",
+  "prompt": "what's 15% of 240?",
+  "answer": [
+   "36"
+  ],
+  "forbid": [
+   "web_search"
+  ]
+ },
+ {
+  "name": "contact",
+  "prompt": "what's Ola's phone number?",
+  "stubs": {
+   "find_contact": "Ola Kowalska — phone +48 600 100 200, email ola@example.com"
+  },
+  "expect": [
+   {
+    "tool": "find_contact",
+    "args": {
+     "name": "ola"
+    }
+   }
+  ],
+  "answer": [
+   "600"
+  ]
+ },
+ {
+  "name": "wifi network",
+  "prompt": "connect to the office wifi",
+  "stubs": {
+   "list_networks": "Home 5G (saved, connected)\nBiuro-Gosc (saved)\nPhone hotspot (saved)",
+   "connect_network": [
+    {
+     "when": {
+      "name": "biuro"
+     },
+     "result": "Connected to Biuro-Gosc."
+    },
+    {
+     "error": "no saved network called that (known: Home 5G, Biuro-Gosc, Phone hotspot)"
+    }
+   ]
+  },
+  "memory": [
+   "The office Wi-Fi is the one called Biuro"
+  ],
+  "expect": [
+   {
+    "tool": "connect_network",
+    "args": {
+     "name": "biuro"
+    }
+   }
+  ]
+ },
+ {
+  "name": "clipboard",
+  "prompt": "what was the address I copied earlier?",
+  "stubs": {
+   "clipboard_history": "1. https://example.com/flat-listing\n2. ul. Długa 5, 00-001 Warszawa\n3. meeting notes draft"
+  },
+  "expect": [
+   {
+    "tool": "clipboard_history"
+   }
+  ],
+  "answer": [
+   "długa|dluga"
+  ]
+ }
 ]

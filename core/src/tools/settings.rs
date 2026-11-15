@@ -241,3 +241,50 @@ pub fn copy_to_clipboard(ctx: &Context, args: &Args) -> ToolResult {
     copy(&text);
     Ok("Copied to the clipboard.".into())
 }
+
+// -- clipboard history (the Assistant Clipboard shell extension) -------------------------
+
+const CLIP_PATH: &str = "/io/github/wiertless/PandaAssistant/Clipboard";
+const CLIP_IFACE: &str = "io.github.wiertless.PandaAssistant.Clipboard1";
+const CLIP_SHOWN: usize = 300;
+
+/// Recent copies, newest first, optionally only those mentioning `query`.
+pub fn format_clips(clips: &[String], query: &str) -> String {
+    let q = query.trim().to_lowercase();
+    let hits: Vec<(usize, &String)> = clips.iter().enumerate()
+        .filter(|(_, c)| q.is_empty() || q.split_whitespace().all(|w| c.to_lowercase().contains(w))).collect();
+    if hits.is_empty() {
+        return if q.is_empty() { "Nothing copied yet.".into() } else {
+            format!("Nothing copied recently mentions “{query}”. Newest: {}", clips.first().map(|c| short_clip(c)).unwrap_or_default())
+        };
+    }
+    hits.iter().map(|(i, c)| format!("{}. {}", i + 1, short_clip(c))).collect::<Vec<_>>().join("\n")
+}
+
+fn short_clip(c: &str) -> String {
+    let one: String = c.split_whitespace().collect::<Vec<_>>().join(" ");
+    if one.chars().count() > CLIP_SHOWN { format!("{}…", one.chars().take(CLIP_SHOWN).collect::<String>()) } else { one }
+}
+
+pub fn clipboard_history(_: &Context, args: &Args) -> ToolResult {
+    let reply = super::run::dbus_call(false, "org.gnome.Shell", CLIP_PATH, CLIP_IFACE, "History", None,
+                                      Some(glib::VariantTy::new("(as)").unwrap()), 3000)
+        .map_err(|_| ToolError("clipboard history is off: turn on the Assistant Clipboard extension in the Extensions app".into()))?;
+    let clips: Vec<String> = reply.child_value(0).get().unwrap_or_default();
+    Ok(format_clips(&clips, &arg_str(args, "query")))
+}
+
+#[cfg(test)]
+mod clip_tests {
+    use super::*;
+
+    #[test]
+    fn clips_newest_first_and_filtered() {
+        let clips: Vec<String> = ["https://example.com/flat", "ul. Długa 5\n00-001 Warszawa", &"x".repeat(500)].map(String::from).to_vec();
+        assert_eq!(format_clips(&clips, "warszawa"), "2. ul. Długa 5 00-001 Warszawa");
+        assert!(format_clips(&clips, "").starts_with("1. https://example.com/flat\n2."));
+        assert!(format_clips(&clips, "").ends_with("…"));
+        assert!(format_clips(&clips, "nothing").starts_with("Nothing copied recently"));
+        assert_eq!(format_clips(&[], ""), "Nothing copied yet.");
+    }
+}

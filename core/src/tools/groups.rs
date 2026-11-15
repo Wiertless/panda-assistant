@@ -12,7 +12,9 @@ pub const CORE: &str = "core";
 pub const MORE_TOOLS: &str = "more_tools";
 
 /// (group, what it's for, word stems that bring it in).
-pub const GROUPS: [(&str, &str, &[&str]); 10] = [
+pub const GROUPS: [(&str, &str, &[&str]); 11] = [
+    ("clipboard", "what the user copied recently",
+     &["copied", "copy", "clipboard", "paste", "pasted", "skopiow", "schowek", "schowk", "wklej"]),
     ("settings", "dark mode, Night Light, volume, brightness, power mode, Do Not Disturb, Wi-Fi/Bluetooth on or off, any GNOME setting",
      &["dark", "light", "night", "volume", "sound", "mute", "loud", "quiet", "bright", "dim", "power", "battery saver", "performance",
        "disturb", "notification", "setting", "font", "text size", "bigger", "smaller", "scal", "wallpaper", "background", "theme",
@@ -24,7 +26,7 @@ pub const GROUPS: [(&str, &str, &[&str]); 10] = [
     ("system", "battery level, memory, disk space, uptime, OS version",
      &["battery", "memory", "ram", "disk", "storage", "space", "uptime", "kernel", "version", "cpu",
        "bateri", "pamię", "pamie", "dysk", "miejsc", "wersj", "procesor"]),
-    ("devices", "saved Wi-Fi networks and VPNs, paired Bluetooth devices (headphones…), Taildrop to other devices",
+    ("devices", "saved Wi-Fi networks and VPNs, paired Bluetooth devices (headphones…), sending files and notes to other devices with Taildrop",
      &["connect", "network", "vpn", "wifi", "wi-fi", "bluetooth", "headphone", "airpod", "earbud", "speaker", "mouse", "pair",
        "send", "taildrop", "tailscale", "phone", "device",
        "połącz", "polacz", "rozłącz", "rozlacz", "sieć", "siec", "słuchawk", "sluchawk", "głośnik", "glosnik", "wyślij", "wyslij", "telefon", "urządz", "urzadz"]),
@@ -51,10 +53,11 @@ pub fn group_of(tool: &str) -> &'static str {
         "set_dark_mode" | "set_do_not_disturb" | "set_volume" | "set_mute" | "set_brightness" | "set_power_mode"
         | "set_night_light" | "find_settings" | "get_setting" | "change_setting" | "open_settings" | "set_wifi"
         | "set_bluetooth" => "settings",
+        "clipboard_history" => "clipboard",
         "list_folder" | "find_files" | "read_file" | "read_document" | "search_file_contents" | "look_at_image" => "files",
         "get_battery" | "get_system_info" => "system",
         "list_networks" | "connect_network" | "disconnect_network" | "list_bluetooth" | "connect_bluetooth"
-        | "disconnect_bluetooth" | "list_devices" | "send_file" => "devices",
+        | "disconnect_bluetooth" | "list_devices" | "send_file" | "send_text" => "devices",
         "get_events" | "find_contact" => "personal",
         "list_app_actions" | "run_app_action" | "media_control" | "search_apps" | "open_search_result" | "open_terminal" => "apps",
         "read_web_page" => "web",

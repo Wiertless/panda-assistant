@@ -224,7 +224,31 @@ pub fn send_file(_: &Context, args: &Args) -> ToolResult {
     if !path.is_file() {
         return Err(format!("{} isn't a file; Taildrop sends files, not folders", short(&path)).into());
     }
-    let wanted = arg_str(args, "device");
+    taildrop(&path, &arg_str(args, "device"))
+}
+
+/// A note made of text (an answer, a list, an address) sent as a .txt file,
+/// which phones open in their files or notes app.
+pub fn send_text(_: &Context, args: &Args) -> ToolResult {
+    let text = arg_str(args, "text");
+    if text.trim().is_empty() {
+        return Err("give the text to send".into());
+    }
+    let raw = arg_str(args, "title");
+    let title = if raw.trim().is_empty() { text.lines().next().unwrap_or("Note").to_string() } else { raw };
+    let name: String = title.chars().map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' { c } else { ' ' })
+        .collect::<String>().split_whitespace().collect::<Vec<_>>().join(" ").chars().take(40).collect();
+    let dir = glib::user_cache_dir().join("panda-assistant/notes");
+    std::fs::create_dir_all(&dir).map_err(|e| ToolError(e.to_string()))?;
+    let path = dir.join(format!("{}.txt", if name.is_empty() { "Note" } else { name.trim() }));
+    std::fs::write(&path, format!("{}\n", text.trim_end())).map_err(|e| ToolError(e.to_string()))?;
+    let sent = taildrop(&path, &arg_str(args, "device"));
+    let _ = std::fs::remove_file(&path);
+    sent
+}
+
+fn taildrop(path: &std::path::Path, wanted: &str) -> ToolResult {
+    let wanted = wanted.to_string();
     let peers = tailnet_peers()?;
     let names: Vec<String> = peers.iter().map(|p| p.name.clone()).collect();
     let by_dns = peers.iter().find(|p| !p.dns.is_empty() && p.dns.eq_ignore_ascii_case(wanted.trim()));

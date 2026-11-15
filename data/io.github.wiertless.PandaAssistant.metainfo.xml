@@ -21,6 +21,16 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.14.0" date="2026-11-15">
+      <description>
+        <ul>
+          <li>Activity in Preferences: everything the assistant did, when, and how it went</li>
+          <li>Sends notes to your phone: an answer, a list or an address</li>
+          <li>Clipboard history: ask about what you copied earlier (with the Assistant Clipboard extension)</li>
+          <li>assistantd --eval scores models on scripted requests, so you can pick the one that works best</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.13.1" date="2026-11-15">
       <description>
         <ul>

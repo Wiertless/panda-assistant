@@ -20,7 +20,7 @@ use crate::flm::{self, FlmClient, Model};
 use crate::mcp::Hub;
 use crate::search;
 use crate::tool::Context;
-use crate::{paths, store, tools};
+use crate::{activity, paths, store, tools};
 
 pub const BUS_NAME: &str = "io.github.wiertless.PandaAssistant.Core";
 pub const OBJECT_PATH: &str = "/io/github/wiertless/PandaAssistant/Core";
@@ -115,6 +115,9 @@ struct SignalCallbacks {
     service: Arc<Shared>,
     /// Asked from GNOME search with no window: tell the user by notification.
     background: bool,
+    /// For the activity log: each tool's summary, and the last Allow/Cancel answer.
+    summaries: Mutex<HashMap<String, String>>,
+    decision: Mutex<Option<&'static str>>,
 }
 
 impl SignalCallbacks {
@@ -131,9 +134,16 @@ impl Callbacks for SignalCallbacks {
         self.emit("Reasoning", (self.chat_id.as_str(), t).to_variant());
     }
     fn tool_started(&self, n: &str, s: &str) {
+        self.summaries.lock().unwrap().insert(n.into(), s.into());
         self.emit("ToolStarted", (self.chat_id.as_str(), n, s).to_variant());
     }
     fn tool_finished(&self, n: &str, r: &str, ok: bool) {
+        if n != crate::tools::groups::MORE_TOOLS {
+            let summary = self.summaries.lock().unwrap().get(n).cloned().unwrap_or_else(|| n.replace('_', " "));
+            activity::record(&activity::Entry { chat_id: &self.chat_id, tool: n, summary: &summary, result: r, ok,
+                                                from: if self.background { "search" } else { "window" },
+                                                decision: self.decision.lock().unwrap().take() });
+        }
         self.emit("ToolFinished", (self.chat_id.as_str(), n, r, ok).to_variant());
     }
     fn notice(&self, t: &str) {
@@ -164,7 +174,9 @@ impl Callbacks for SignalCallbacks {
         if answer == "always" && can_always {
             self.service.allow_always(name);
         }
-        answer == "allow" || answer == "always"
+        let allowed = answer == "allow" || answer == "always";
+        *self.decision.lock().unwrap() = Some(if answer == "always" && can_always { "always" } else if allowed { "allowed" } else { "declined" });
+        allowed
     }
 }
 
@@ -455,7 +467,8 @@ impl Service {
         std::thread::spawn(move || {
             let shared = me.shared.clone();
             let cfg = shared.config.lock().unwrap().clone();
-            let cb = SignalCallbacks { conn: me.conn.clone(), chat_id: id.clone(), service: shared.clone(), background };
+            let cb = SignalCallbacks { conn: me.conn.clone(), chat_id: id.clone(), service: shared.clone(), background,
+                                       summaries: Mutex::default(), decision: Mutex::default() };
             if *shared.state.lock().unwrap() != "Loaded" {
                 me.set_state("Loading…");
             }

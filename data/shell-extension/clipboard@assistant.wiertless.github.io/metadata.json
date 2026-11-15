@@ -1,0 +1,7 @@
+{
+  "uuid": "clipboard@assistant.wiertless.github.io",
+  "name": "Assistant Clipboard",
+  "description": "Lets Assistant answer questions about what you copied recently. Keeps the last 20 text clips in memory only (never on disk), skips passwords from password managers, and answers only the Assistant service.",
+  "shell-version": ["49", "50", "51", "52"],
+  "url": "https://github.com/Wiertless/panda-assistant"
+}
