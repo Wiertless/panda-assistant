@@ -21,6 +21,16 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.15.0" date="2026-11-15">
+      <description>
+        <ul>
+          <li>Small models follow through: steadier tool calls, slips in arguments fixed, claims of actions that didn't happen taken back</li>
+          <li>When the model gets stuck, the smarter model takes over</li>
+          <li>Worked examples and next steps keep multi-step requests on track</li>
+          <li>Tools are picked by meaning too, when FastFlowLM's embedding model is installed</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.14.0" date="2026-11-15">
       <description>
         <ul>

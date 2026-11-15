@@ -8,6 +8,7 @@ pub mod eval;
 pub mod flm;
 pub mod mcp;
 pub mod paths;
+pub mod repair;
 pub mod search;
 pub mod service;
 pub mod store;

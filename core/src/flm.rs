@@ -41,8 +41,14 @@ impl std::fmt::Display for FlmError {
 
 impl std::error::Error for FlmError {}
 
-pub fn serve_command(flm: &str, model: &str, ctx_len: Option<u32>) -> Vec<String> {
+/// The embedding model FLM serves next to the chat model, when installed.
+pub const EMBED_MODEL: &str = "embed-gemma:300m";
+
+pub fn serve_command(flm: &str, model: &str, ctx_len: Option<u32>, embed: Option<&str>) -> Vec<String> {
     let mut cmd = vec![flm.to_string(), "serve".into(), model.to_string()];
+    if let Some(e) = embed {
+        cmd.extend(["--embed".into(), e.to_string()]);
+    }
     if let Some(ctx) = ctx_len {
         cmd.extend(["--ctx-len".into(), ctx.to_string()]);
     }
@@ -363,6 +369,8 @@ pub struct FlmClient {
     server: Mutex<Option<Server>>,
     /// The model FLM most likely has loaded (it swaps per request).
     pub last_model: Mutex<Option<String>>,
+    /// Serve this embedding model too (set when it's installed).
+    pub embed_model: Mutex<Option<String>>,
 }
 
 impl FlmClient {
@@ -378,6 +386,7 @@ impl FlmClient {
             agent: config.into(),
             server: Mutex::new(None),
             last_model: Mutex::new(None),
+            embed_model: Mutex::new(None),
         }
     }
 
@@ -429,7 +438,8 @@ impl FlmClient {
         }
         let log = OpenOptions::new().create(true).append(true).open(&log_path)
             .map_err(|e| FlmError::new(format!("Can't write {}: {e}", log_path.display())))?;
-        let cmd = serve_command(&flm.to_string_lossy(), model, ctx_len);
+        let embed = self.embed_model.lock().unwrap().clone();
+        let cmd = serve_command(&flm.to_string_lossy(), model, ctx_len, embed.as_deref());
         let mut command = Command::new(&cmd[0]);
         command.args(&cmd[1..]).stdin(Stdio::null()).stdout(log.try_clone().map_err(|e| FlmError::new(e.to_string()))?)
             .stderr(log);
@@ -484,11 +494,15 @@ impl FlmClient {
             .collect())
     }
 
-    pub fn chat_stream(&self, model: &str, messages: &[Value], tools: Option<&[Value]>) -> Result<ChatStream, FlmError> {
+    pub fn chat_stream(&self, model: &str, messages: &[Value], tools: Option<&[Value]>, temperature: Option<f64>)
+                       -> Result<ChatStream, FlmError> {
         *self.last_model.lock().unwrap() = Some(model.to_string());
         let mut body = json!({"model": model, "messages": messages, "stream": true});
         if let Some(t) = tools.filter(|t| !t.is_empty()) {
             body["tools"] = Value::Array(t.to_vec());
+        }
+        if let Some(t) = temperature {
+            body["temperature"] = json!(t);
         }
         let resp = self
             .agent
@@ -508,6 +522,33 @@ impl FlmClient {
             return Err(FlmError { message: format!("FLM returned {status}: {detail}"), status: Some(status) });
         }
         Ok(ChatStream::from_reader(reader))
+    }
+}
+
+impl FlmClient {
+    /// Embedding vectors for `inputs` (one per string), from /v1/embeddings.
+    /// `task` is FLM's EmbeddingGemma prompt: "query" or "document".
+    pub fn embed(&self, model: &str, inputs: &[String], task: &str) -> Result<Vec<Vec<f32>>, FlmError> {
+        let body = json!({"model": model, "input": inputs, "task": task});
+        let resp = self.agent.post(&format!("{}/v1/embeddings", self.base_url))
+            .header("Authorization", "Bearer flm").header("Content-Type", "application/json")
+            .config().timeout_global(Some(Duration::from_secs(20))).build()
+            .send(&serde_json::to_vec(&body).unwrap_or_default()[..])
+            .map_err(|e| FlmError::new(format!("embeddings: {e}")))?;
+        let status = resp.status().as_u16();
+        let mut text = String::new();
+        let _ = resp.into_body().into_reader().take(4 << 20).read_to_string(&mut text);
+        if status >= 400 {
+            return Err(FlmError { message: format!("embeddings: {status}"), status: Some(status) });
+        }
+        let v: Value = serde_json::from_str(&text).map_err(|e| FlmError::new(format!("embeddings: {e}")))?;
+        let vecs: Vec<Vec<f32>> = v["data"].as_array().into_iter().flatten()
+            .map(|d| d["embedding"].as_array().into_iter().flatten().filter_map(|x| x.as_f64().map(|f| f as f32)).collect())
+            .collect();
+        if vecs.len() != inputs.len() || vecs.iter().any(|v| v.is_empty()) {
+            return Err(FlmError::new("embeddings: unexpected answer"));
+        }
+        Ok(vecs)
     }
 }
 
@@ -556,8 +597,10 @@ mod tests {
 
     #[test]
     fn serve_command_sizes_context_and_prefix_cache() {
-        assert_eq!(serve_command("flm", "gemma4-it:e2b", Some(8192)), ["flm", "serve", "gemma4-it:e2b", "--ctx-len", "8192"]);
-        assert_eq!(serve_command("flm", "qwen3.5:9b", None), ["flm", "serve", "qwen3.5:9b", "--prefix-cache-mb", "1024"]);
+        assert_eq!(serve_command("flm", "gemma4-it:e2b", Some(8192), None), ["flm", "serve", "gemma4-it:e2b", "--ctx-len", "8192"]);
+        assert_eq!(serve_command("flm", "qwen3.5:9b", None, None), ["flm", "serve", "qwen3.5:9b", "--prefix-cache-mb", "1024"]);
+        assert_eq!(serve_command("flm", "gemma4-it:e2b", None, Some(EMBED_MODEL)),
+                   ["flm", "serve", "gemma4-it:e2b", "--embed", "embed-gemma:300m"]);
     }
 
     #[test]

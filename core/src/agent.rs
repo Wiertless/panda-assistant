@@ -2,7 +2,9 @@
 
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
+
+use regex::Regex;
 
 use serde_json::{Value, json};
 
@@ -12,8 +14,15 @@ use crate::tool::{Context, Risk, Tool};
 use crate::tools::groups;
 
 pub const MAX_ROUNDS: usize = 8; // room to look something up and retry
+pub const TOOL_TEMPERATURE: f64 = 0.2;
+/// Failed tool calls in one turn before the smarter model takes over.
+const FAILURES_BEFORE_HANDOFF: usize = 3;
+const NUDGE: &str = "(You said it's done, but no tool ran, so nothing happened yet. Call the tool now to do it, \
+or say plainly that you can't.)";
+const REPEATED: &str = "Error: you already tried exactly this and it failed. Don't repeat it: change the arguments, \
+look the options up with another tool, or tell the user what's wrong.";
 
-const SYSTEM_PROMPT: &str = "You are the user's assistant, running locally on the user's laptop \
+pub const SYSTEM_PROMPT: &str = "You are the user's assistant, running locally on the user's laptop \
 (Fedora Silverblue with GNOME) on its NPU. Be brief and direct. When the user asks you \
 to do something on the computer, or asks about its state, call a tool instead of \
 describing how to do it. Only call tools the request needs. Connect the dots: work out what the \
@@ -58,6 +67,8 @@ pub trait Callbacks: Send + Sync {
     fn notice(&self, _text: &str) {}
     fn handoff(&self, _model: &str) {}
     fn compacting(&self) {}
+    /// Take back the text streamed so far this round (a claim that wasn't true).
+    fn retract(&self) {}
     /// Blocks until the user answers; true means run it.
     fn confirm(&self, _name: &str, _summary: &str, _detail: &str) -> bool {
         false
@@ -161,6 +172,19 @@ pub struct Agent {
     /// tools::groups). Off for the bigger hand-off model, which gets everything.
     pub route_tools: bool,
     pub active_groups: HashSet<String>,
+    /// Sampling temperature for requests that carry tools (steadier calls).
+    pub tool_temperature: Option<f64>,
+    /// Replaces the base system prompt (eval variants try alternatives).
+    pub system_prompt: Option<String>,
+    /// Worked examples for the active tool groups in the system prompt.
+    pub examples: bool,
+    /// Hand the turn to the smarter model when this one keeps failing.
+    pub auto_escalate: bool,
+    /// Routing by meaning, when the server has an embedding model.
+    pub embedder: Option<Arc<groups::Embedder>>,
+    /// Fix slips in tool arguments, and take back claims of actions not done.
+    pub repair_args: bool,
+    pub nudge: bool,
 }
 
 impl Agent {
@@ -188,6 +212,13 @@ impl Agent {
             compacted: 0,
             route_tools: true,
             active_groups: HashSet::new(),
+            tool_temperature: Some(TOOL_TEMPERATURE),
+            system_prompt: None,
+            examples: true,
+            auto_escalate: true,
+            embedder: None,
+            repair_args: true,
+            nudge: true,
         }
     }
 
@@ -240,7 +271,7 @@ impl Agent {
         if self.notes.is_none() {
             self.notes = Some(self.make_notes());
         }
-        let mut system = SYSTEM_PROMPT.to_string();
+        let mut system = self.system_prompt.clone().unwrap_or_else(|| SYSTEM_PROMPT.to_string());
         if self.use_tools && self.web_enabled {
             system += WEB_PROMPT;
         }
@@ -262,9 +293,23 @@ impl Agent {
         let earlier = if self.summary.is_empty() { String::new() } else {
             format!("Earlier in this chat (summary):\n{}", self.summary)
         };
-        let tail: Vec<&str> = [self.machine.as_deref().unwrap_or(""), self.notes.as_deref().unwrap_or(""), &earlier]
+        let examples = self.examples_text();
+        let tail: Vec<&str> = [self.machine.as_deref().unwrap_or(""), self.notes.as_deref().unwrap_or(""), &earlier, &examples]
             .into_iter().filter(|s| !s.is_empty()).collect();
         json!({"role": "system", "content": format!("{system}\n\n{}", tail.join("\n\n"))})
+    }
+
+    /// Examples for the core tools and each group in play (they go last, so
+    /// a group joining only changes the end of the prompt).
+    fn examples_text(&self) -> String {
+        if !self.examples || !self.use_tools {
+            return String::new();
+        }
+        let mut groups: Vec<&str> = vec![groups::CORE];
+        groups.extend(groups::GROUPS.iter().map(|(g, _, _)| *g)
+            .filter(|g| !self.route_tools || self.active_groups.contains(*g)));
+        let lines: Vec<String> = groups.iter().filter_map(|g| groups::example_for(g)).map(|e| format!("- {e}")).collect();
+        format!("Examples:\n{}", lines.join("\n"))
     }
 
     fn available_tools(&self) -> Vec<Tool> {
@@ -363,7 +408,7 @@ impl Agent {
             json!({"role": "user", "content": format!("{previous}Conversation:\n{transcript}\n\n{COMPACT_PROMPT}")}),
         ];
         cb.compacting();
-        let Ok(stream) = self.client.chat_stream(&self.model, &prompt, None) else { return };
+        let Ok(stream) = self.client.chat_stream(&self.model, &prompt, None, None) else { return };
         let mut text = String::new();
         for ev in stream {
             match ev {
@@ -414,8 +459,25 @@ impl Agent {
             cb.notice(&format!("{} can't see images, so they were left out.", self.model));
             images.clear();
         }
-        self.active_groups.extend(groups::groups_for(text).into_iter().map(String::from));
+        let mut wanted: Vec<&str> = groups::groups_for(text);
+        if self.use_tools && self.route_tools && let Some(e) = &self.embedder {
+            wanted.extend(e.groups_for(text));
+        }
+        let actionable = !wanted.is_empty();
+        self.active_groups.extend(wanted.into_iter().map(String::from));
+        let turn_start = self.messages.len();
         self.messages.push(json!({"role": "user", "content": with_images(text, &images)}));
+        let mut turn = Turn::default();
+        let result = self.run_turn(text, actionable, turn_start, &mut turn, cb);
+        // The nudge was for the model only: it isn't part of the chat.
+        if let Some(i) = turn.nudge_at.filter(|i| *i < self.messages.len()) {
+            self.messages.remove(i);
+        }
+        result
+    }
+
+    fn run_turn(&mut self, text: &str, actionable: bool, turn_start: usize, turn: &mut Turn, cb: &dyn Callbacks)
+                -> Result<(), FlmError> {
         for _ in 0..MAX_ROUNDS {
             if self.cancelled() {
                 return Ok(());
@@ -435,6 +497,14 @@ impl Agent {
                     "function": {"name": c.name, "arguments": if c.arguments.is_empty() { "{}" } else { &c.arguments }}}))
                     .collect();
             }
+            if self.nudge && calls.is_empty() && !self.cancelled() && turn.nudge_at.is_none() && turn.tools_ran == 0
+                && self.use_tools && actionable && claims_action(&content) {
+                // It said it did something it didn't: take that back and ask it to act.
+                cb.retract();
+                turn.nudge_at = Some(self.messages.len());
+                self.messages.push(json!({"role": "user", "content": NUDGE}));
+                continue;
+            }
             self.messages.push(assistant);
             if calls.is_empty() || self.cancelled() {
                 return Ok(());
@@ -449,8 +519,17 @@ impl Agent {
                     self.messages.push(json!({"role": "tool", "tool_call_id": call.id, "content": result}));
                     continue;
                 }
-                let result = self.run_call(call, cb);
+                let key = format!("{}{}", call.name, call.parsed_arguments().map(|a| Value::Object(a).to_string()).unwrap_or_default());
+                let result = if turn.failed.contains(&key) { REPEATED.to_string() } else { self.run_call(call, cb) };
+                turn.tools_ran += 1;
+                if result.starts_with("Error") {
+                    turn.failed.push(key);
+                    turn.errors.push(result.lines().next().unwrap_or("").to_string());
+                }
                 self.messages.push(json!({"role": "tool", "tool_call_id": call.id, "content": result}));
+            }
+            if turn.errors.len() >= FAILURES_BEFORE_HANDOFF && self.auto_escalate && self.can_escalate() {
+                return self.take_over(text, turn_start, &turn.errors, cb);
             }
             let shots: Vec<String> = std::mem::take(&mut *self.ctx.images.lock().unwrap());
             if !shots.is_empty() && self.sees_now() {
@@ -458,7 +537,21 @@ impl Agent {
                 self.messages.push(json!({"role": "user", "content": with_images(TOOL_IMAGE_NOTE, &shots)}));
             }
         }
+        if self.auto_escalate && self.can_escalate() {
+            return self.take_over(text, turn_start, &turn.errors, cb);
+        }
         cb.notice("Stopped after too many tool calls in a row.");
+        Ok(())
+    }
+
+    /// This model is stuck (failing calls, or out of rounds): the smarter
+    /// model does the request from the start of the turn, with what went wrong.
+    fn take_over(&mut self, request: &str, turn_start: usize, errors: &[String], cb: &dyn Callbacks) -> Result<(), FlmError> {
+        let model = self.smarter_model.clone().unwrap();
+        cb.notice(&format!("{} got stuck, so {model} is taking over.", self.model));
+        let notes = if errors.is_empty() { "it ran out of steps".to_string() } else { errors.join("; ") };
+        let answer = self.helper_answer(&model, request, &format!("It tried and got stuck: {notes}"), turn_start, cb)?;
+        self.messages.push(json!({"role": "assistant", "content": answer}));
         Ok(())
     }
 
@@ -485,23 +578,30 @@ impl Agent {
             .and_then(|a| a.get("task").and_then(Value::as_str).map(|s| s.trim().to_string()))
             .unwrap_or_default();
         let model = self.smarter_model.clone().unwrap();
-        cb.handoff(&model);
-        let mut helper = self.helper(&model);
         let end = self.messages.len().saturating_sub(2);
+        let answer = self.helper_answer(&model, request, &task, end, cb)?;
+        self.messages.push(json!({"role": "tool", "tool_call_id": call.id,
+                                  "content": format!("{model} answered the user directly:\n{answer}")}));
+        self.messages.push(json!({"role": "assistant", "content": answer}));
+        Ok(())
+    }
+
+    /// The smarter model answers `request` with the chat up to `end` and the
+    /// smaller model's notes; its answer is returned.
+    fn helper_answer(&mut self, model: &str, request: &str, notes: &str, end: usize, cb: &dyn Callbacks)
+                     -> Result<String, FlmError> {
+        cb.handoff(model);
+        let mut helper = self.helper(model);
         helper.messages = self.messages[self.compacted.min(end)..end].iter()
             .filter(|m| matches!(m["role"].as_str(), Some("user" | "assistant")))
             .map(|m| json!({"role": m["role"], "content": store::plain_text(&m["content"])}))
             .filter(|m| m["content"].as_str().is_some_and(|s| !s.is_empty()))
             .collect();
-        let note = if task.is_empty() { String::new() } else {
-            format!("\n\n(A smaller assistant handed this to you. Its notes: {task})")
+        let note = if notes.is_empty() { String::new() } else {
+            format!("\n\n(A smaller assistant handed this to you. Its notes: {notes})")
         };
         helper.ask(&format!("{request}{note}"), cb, &[])?;
-        let answer = last_answer(&helper.messages);
-        self.messages.push(json!({"role": "tool", "tool_call_id": call.id,
-                                  "content": format!("{model} answered the user directly:\n{answer}")}));
-        self.messages.push(json!({"role": "assistant", "content": answer}));
-        Ok(())
+        Ok(last_answer(&helper.messages))
     }
 
     /// This model is blind: the vision model answers this turn.
@@ -525,7 +625,8 @@ impl Agent {
 
     fn stream(&mut self, schemas: Option<&[Value]>, cb: &dyn Callbacks) -> Result<(String, Vec<ToolCall>), FlmError> {
         let conversation = self.conversation();
-        let stream = self.client.chat_stream(&self.model, &conversation, schemas)?;
+        let temperature = schemas.and(self.tool_temperature);
+        let stream = self.client.chat_stream(&self.model, &conversation, schemas, temperature)?;
         let mut content = String::new();
         let mut calls = vec![];
         for ev in stream {
@@ -551,9 +652,10 @@ impl Agent {
     }
 
     fn run_call(&self, call: &ToolCall, cb: &dyn Callbacks) -> String {
-        let args = match call.parsed_arguments() {
-            Ok(a) => a,
-            Err(_) => {
+        let loose = || if self.repair_args { crate::repair::parse_loose(&call.arguments) } else { None };
+        let args = match call.parsed_arguments().ok().or_else(loose) {
+            Some(a) => a,
+            None => {
                 let r = format!("Error: arguments for {} were not valid JSON.", call.name);
                 cb.tool_finished(&call.name, &r, false);
                 return r;
@@ -567,6 +669,7 @@ impl Agent {
             cb.tool_finished(&call.name, &r, false);
             return r;
         };
+        let args = if self.repair_args { crate::repair::fit(&tool.parameters, args).0 } else { args };
         let summary = (tool.summary)(&args);
         let detail = tool.detail.as_ref().map(|d| d(&args)).unwrap_or_default();
         let allowed = self.always_allow.lock().unwrap().contains(&call.name);
@@ -583,7 +686,10 @@ impl Agent {
         match outcome {
             Ok(Ok(result)) => {
                 cb.tool_finished(&call.name, &result, true);
-                result
+                match crate::tools::next_step(&call.name) {
+                    Some(hint) if !result.starts_with("No ") => format!("{result}\n{hint}"),
+                    _ => result,
+                }
             }
             Ok(Err(e)) => {
                 cb.tool_finished(&call.name, &e.0, false);
@@ -595,6 +701,24 @@ impl Agent {
             }
         }
     }
+}
+
+/// What happened so far in one turn.
+#[derive(Default)]
+struct Turn {
+    tools_ran: usize,
+    /// Calls (name + arguments) that failed, so an exact repeat isn't run again.
+    failed: Vec<String>,
+    errors: Vec<String>,
+    /// Where the "you didn't actually do it" nudge sits, to take it out after.
+    nudge_at: Option<usize>,
+}
+
+/// A short reply that says an action was done ("Done!", "I've sent it",
+/// "Włączyłem…"); with no tool run, nothing was.
+fn claims_action(answer: &str) -> bool {
+    static CLAIM: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\b(done|i'?ve|i have|i('m| am) (turning|sending|opening)|turned|switched|sent|opened|connected|set (it|the|your)|muted|enabled|disabled|started|saved|gotowe|zrobione|włączy|wyłączy|wysła|otworzy|połączy|ustawi|zapisa)").unwrap());
+    answer.chars().count() < 400 && CLAIM.is_match(answer)
 }
 
 /// After a failed tool: work it out before telling the user it didn't work.
@@ -639,6 +763,9 @@ mod tests {
         fn compacting(&self) {
             self.log.lock().unwrap().push("compacting".into());
         }
+        fn retract(&self) {
+            self.log.lock().unwrap().push("retract".into());
+        }
         fn confirm(&self, n: &str, s: &str, _d: &str) -> bool {
             self.log.lock().unwrap().push(format!("confirm:{n}:{s}"));
             self.allow
@@ -653,7 +780,7 @@ mod tests {
                       |_, _| Ok("Sent.".into()), |a| format!("Send {}", crate::tool::arg_str(a, "path"))),
             Tool::new("run_command", "Run", obj(json!({}), &[]), Risk::Confirm, |_, _| Ok("ran".into()),
                       |_| "Run".into()),
-            Tool::new("set_volume", "Vol", obj(json!({}), &[]), Risk::Safe,
+            Tool::new("set_volume", "Vol", obj(json!({"percent": {"type": "integer"}}), &["percent"]), Risk::Safe,
                       |_, a| crate::tool::arg_percent(a, "percent", 0).map(|p| format!("{p}%")), |_| "Vol".into()),
             Tool::new("look_at_screen", "Look", obj(json!({}), &[]), Risk::Safe, |ctx, _| {
                 ctx.images.lock().unwrap().push("data:image/jpeg;base64,AAAA".into());
@@ -845,6 +972,60 @@ mod tests {
         let last = names(&reqs[4]);
         assert!(last.contains(&"set_volume".to_string()) && last.contains(&"send_file".to_string()));
         assert!(a.active_groups.contains("devices") && a.active_groups.contains("settings"));
+    }
+
+    #[test]
+    fn a_claim_without_a_tool_is_taken_back_and_args_are_repaired() {
+        let _h = temp_home();
+        let flm = FakeFlm::start(vec![
+            (200, text_reply("Done! The volume is at 30%.")),
+            (200, tool_reply("set_volume", r#"{"percent": "30%",}"#, "c1")),
+            (200, text_reply("Volume set to 30%.")),
+        ]);
+        let mut a = agent(&flm);
+        let rec = Rec::default();
+        a.ask("set the volume to 30", &rec, &[]).unwrap();
+        let log = rec.log.lock().unwrap().clone();
+        assert!(log.contains(&"retract".to_string()), "{log:?}");
+        assert!(log.contains(&"tool:set_volume:true:30%".to_string()), "repaired '30%' and the trailing comma: {log:?}");
+        // The nudge reached the model but isn't kept in the chat, nor is the false claim.
+        let reqs = flm.requests();
+        assert!(reqs[1]["messages"].as_array().unwrap().iter().any(|m| m["content"] == NUDGE));
+        assert!(!a.messages.iter().any(|m| m["content"] == NUDGE || m["content"] == "Done! The volume is at 30%."));
+        assert_eq!(a.messages.last().unwrap()["content"], "Volume set to 30%.");
+        // Chit-chat that sounds like a claim isn't nudged.
+        let flm = FakeFlm::start(vec![(200, text_reply("I've been well, thanks!"))]);
+        let mut a = agent(&flm);
+        let rec = Rec::default();
+        a.ask("how have you been?", &rec, &[]).unwrap();
+        assert!(!rec.log.lock().unwrap().contains(&"retract".to_string()));
+    }
+
+    #[test]
+    fn repeats_are_refused_and_a_stuck_model_hands_over() {
+        let _h = temp_home();
+        let flm = FakeFlm::start(vec![
+            (200, tool_reply("broken", "{}", "c1")),
+            (200, tool_reply("broken", "{}", "c2")),
+            (200, tool_reply("broken", r#"{"x": 1}"#, "c3")),
+            (200, text_reply("The bigger model did it.")),
+        ]);
+        let mut a = agent(&flm);
+        a.smarter_model = Some("big-model".into());
+        let rec = Rec::default();
+        a.ask("use the broken tool", &rec, &[]).unwrap();
+        let log = rec.log.lock().unwrap().clone();
+        // The exact repeat isn't run again (only two real runs).
+        assert_eq!(log.iter().filter(|l| l.starts_with("tool:broken")).count(), 2, "{log:?}");
+        let reqs = flm.requests();
+        assert!(reqs[2]["messages"].as_array().unwrap().iter().any(|m| m["content"] == REPEATED));
+        // Three failures: the smarter model answers from the user's request.
+        assert!(log.contains(&"handoff:big-model".to_string()), "{log:?}");
+        assert_eq!(reqs[3]["model"], "big-model");
+        assert_eq!(a.messages.last().unwrap()["content"], "The bigger model did it.");
+        // Tool requests are sampled steadily; the helper gets every tool.
+        assert_eq!(reqs[0]["temperature"], TOOL_TEMPERATURE);
+        assert!(reqs[0]["messages"][0]["content"].as_str().unwrap().contains("Examples:"));
     }
 
     #[test]

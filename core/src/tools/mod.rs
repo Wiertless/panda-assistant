@@ -43,6 +43,23 @@ pub fn norm_name(text: &str) -> String {
     NON_WORD.replace_all(&POSSESSIVE.replace_all(&lower, ""), " ").trim().to_string()
 }
 
+/// What to do with a lookup's result, appended to it so the model keeps the
+/// thread ("found it" → "now use it"). Only for results that found something.
+pub fn next_step(tool: &str) -> Option<&'static str> {
+    Some(match tool {
+        "find_files" | "search_file_contents" | "list_folder" =>
+            "(To send one, pass its exact path to send_file; to read it, read_document or read_file.)",
+        "list_devices" => "(To send something, pass one of these names to send_file or send_text.)",
+        "list_networks" => "(To connect, pass the network's name to connect_network.)",
+        "list_bluetooth" => "(To connect, pass the device's name to connect_bluetooth.)",
+        "find_settings" => "(To change one, call change_setting with its schema, key and the new value.)",
+        "get_setting" => "(To change it, call change_setting with a new value.)",
+        "list_app_actions" => "(To do one, call run_app_action with the app and the action.)",
+        "find_contact" => "(Answer with the details asked for.)",
+        _ => return None,
+    })
+}
+
 /// Names that share a word (or a word's start) with the query, best first, so
 /// an error can say "did you mean" instead of leaving the model stuck.
 pub fn close_to(query: &str, names: &[String], n: usize) -> Vec<String> {
@@ -305,6 +322,11 @@ mod tests {
         assert_eq!(pick("mx master", &names, "device").unwrap(), "MX Master 3");
         assert_eq!(pick("flip", &names, "device").unwrap(), "JBL Flip 5");
         assert!(pick("headphones", &names, "device").is_err());
+        for t in all() {
+            if let Some(hint) = next_step(&t.name) {
+                assert!(all().iter().any(|o| hint.contains(&o.name) || hint.starts_with("(Answer")), "{}: {hint}", t.name);
+            }
+        }
         let keys: Vec<String> = ["text-scaling-factor", "font-name", "cursor-size"].map(String::from).to_vec();
         assert_eq!(close_to("text scale", &keys, 3), ["text-scaling-factor"]);
         assert!(close_to("wallpaper", &keys, 3).is_empty());

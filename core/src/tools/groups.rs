@@ -48,6 +48,91 @@ pub const GROUPS: [(&str, &str, &[&str]); 11] = [
     ("connected", "tools from other apps and services connected over MCP", &[]),
 ];
 
+/// One worked example per group, shown while the group is active: small models
+/// copy an example far more reliably than they follow a rule.
+pub const EXAMPLES: [(&str, &str); 11] = [
+    (CORE, "\"take a screenshot and send it to my phone\" → save_screenshot, then send_file with the path it returned \
+and the phone's name (from what you remember, or list_devices)."),
+    ("settings", "\"make the text bigger\" → find_settings(query \"text size\"), then change_setting with the schema and key \
+it found and a bigger value."),
+    ("files", "\"how much is the deposit in my lease?\" → find_files(name \"lease\"), then read_document with the path it \
+found, then answer from the text."),
+    ("system", "\"how much space is left?\" → get_system_info, then answer with the number."),
+    ("devices", "\"connect my headphones\" → connect_bluetooth(device \"headphones\"); if the error lists the paired \
+devices, call it again with the right one."),
+    ("personal", "\"am I free at 1 tomorrow?\" → get_events(when \"tomorrow\"), then answer from the events."),
+    ("apps", "\"open spotfy\" → open_app(name \"spotfy\"); the error lists close names, so call it again with \"Spotify\"."),
+    ("web", "\"who won yesterday's match?\" → web_search, then read_web_page on the best result if the snippets don't say."),
+    ("memory", "\"forget my old address\" → forget(fact \"address\")."),
+    ("commands", "\"build my project\" → run_command with the build command, in the project's folder."),
+    ("clipboard", "\"what was the link I copied?\" → clipboard_history(query \"http\"), then answer with it."),
+];
+
+pub fn example_for(group: &str) -> Option<&'static str> {
+    EXAMPLES.iter().find(|(g, _)| *g == group).map(|(_, e)| *e)
+}
+
+/// Routing by meaning: the message's embedding against each group's, for
+/// wordings the keyword lists miss. Off (keywords only) when the server has
+/// no embedding model.
+pub struct Embedder {
+    client: std::sync::Arc<crate::flm::FlmClient>,
+    model: String,
+    /// The groups' vectors once asked for (None when embeddings weren't there,
+    /// asked again after a while: the server may restart with them).
+    groups: std::sync::Mutex<Option<(std::time::Instant, Option<Vectors>)>>,
+}
+
+type Vectors = Vec<Vec<f32>>;
+
+const RETRY_EMBEDDINGS: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// Closest group must be at least this similar, and others this close to it.
+const MIN_SIMILARITY: f32 = 0.3;
+const NEAR_BEST: f32 = 0.04;
+
+fn cosine(a: &[f32], b: &[f32]) -> f32 {
+    let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
+    let norm = |v: &[f32]| v.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-6);
+    dot / (norm(a) * norm(b))
+}
+
+/// The groups worth adding for these similarities (in GROUPS order): the best,
+/// and any others nearly as close, at most two.
+pub fn nearest(sims: &[f32]) -> Vec<&'static str> {
+    let best = sims.iter().cloned().fold(f32::MIN, f32::max);
+    if best < MIN_SIMILARITY {
+        return vec![];
+    }
+    let mut picked: Vec<(f32, &'static str)> = sims.iter().zip(GROUPS.iter())
+        .filter(|(s, _)| **s >= best - NEAR_BEST).map(|(s, (g, _, _))| (*s, *g)).collect();
+    picked.sort_by(|a, b| b.0.total_cmp(&a.0));
+    picked.into_iter().take(2).map(|(_, g)| g).collect()
+}
+
+impl Embedder {
+    pub fn new(client: std::sync::Arc<crate::flm::FlmClient>, model: &str) -> Self {
+        Self { client, model: model.into(), groups: std::sync::Mutex::new(None) }
+    }
+
+    pub fn groups_for(&self, text: &str) -> Vec<&'static str> {
+        let mut cache = self.groups.lock().unwrap();
+        let stale = match cache.as_ref() {
+            None => true,
+            Some((when, None)) => when.elapsed() > RETRY_EMBEDDINGS,
+            Some(_) => false,
+        };
+        if stale {
+            let docs: Vec<String> = GROUPS.iter()
+                .map(|(g, d, _)| format!("{d}. For example: {}", example_for(g).unwrap_or(""))).collect();
+            *cache = Some((std::time::Instant::now(), self.client.embed(&self.model, &docs, "document").ok()));
+        }
+        let Some((_, Some(groups))) = cache.as_ref() else { return vec![] };
+        let Ok(q) = self.client.embed(&self.model, &[text.to_string()], "query") else { return vec![] };
+        nearest(&groups.iter().map(|g| cosine(&q[0], g)).collect::<Vec<_>>())
+    }
+}
+
 pub fn group_of(tool: &str) -> &'static str {
     match tool {
         "set_dark_mode" | "set_do_not_disturb" | "set_volume" | "set_mute" | "set_brightness" | "set_power_mode"
@@ -99,6 +184,21 @@ mod tests {
         assert!(groups_for("find the PDF about the lease").contains(&"files"));
         assert!(groups_for("open a terminal in Projects").contains(&"apps"));
         assert!(groups_for("what's the weather in Kraków").contains(&"apps"));
+    }
+
+    #[test]
+    fn examples_and_nearest_groups() {
+        for (g, _, _) in GROUPS.iter().filter(|(g, _, _)| *g != "connected") { // MCP tools vary
+            assert!(example_for(g).is_some(), "{g} has no example");
+        }
+        assert!(example_for(CORE).is_some());
+        let mut sims = vec![0.1; GROUPS.len()];
+        assert!(nearest(&sims).is_empty(), "nothing close enough");
+        sims[2] = 0.5;
+        sims[5] = 0.48;
+        sims[7] = 0.47;
+        assert_eq!(nearest(&sims), [GROUPS[2].0, GROUPS[5].0]);
+        assert!((cosine(&[1.0, 0.0], &[1.0, 0.0]) - 1.0).abs() < 1e-6);
     }
 
     #[test]

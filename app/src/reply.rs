@@ -297,6 +297,19 @@ impl Turn for Reply {
         }
     }
 
+    /// The text since the last action was a claim the service took back.
+    fn on_retract(&self) {
+        let mut i = self.inner.borrow_mut();
+        if let Some(label) = i.label.take() {
+            self.bx.remove(&label);
+        }
+        let keep = i.answer.len().saturating_sub(i.text.len());
+        i.answer.truncate(keep);
+        i.text.clear();
+        drop(i);
+        self.spin_label.set_label("Working…");
+    }
+
     /// The model's reasoning isn't shown, only that it's thinking.
     fn on_reasoning(&self, _: &str) {
         self.spin_label.set_label("Thinking…");

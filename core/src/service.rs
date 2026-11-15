@@ -65,6 +65,7 @@ pub const INTROSPECTION: &str = r#"
     <signal name="Notice"><arg type="s" name="chat_id"/><arg type="s" name="text"/></signal>
     <signal name="Handoff"><arg type="s" name="chat_id"/><arg type="s" name="model"/></signal>
     <signal name="Compacting"><arg type="s" name="chat_id"/></signal>
+    <signal name="Retract"><arg type="s" name="chat_id"/></signal>
     <signal name="ConfirmRequest"><arg type="s" name="chat_id"/><arg type="u" name="request"/><arg type="s" name="name"/><arg type="s" name="summary"/><arg type="s" name="detail"/><arg type="b" name="can_always"/></signal>
     <signal name="Finished"><arg type="s" name="chat_id"/><arg type="s" name="error"/></signal>
     <signal name="StateChanged"><arg type="s" name="model"/><arg type="s" name="state"/></signal>
@@ -155,6 +156,9 @@ impl Callbacks for SignalCallbacks {
     fn compacting(&self) {
         self.emit("Compacting", (self.chat_id.as_str(),).to_variant());
     }
+    fn retract(&self) {
+        self.emit("Retract", (self.chat_id.as_str(),).to_variant());
+    }
     fn confirm(&self, name: &str, summary: &str, detail: &str) -> bool {
         let can_always = !tools::ALWAYS_ASK.contains(&name);
         let (id, rx) = self.service.new_request(json!({"chat_id": self.chat_id, "name": name, "summary": summary,
@@ -198,6 +202,8 @@ pub struct Shared {
     pub mcp: Arc<Hub>,
     /// What tools may ask of the window: clipboard, stepping aside.
     pub tool_ctx: Mutex<Context>,
+    /// Routing by meaning, once the embedding model is known to be installed.
+    pub embedder: Mutex<Option<Arc<tools::groups::Embedder>>>,
 }
 
 impl Shared {
@@ -218,6 +224,7 @@ impl Shared {
             question: Mutex::new(String::new()),
             mcp: Hub::new(),
             tool_ctx: Mutex::new(Context::default()),
+            embedder: Mutex::new(None),
         })
     }
 
@@ -276,6 +283,7 @@ impl Shared {
         agent.memory_enabled = cfg.memory;
         agent.ctx_tokens = cfg.ctx_len as usize;
         agent.always_allow = self.always_allow.clone();
+        agent.embedder = self.embedder.lock().unwrap().clone();
         agent.machine_source = Arc::new(crate::context::system_context);
         let me = Arc::downgrade(self);
         agent.sees = Arc::new(move |m| me.upgrade().is_some_and(|s| s.model_sees(m)));
@@ -409,7 +417,15 @@ impl Service {
         let me = self.clone();
         std::thread::spawn(move || {
             if let Ok(models) = me.shared.client.list_models() {
-                *me.shared.models.lock().unwrap() = models.into_iter().filter(|m| m.installed).collect();
+                let installed: Vec<Model> = models.into_iter().filter(|m| m.installed).collect();
+                // The embedding model, when installed, runs next to the chat model for routing.
+                if installed.iter().any(|m| m.name == flm::EMBED_MODEL) {
+                    *me.shared.client.embed_model.lock().unwrap() = Some(flm::EMBED_MODEL.into());
+                    me.shared.embedder.lock().unwrap().get_or_insert_with(|| {
+                        Arc::new(tools::groups::Embedder::new(me.shared.client.clone(), flm::EMBED_MODEL))
+                    });
+                }
+                *me.shared.models.lock().unwrap() = installed;
             }
         });
     }

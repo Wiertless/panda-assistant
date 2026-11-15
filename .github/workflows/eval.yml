@@ -3,10 +3,15 @@ name: eval
 # llama.cpp on the CPU, since runners have no NPU. Same prompt, tool schemas
 # and routing as on the laptop; quantization differs from FastFlowLM's, so
 # treat the scores as a comparison, and run `assistantd --eval` there for the
-# real thing.
+# real thing. Run it by hand with several variants (core/eval/variants.json)
+# to compare prompts and harness settings.
 on:
   workflow_dispatch:
     inputs:
+      variants:
+        description: 'Variants to compare, as JSON: ["baseline", "no-harness"]'
+        required: false
+        default: '["baseline"]'
       only:
         description: Run only scenarios whose name contains this
         required: false
@@ -15,6 +20,7 @@ on:
     paths:
       - core/src/agent.rs
       - core/src/eval.rs
+      - core/src/repair.rs
       - core/src/tools/**
       - core/eval/**
       - .github/workflows/eval.yml
@@ -43,16 +49,18 @@ jobs:
   eval:
     needs: build
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    timeout-minutes: 240
     strategy:
       fail-fast: false
       matrix:
-        include:
+        variant: ${{ fromJSON(inputs.variants || '["baseline"]') }}
+        m:
           - { model: "gemma4-it:e2b", search: "gemma-4-E2B-it" }
           - { model: "gemma4-it:e4b", search: "gemma-4-E4B-it" }
           - { model: "qwen3.5:2b", search: "Qwen3.5-2B" }
           - { model: "qwen3.5:4b", search: "Qwen3.5-4B" }
           - { model: "qwen3-it:4b", search: "Qwen3-4B-Instruct-2507" }
+    name: eval (${{ matrix.m.model }}, ${{ matrix.variant }})
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@v4
@@ -61,7 +69,7 @@ jobs:
       - name: Find and download the GGUF
         id: gguf
         run: |
-          read -r repo file < <(python3 .github/scripts/find_gguf.py "${{ matrix.search }}")
+          read -r repo file < <(python3 .github/scripts/find_gguf.py "${{ matrix.m.search }}")
           echo "Using $repo / $file"
           echo "source=$repo/$file" >> "$GITHUB_OUTPUT"
           mkdir -p models
@@ -77,13 +85,15 @@ jobs:
           chmod +x assistantd
           only=()
           if [ -n "${{ inputs.only }}" ]; then only=(--only "${{ inputs.only }}"); fi
-          ./assistantd --eval --url http://127.0.0.1:8080 --model "${{ matrix.model }}" --json report.json "${only[@]}"
+          ./assistantd --eval --url http://127.0.0.1:8080 --model "${{ matrix.m.model }}" \
+            --variant "${{ matrix.variant }}" --json report.json "${only[@]}"
       - name: Summary
         if: always()
         run: |
           [ -f report.json ] || exit 0
-          { echo "### ${{ matrix.model }} (${{ steps.gguf.outputs.source }})"; python3 .github/scripts/eval_table.py report.json; } >> "$GITHUB_STEP_SUMMARY"
-          cp report.json "report-$(echo '${{ matrix.model }}' | tr ':' '_').json"
+          { echo "### ${{ matrix.m.model }} · ${{ matrix.variant }} (${{ steps.gguf.outputs.source }})"
+            python3 .github/scripts/eval_table.py report.json; } >> "$GITHUB_STEP_SUMMARY"
+          cp report.json "report-$(echo '${{ matrix.m.model }}-${{ matrix.variant }}' | tr ':' '_').json"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

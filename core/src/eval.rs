@@ -17,6 +17,42 @@ use crate::flm::FlmClient;
 use crate::tool::{Args, Tool, ToolError};
 
 pub const SCENARIOS: &str = include_str!("../eval/scenarios.json");
+pub const VARIANTS: &str = include_str!("../eval/variants.json");
+
+/// A way of running the agent to compare against the others (eval/variants.json):
+/// sampling, examples, repair and the claim check on or off, another system
+/// prompt, other tool descriptions.
+#[derive(Deserialize, Clone, Default, Debug)]
+pub struct Variant {
+    #[serde(default)]
+    pub about: String,
+    #[serde(default = "keep", deserialize_with = "maybe_null")]
+    pub tool_temperature: Option<Option<f64>>,
+    pub examples: Option<bool>,
+    pub repair_args: Option<bool>,
+    pub nudge: Option<bool>,
+    pub system_prompt: Option<String>,
+    #[serde(default)]
+    pub descriptions: std::collections::HashMap<String, String>,
+}
+
+fn keep() -> Option<Option<f64>> {
+    None
+}
+
+/// `null` means "unset it", absent means "keep the default".
+fn maybe_null<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Option<f64>>, D::Error> {
+    Ok(Some(Option::<f64>::deserialize(d)?))
+}
+
+pub fn variant(name: &str) -> Result<Variant, String> {
+    let all: std::collections::HashMap<String, Variant> = serde_json::from_str(VARIANTS).map_err(|e| format!("variants: {e}"))?;
+    all.get(name).cloned().ok_or_else(|| {
+        let mut names: Vec<&String> = all.keys().collect();
+        names.sort();
+        format!("no variant called {name} (variants: {})", names.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "))
+    })
+}
 const MACHINE: &str = "About this computer: Framework Laptop 13, AMD Ryzen AI 5 340 with an NPU, 16 GB memory, \
 Fedora Silverblue 45 with GNOME. Now: Sunday 2026-11-15 10:00.";
 
@@ -143,19 +179,27 @@ impl Callbacks for Quiet {
 }
 
 /// Run one scenario against a model.
-pub fn run(client: &Arc<FlmClient>, model: &str, sees: bool, s: &Scenario) -> Outcome {
+pub fn run(client: &Arc<FlmClient>, model: &str, sees: bool, v: &Variant, s: &Scenario) -> Outcome {
     let calls: Arc<Mutex<Vec<(String, Args)>>> = Arc::default();
-    let (log, stubs) = (calls.clone(), Arc::new(s.stubs.clone()));
+    let (log, stubs, descriptions) = (calls.clone(), Arc::new(s.stubs.clone()), Arc::new(v.descriptions.clone()));
     let source = Arc::new(move || {
         crate::tools::all().into_iter().map(|t| {
             let (log, stubs, name) = (log.clone(), stubs.clone(), t.name.clone());
-            Tool { run: Arc::new(move |_, args: &Args| {
+            let description = descriptions.get(&t.name).cloned().unwrap_or(t.description.clone());
+            Tool { description, run: Arc::new(move |_, args: &Args| {
                 log.lock().unwrap().push((name.clone(), args.clone()));
                 stub_result(stubs.get(&name), args)
             }), ..t }
         }).collect()
     });
     let mut agent = Agent::new(client.clone(), model, source);
+    if let Some(t) = v.tool_temperature {
+        agent.tool_temperature = t;
+    }
+    agent.examples = v.examples.unwrap_or(agent.examples);
+    agent.repair_args = v.repair_args.unwrap_or(agent.repair_args);
+    agent.nudge = v.nudge.unwrap_or(agent.nudge);
+    agent.system_prompt = v.system_prompt.clone();
     agent.machine = Some(MACHINE.into());
     let facts: Vec<String> = s.memory.iter().map(|f| format!("- {f}")).collect();
     agent.notes = Some(if facts.is_empty() { String::new() } else { format!("What you remember about the user:\n{}", facts.join("\n")) });
@@ -191,7 +235,7 @@ pub fn load(path: Option<&str>) -> Result<Vec<Scenario>, String> {
     serde_json::from_str(&text).map_err(|e| format!("scenarios: {e}"))
 }
 
-/// `assistantd --eval [--url URL] [--model M] [--scenarios FILE] [--only NAME] [--sees] [--json FILE]`
+/// `assistantd --eval [--url URL] [--model M] [--variant NAME] [--scenarios FILE] [--only NAME] [--sees] [--json FILE]`
 pub fn main(args: &[String]) -> i32 {
     let opt = |k: &str| args.iter().position(|a| a == k).and_then(|i| args.get(i + 1)).cloned();
     let url = opt("--url");
@@ -216,10 +260,18 @@ pub fn main(args: &[String]) -> i32 {
         }
     }
     let sees = args.iter().any(|a| a == "--sees");
-    println!("Evaluating {model} on {} scenarios", scenarios.len());
+    let variant_name = opt("--variant").unwrap_or_else(|| "baseline".into());
+    let v = match variant(&variant_name) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("{e}");
+            return 2;
+        }
+    };
+    println!("Evaluating {model} ({variant_name}: {}) on {} scenarios", v.about, scenarios.len());
     let mut outcomes = vec![];
     for s in &scenarios {
-        let o = run(&client, &model, sees, s);
+        let o = run(&client, &model, sees, &v, s);
         let calls: Vec<&str> = o.calls.iter().map(|(n, _)| n.as_str()).collect();
         println!("{} {:<22} {:>5.1}s  {}{}", if o.passed { "✓" } else { "✗" }, o.name, o.seconds,
                  if calls.is_empty() { "(no tools)".into() } else { calls.join(" → ") },
@@ -230,7 +282,7 @@ pub fn main(args: &[String]) -> i32 {
     let secs: f64 = outcomes.iter().map(|o| o.seconds).sum();
     println!("{model}: {passed}/{} passed, {:.1}s per request on average", outcomes.len(), secs / outcomes.len().max(1) as f64);
     if let Some(path) = opt("--json") {
-        let report = json!({"model": model, "passed": passed, "total": outcomes.len(), "seconds": secs,
+        let report = json!({"model": model, "variant": variant_name, "passed": passed, "total": outcomes.len(), "seconds": secs,
             "scenarios": outcomes.iter().map(|o| json!({"name": o.name, "passed": o.passed, "why": o.why, "seconds": o.seconds,
                 "calls": o.calls.iter().map(|(n, a)| json!({"tool": n, "args": a})).collect::<Vec<_>>()})).collect::<Vec<_>>()});
         let _ = std::fs::write(&path, serde_json::to_string_pretty(&report).unwrap());
@@ -261,6 +313,14 @@ mod tests {
     }
 
     #[test]
+    fn variants_load() {
+        let bare = variant("no-harness").unwrap();
+        assert_eq!((bare.tool_temperature, bare.examples, bare.nudge), (Some(None), Some(false), Some(false)));
+        assert_eq!(variant("baseline").unwrap().tool_temperature, None, "absent keeps the default");
+        assert!(variant("nope").unwrap_err().contains("baseline"));
+    }
+
+    #[test]
     fn judging() {
         let s: Scenario = serde_json::from_value(json!({"name": "x", "prompt": "p",
             "expect": [{"tool": "save_screenshot"}, {"tool": "send_file", "args": {"device": "jakubs-iphone"}}], "answer": ["sent|wysłan"]})).unwrap();
@@ -283,7 +343,7 @@ mod tests {
             (200, crate::fake_flm::text_reply("Dark mode is on.")),
         ]);
         let s = load(None).unwrap().into_iter().find(|s| s.name == "dark mode").unwrap();
-        let o = run(&Arc::new(FlmClient::new(&flm.url)), "test", false, &s);
+        let o = run(&Arc::new(FlmClient::new(&flm.url)), "test", false, &variant("baseline").unwrap(), &s);
         assert!(o.passed, "{}", o.why);
         assert_eq!(o.calls[0].0, "set_dark_mode");
     }

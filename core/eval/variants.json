@@ -1,0 +1,7 @@
+{
+  "baseline": {"about": "What ships: steady sampling, examples, argument repair, the claim check."},
+  "no-harness": {"about": "The model on its own: default sampling, no examples, no repair, no claim check.",
+                 "tool_temperature": null, "examples": false, "repair_args": false, "nudge": false},
+  "warm": {"about": "Like baseline, but sampled at the server's usual temperature.", "tool_temperature": 0.7},
+  "no-examples": {"about": "Like baseline, without the worked examples (saves tokens).", "examples": false}
+}

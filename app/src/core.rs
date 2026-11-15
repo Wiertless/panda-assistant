@@ -24,6 +24,7 @@ pub trait Turn {
     fn on_notice(&self, text: &str);
     fn on_handoff(&self, model: &str);
     fn on_compacting(&self);
+    fn on_retract(&self);
     fn on_confirm(&self, request: u32, name: &str, summary: &str, detail: &str, can_always: bool);
     fn on_finished(&self, error: &str);
 }
@@ -176,6 +177,7 @@ impl Core {
             "Notice" => turn.on_notice(&s(1)),
             "Handoff" => turn.on_handoff(&s(1)),
             "Compacting" => turn.on_compacting(),
+            "Retract" => turn.on_retract(),
             "ConfirmRequest" => turn.on_confirm(params.child_value(1).get::<u32>().unwrap_or(0), &s(2), &s(3), &s(4),
                                                 params.child_value(5).get::<bool>().unwrap_or(false)),
             "Finished" => {
