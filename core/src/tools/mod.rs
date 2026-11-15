@@ -239,12 +239,13 @@ e.g. true, 1.25, 'prefer-dark', 300.",
                   text("panel", |p| format!("Open Settings: {p}"))),
         Tool::new("list_devices", "List the user's other devices on Tailscale (for Taildrop).", obj(json!({}), &[]), Safe,
                   connect::list_devices, |_| "List Tailscale devices".into()),
-        Tool::new("send_file", "Send a file to one of the user's devices with Taildrop (Tailscale).",
+        Tool::new("send_file", "Send a file to one of the user's devices with Taildrop (Tailscale): a document, photo or \
+screenshot, e.g. one find_files found. Pass the file's path; the file itself is sent.",
                   obj(json!({"path": {"type": "string"}, "device": {"type": "string", "description": "Device name"}}),
                       &["path", "device"]), Safe, connect::send_file, // Taildrop only reaches your own devices
                   |a| format!("Send {} to {}", base_name(&or(arg_str(a, "path"), "a file")), or(arg_str(a, "device"), "a device"))),
-        Tool::new("send_text", "Send text to one of the user's devices with Taildrop, as a note they can open there: \
-an answer, a list, an address, a link. For the last answer, pass its text.",
+        Tool::new("send_text", "Send a note of text to one of the user's devices with Taildrop: an answer, a list, an \
+address, a link. For the last answer, pass its text. Not for files: to send a file, use send_file with its path.",
                   obj(json!({"text": {"type": "string"}, "device": {"type": "string", "description": "Device name"},
                              "title": {"type": "string", "description": "A short name for the note"}}), &["text", "device"]),
                   Safe, connect::send_text, |a| format!("Send a note to {}", or(arg_str(a, "device"), "a device"))),

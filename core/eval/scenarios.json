@@ -135,6 +135,9 @@
      "path": "lease-2026.pdf"
     }
    }
+  ],
+  "forbid": [
+   "send_text"
   ]
  },
  {

@@ -33,7 +33,7 @@ fn dir_alias(word: &str) -> Option<&'static str> {
     })
 }
 
-fn real_home() -> PathBuf {
+pub fn real_home() -> PathBuf {
     fs::canonicalize(home()).unwrap_or_else(|_| home())
 }
 

@@ -256,10 +256,28 @@ pub fn send_file(_: &Context, args: &Args) -> ToolResult {
 
 /// A note made of text (an answer, a list, an address) sent as a .txt file,
 /// which phones open in their files or notes app.
+/// A file the "text" really means: a short note that's just a path (or a
+/// path with a few words around it) to a file that exists. Models reach for
+/// send_text with what find_files returned; the user wants the file.
+pub fn file_in_note(text: &str) -> Option<std::path::PathBuf> {
+    static PATH: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"(?:^|\s)((?:~/|/)[^\n]*?\.[A-Za-z0-9]{1,5})\b").unwrap());
+    if text.chars().count() > 300 || text.lines().filter(|l| !l.trim().is_empty()).count() > 3 {
+        return None;
+    }
+    let files: Vec<std::path::PathBuf> = PATH.captures_iter(text)
+        .filter_map(|c| home_path(c[1].trim(), true).ok()).filter(|p| p.is_file()).collect();
+    (files.len() == 1).then(|| files[0].clone())
+}
+
 pub fn send_text(_: &Context, args: &Args) -> ToolResult {
     let text = arg_str(args, "text");
     if text.trim().is_empty() {
         return Err("give the text to send".into());
+    }
+    if let Some(file) = file_in_note(&text) {
+        return taildrop(&file, &arg_str(args, "device"))
+            .map(|sent| format!("{sent} (the file itself, not a note with its path)"));
     }
     let raw = arg_str(args, "title");
     let title = if raw.trim().is_empty() { text.lines().next().unwrap_or("Note").to_string() } else { raw };
@@ -391,6 +409,22 @@ pub fn media_control(_: &Context, args: &Args) -> ToolResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_note_that_is_a_path_means_the_file() {
+        let _h = crate::store::testenv::temp_home();
+        let home = crate::tools::files::real_home();
+        std::fs::create_dir_all(home.join("Dokumenty")).unwrap();
+        std::fs::write(home.join("Dokumenty/lease-2026.pdf"), "pdf").unwrap();
+        let file = Some(home.join("Dokumenty/lease-2026.pdf"));
+        assert_eq!(file_in_note("~/Dokumenty/lease-2026.pdf"), file);
+        assert_eq!(file_in_note("Here is the file: ~/Dokumenty/lease-2026.pdf"), file);
+        assert_eq!(file_in_note(&format!("{}/Dokumenty/lease-2026.pdf", home.display())), file);
+        assert_eq!(file_in_note("~/Dokumenty/missing.pdf"), None, "only files that exist");
+        assert_eq!(file_in_note("Milk, eggs, bread"), None);
+        let long = format!("~/Dokumenty/lease-2026.pdf\n{}", "a long answer that mentions a file\n".repeat(5));
+        assert_eq!(file_in_note(&long), None, "a real note that mentions a path stays a note");
+    }
 
     #[test]
     fn nmcli_fields() {
