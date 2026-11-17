@@ -377,7 +377,7 @@ in_minutes, or at as HH:MM or YYYY-MM-DD HH:MM in local time (today's date is in
                   text("which", |w| format!("Cancel the reminder {}", or(w, "")))),
         Tool::new("rewrite_selection", "Rewrite the text the user has selected (highlighted) in any app: proofread, \
 shorten, make it formal, translate… The result goes to the clipboard to paste. Use it for \"this\", \"the selected \
-text\", \"popraw to\".", obj(json!({"instruction": {"type": "string", "description": "What to do with it, e.g. proofread"},
+text\", \"popraw to\". You can't see the selection; this tool reads it, so call it instead of asking for the text.", obj(json!({"instruction": {"type": "string", "description": "What to do with it, e.g. proofread"},
                              "text": {"type": "string", "description": "Only when the user gave the text in the message"}}), &["instruction"]),
                   Safe, settings::rewrite_selection, text("instruction", |i| format!("Rewrite the selection: {}", or(i, "proofread")))),
         Tool::new("clipboard_history", "What the user copied recently, newest first (text only). Use it for \"what I \

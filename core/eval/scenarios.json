@@ -1028,7 +1028,7 @@
     "tool": "set_reminder",
     "args": {
      "in_minutes": "20",
-     "text": "pizza"
+     "text": "pizz"
     }
    }
   ],
@@ -1048,7 +1048,7 @@
     "tool": "set_reminder",
     "args": {
      "at": "09:00|9:00|2026-11-16",
-     "text": "mom|mum"
+     "text": "mom|mum|mam"
     }
    }
   ],
@@ -1105,7 +1105,7 @@
    {
     "tool": "create_event",
     "args": {
-     "title": "lunch",
+     "title": "lunch|obiad",
      "start": "13:00|1pm|1 pm|2026-11-20"
     }
    }
@@ -1155,12 +1155,12 @@
     "tool": "ask_document",
     "args": {
      "path": "lease-2026",
-     "question": "summar|streszcz|podsumuj"
+     "question": "summar|streszcz|streść|podsumuj"
     }
    }
   ],
   "answer": [
-   "3 200|3200|4 500|4500"
+   "3 200|3200|3,200|4 500|4500|4,500"
   ],
   "paraphrases": [
    "streść moją umowę najmu"

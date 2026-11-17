@@ -108,7 +108,8 @@ Never invent memories.
 const SKILL_PROMPT: &str = " The user's saved skills are listed below; when a request matches one, call use_skill \
 and follow its steps. When the user asks to save a workflow, call save_skill.";
 const SCREEN_PROMPT: &str = " When the user says this, here, or asks about what they're looking at, call \
-read_window first to read the window they mean.";
+read_window first to read the window they mean. To proofread, shorten, translate or otherwise change text they \
+selected, call rewrite_selection instead: it reads the selection itself.";
 const VISION_PROMPT: &str = " You can see images. Use look_at_screen when the user asks about what's on their \
 screen, and look_at_image for image files.";
 const ESCALATE_PROMPT: &str = r#"

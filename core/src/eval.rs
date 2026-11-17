@@ -163,6 +163,7 @@ fn text_of(v: &Value) -> String {
 }
 
 fn any_in(want: &str, have: &str) -> bool {
+    let have = have.to_lowercase();
     want.to_lowercase()
         .split('|')
         .any(|w| have.contains(w.trim()))
