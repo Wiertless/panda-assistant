@@ -21,6 +21,14 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.25.0" date="2026-11-18">
+      <description>
+        <ul>
+          <li>Searches and reads your mail in every Online Accounts mail account, whatever mail app you use</li>
+          <li>Research reports stay in the language you asked in</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.24.1" date="2026-11-18">
       <description>
         <ul>

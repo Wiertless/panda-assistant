@@ -28,8 +28,9 @@ dependencies = [
 
 [[package]]
 name = "assistant-core"
-version = "0.24.1"
+version = "0.25.0"
 dependencies = [
+ "base64",
  "cairo-rs",
  "gdk-pixbuf",
  "gio",
@@ -38,6 +39,8 @@ dependencies = [
  "pango",
  "pangocairo",
  "regex",
+ "rustls",
+ "rustls-platform-verifier",
  "serde",
  "serde_json",
  "tempfile",
@@ -748,7 +751,7 @@ checksum = "7e036b411754132fd6b74e94b74e9a13c5cf606fa93d1885c35860d3060820b1"
 
 [[package]]
 name = "panda-assistant"
-version = "0.24.1"
+version = "0.25.0"
 dependencies = [
  "assistant-core",
  "gio",

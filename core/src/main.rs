@@ -11,6 +11,27 @@ fn main() {
     {
         return;
     }
+    // For testing: `assistantd --tool NAME '{"arg": "value"}'` runs one tool and prints its result.
+    if let Some(i) = args.iter().position(|a| a == "--tool") {
+        let name = args.get(i + 1).cloned().unwrap_or_default();
+        let json = args.get(i + 2).map_or("{}", String::as_str);
+        let Some(tool) = assistant_core::tools::all()
+            .into_iter()
+            .find(|t| t.name == name)
+        else {
+            eprintln!("no tool named {name}");
+            std::process::exit(2);
+        };
+        let args = serde_json::from_str(json).unwrap_or_default();
+        match (tool.run)(&Default::default(), &args) {
+            Ok(r) => println!("{r}"),
+            Err(e) => {
+                eprintln!("error: {}", e.0);
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     if args.iter().any(|a| a == "--eval") {
         std::process::exit(assistant_core::eval::main(&args));
     }

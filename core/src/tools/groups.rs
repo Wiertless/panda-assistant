@@ -254,8 +254,21 @@ write, edit, rename, move and delete files, make folders",
     ),
     (
         "personal",
-        "calendar events (reading and adding them), contacts, and email drafts",
+        "calendar events (reading and adding them), contacts, searching and reading mail, and email drafts",
         &[
+            "mail",
+            "inbox",
+            "sent me",
+            "wrote",
+            "message from",
+            "poczt",
+            "mejl",
+            "wiadomoś",
+            "wiadomos",
+            "napisał",
+            "napisal",
+            "przysłał",
+            "przyslal",
             "calendar",
             "event",
             "meeting",
@@ -664,7 +677,8 @@ pub fn group_of(tool: &str) -> &'static str {
         | "list_devices"
         | "send_file"
         | "send_text" => "devices",
-        "get_events" | "find_contact" | "create_event" | "draft_email" => "personal",
+        "get_events" | "find_contact" | "create_event" | "draft_email" | "search_mail"
+        | "read_mail" => "personal",
         "list_app_actions" | "run_app_action" | "media_control" | "play_music" | "search_apps"
         | "open_search_result" | "open_terminal" => "apps",
         "read_web_page" | "research" => "web",

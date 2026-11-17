@@ -20,6 +20,7 @@ pub mod files;
 pub mod groups;
 pub mod intents;
 pub mod localsearch;
+pub mod mail;
 pub mod music;
 pub mod personal;
 pub mod research;
@@ -99,6 +100,8 @@ pub fn reads_untrusted(tool: &str) -> bool {
         "web_search"
             | "read_web_page"
             | "research"
+            | "search_mail"
+            | "read_mail"
             | "read_document"
             | "ask_document"
             | "read_file"
@@ -396,6 +399,13 @@ Returns titles, links and short snippets. Not for the user's own files, settings
         Tool::new("read_web_page", "Read the text of a web page, e.g. a search result, to answer from it.",
                   obj(json!({"url": {"type": "string"}}), &["url"]), Safe, web::read_web_page,
                   text("url", |u| format!("Read {}", or(u, "a page")))),
+        Tool::new("search_mail", "Search the user's mail (every account in Online Accounts, whatever mail app they \
+use) for words: a sender, a subject, a topic. Returns the newest matches with sender, subject, date and the start of \
+the text. Empty query: the newest mail.",
+                  obj(json!({"query": {"type": "string", "description": "e.g. Ola lease, faktura, flight"}}), &[]),
+                  Safe, mail::search_mail, text("query", |q| format!("Search mail for “{q}”"))),
+        Tool::new("read_mail", "Read a whole message that search_mail found, by its id in brackets.",
+                  obj(json!({"id": {"type": "string"}}), &["id"]), Safe, mail::read_mail, |_| "Read a message".into()),
         Tool::new("research", "Research a topic on the web: plans a report, searches and reads up to 12 pages, and \
 writes an in-depth report with sections and cited sources, shown to the user as it is. Use it when the user asks to \
 research, look into, review or compare something, or for a question that needs several sources. depth quick gives a \
@@ -618,7 +628,7 @@ mod tests {
     #[test]
     fn same_tools_and_risks_as_the_python_app() {
         let names: Vec<String> = all().into_iter().map(|t| t.name).collect();
-        assert_eq!(names.len(), 72, "{names:?}");
+        assert_eq!(names.len(), 74, "{names:?}");
         let risky: Vec<String> = all()
             .into_iter()
             .filter(|t| t.risk == Risk::Confirm)
