@@ -1184,5 +1184,60 @@
    "popraw zaznaczony tekst",
    "make this shorter"
   ]
+ },
+ {
+  "name": "play a song",
+  "prompt": "play Bohemian Rhapsody in Gapless",
+  "tags": [
+   "single",
+   "near-tool"
+  ],
+  "stubs": {
+   "play_music": "Playing Bohemian Rhapsody by Queen in Gapless."
+  },
+  "expect": [
+   {
+    "tool": "play_music",
+    "args": {
+     "query": "bohemian",
+     "app": "gapless"
+    }
+   }
+  ],
+  "forbid": [
+   "web_search",
+   "read_web_page",
+   "open_url"
+  ],
+  "paraphrases": [
+   "puść Bohemian Rhapsody w Gapless"
+  ]
+ },
+ {
+  "name": "play an artist",
+  "prompt": "put on some Queen",
+  "tags": [
+   "single",
+   "near-tool"
+  ],
+  "stubs": {
+   "play_music": "Playing 14 songs (Queen) in Gapless."
+  },
+  "expect": [
+   {
+    "tool": "play_music",
+    "args": {
+     "query": "queen"
+    }
+   }
+  ],
+  "forbid": [
+   "web_search",
+   "read_web_page",
+   "open_url"
+  ],
+  "paraphrases": [
+   "zagraj coś Queen"
+  ]
  }
 ]

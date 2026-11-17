@@ -174,7 +174,7 @@ fn connect_route(a: &Args) -> Result<(String, Args), ToolError> {
 }
 
 /// Tools kept as they are.
-const KEPT: [&str; 13] = ["get_status", "get_datetime", "undo", "change_setting", "open_settings", "look_at_image", "read_window",
+const KEPT: [&str; 14] = ["play_music", "get_status", "get_datetime", "undo", "change_setting", "open_settings", "look_at_image", "read_window",
     "draft_email", "rewrite_selection", "search_apps", "open_search_result", "open_terminal", "run_command"];
 
 /// The compact set over `base` (the narrow tools: real ones, or the eval's stand-ins).

@@ -138,7 +138,7 @@ impl Sparql {
         }
     }
 
-    fn connect(&self) -> Result<Conn, ToolError> {
+    pub fn connect(&self) -> Result<Conn, ToolError> {
         for bus in INDEXER_BUSES {
             let name = CString::new(bus).unwrap();
             let mut err = std::ptr::null_mut();

@@ -18,6 +18,7 @@ pub mod files;
 pub mod groups;
 pub mod intents;
 pub mod localsearch;
+pub mod music;
 pub mod personal;
 pub mod run;
 pub mod screen;
@@ -186,6 +187,10 @@ folder, start with ~, or start with a folder name like Downloads or Documents.",
                   text("path", |p| format!("Open {}", or(p, "a file")))),
         Tool::new("show_in_files", "Show a file or folder in the file manager (opens its folder with it selected).",
                   path(), Safe, intents::show_in_files, text("path", |p| format!("Show {} in Files", or(p, "it")))),
+        Tool::new("play_music", "Play a song, album or artist from the user's own music library (not the web), in the \
+app they name (Gapless, Rhythmbox, Spotify…) or their default player. query: title, album or artist as said.",
+                  obj(json!({"query": {"type": "string"}, "app": {"type": "string", "description": "Only when the user names one"}}), &["query"]),
+                  Safe, music::play_music, text("query", |q| format!("Play {q}"))),
         Tool::new("search_apps", "Search inside the user's apps, like the GNOME overview does: Calculator for sums, \
 Characters for emoji, Weather, Settings pages, Files, Contacts and more.",
                   obj(json!({"query": {"type": "string"}}), &["query"]), Safe, intents::search_apps,
@@ -416,7 +421,7 @@ mod tests {
     #[test]
     fn same_tools_and_risks_as_the_python_app() {
         let names: Vec<String> = all().into_iter().map(|t| t.name).collect();
-        assert_eq!(names.len(), 64, "{names:?}");
+        assert_eq!(names.len(), 65, "{names:?}");
         let risky: Vec<String> = all().into_iter().filter(|t| t.risk == Risk::Confirm).map(|t| t.name).collect();
         assert_eq!(risky, ["run_command"]);
     }
