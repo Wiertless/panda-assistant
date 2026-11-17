@@ -21,6 +21,13 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.24.1" date="2026-11-18">
+      <description>
+        <ul>
+          <li>Research reports keep their sections however the model writes the outline</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.24.0" date="2026-11-18">
       <description>
         <ul>

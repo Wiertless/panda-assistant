@@ -93,29 +93,56 @@ pub struct Report {
     pub sources: usize,
 }
 
-/// "Heading | query one; query two" lines.
+/// Sections from the model's outline: "Heading | query one; query two" lines, or the
+/// same as a Markdown table, or "Heading: queries", or bare headings (then the heading
+/// is its own search): small models don't always keep the asked-for shape.
 fn parse_outline(text: &str) -> Vec<(String, Vec<String>)> {
     static LEAD: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"^\s*(?:(?:#+|[-*•]|\d+[.)])\s*)*").unwrap());
-    text.lines()
-        .filter_map(|l| {
-            let (head, queries) = l.split_once('|')?;
-            let head = LEAD
-                .replace(head, "")
-                .trim()
-                .trim_matches('*')
-                .trim()
-                .to_string();
-            let queries: Vec<String> = queries
-                .split(';')
-                .map(clean_query)
-                .filter(|q| !q.is_empty())
-                .take(2)
-                .collect();
-            (!head.is_empty() && !queries.is_empty()).then_some((head, queries))
-        })
-        .take(MAX_SECTIONS)
-        .collect()
+    let clean = |h: &str| {
+        LEAD.replace(h, "")
+            .trim()
+            .trim_matches('*')
+            .trim()
+            .to_string()
+    };
+    let queries = |q: &str| -> Vec<String> {
+        q.split([';', ','])
+            .map(clean_query)
+            .filter(|q| !q.is_empty())
+            .take(2)
+            .collect()
+    };
+    let mut out = vec![];
+    let mut bare = vec![];
+    for line in text.lines() {
+        let l = line.trim().trim_matches('|').trim();
+        if l.is_empty() || l.chars().all(|c| "-|: ".contains(c)) {
+            continue;
+        }
+        let split = l.split_once('|').or_else(|| l.split_once(": "));
+        if let Some((h, q)) = split {
+            let (h, q) = (clean(h), queries(q));
+            let header =
+                ["section", "heading", "sekcja", "nagłówek"].contains(&h.to_lowercase().as_str());
+            if !h.is_empty() && !q.is_empty() && !header {
+                out.push((h, q));
+            }
+        } else if LEAD
+            .find(line)
+            .is_some_and(|m| !m.as_str().trim().is_empty())
+        {
+            let h = clean(l);
+            if !h.is_empty() && h.split_whitespace().count() <= 12 {
+                bare.push((h.clone(), vec![h]));
+            }
+        }
+    }
+    if out.is_empty() {
+        out = bare;
+    }
+    out.truncate(MAX_SECTIONS);
+    out
 }
 
 pub fn in_depth(
@@ -749,6 +776,34 @@ mod tests {
         assert_eq!(
             o[0].1,
             ["framework 13 battery test", "ryzen ai 340 battery"]
+        );
+    }
+
+    #[test]
+    fn outline_in_other_shapes() {
+        let table = "| Section | Queries |\n|---|---|\n| Screens | e-ink pdf screen size; kaleido 3 |\n| Prices | boox note air price |";
+        let o = parse_outline(table);
+        assert_eq!(o.len(), 2, "{o:?}");
+        assert_eq!(o[0].1, ["e-ink pdf screen size", "kaleido 3"]);
+        let bare =
+            "# 1. Background\nSome prose about it that isn't a heading.\n# 2. Prices and options";
+        let o = parse_outline(bare);
+        assert_eq!(
+            o.iter().map(|x| x.0.as_str()).collect::<Vec<_>>(),
+            ["Background", "Prices and options"]
+        );
+        let colon = "1. Battery life: kindle battery test, boox battery";
+        assert_eq!(
+            parse_outline(colon)[0].1,
+            ["kindle battery test", "boox battery"]
+        );
+        let real = "# 1. Background: The PDF Reading Challenge | \"best e-reader for PDFs\"\nE-readers are traditionally optimized for text.";
+        assert_eq!(
+            parse_outline(real)[0],
+            (
+                "Background: The PDF Reading Challenge".into(),
+                vec!["best e-reader for PDFs".into()]
+            )
         );
     }
 
