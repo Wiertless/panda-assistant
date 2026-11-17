@@ -147,6 +147,8 @@ impl Context {
 
 pub type RunFn = Arc<dyn Fn(&Context, &Args) -> ToolResult + Send + Sync>;
 pub type TextFn = Arc<dyn Fn(&Args) -> String + Send + Sync>;
+/// For a tool that forwards to another: the tool a call goes to, with its arguments.
+pub type ResolveFn = Arc<dyn Fn(&Args) -> Option<(Tool, Args)> + Send + Sync>;
 
 #[derive(Clone)]
 pub struct Tool {
@@ -158,6 +160,9 @@ pub struct Tool {
     pub summary: TextFn,
     /// Exactly what a confirmed action will do, shown on the Allow card.
     pub detail: Option<TextFn>,
+    /// Set on a tool that forwards to another (the compact set's broad tools), so
+    /// confirmation and the untrusted-text guard judge the tool that really runs.
+    pub resolve: Option<ResolveFn>,
 }
 
 impl Tool {
@@ -177,7 +182,17 @@ impl Tool {
             run: Arc::new(run),
             summary: Arc::new(summary),
             detail: None,
+            resolve: None,
         }
+    }
+
+    /// The tool that really runs for these arguments and its arguments: itself,
+    /// or the one it forwards to.
+    pub fn target(&self, args: &Args) -> (Tool, Args) {
+        self.resolve
+            .as_ref()
+            .and_then(|r| r(args))
+            .unwrap_or_else(|| (self.clone(), args.clone()))
     }
 
     pub fn with_detail(mut self, detail: impl Fn(&Args) -> String + Send + Sync + 'static) -> Self {

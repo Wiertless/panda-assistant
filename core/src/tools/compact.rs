@@ -294,7 +294,7 @@ pub fn compact(base: Vec<Tool>) -> Vec<Tool> {
     let base = Arc::new(base);
     let find = |name: &str| base.iter().find(|t| t.name == name).cloned();
     let broad = |name: &str, desc: &str, params: Value, route: Route| -> Tool {
-        let (b1, b2) = (base.clone(), base.clone());
+        let (b1, b2, b3) = (base.clone(), base.clone(), base.clone());
         let run = move |ctx: &crate::tool::Context, a: &Args| {
             let (to, inner) = route(a)?;
             let tool = b1
@@ -316,7 +316,19 @@ pub fn compact(base: Vec<Tool>) -> Vec<Tool> {
                 .unwrap_or(to),
             Err(_) => name_of(a),
         };
-        Tool::new(name, desc, params, Risk::Safe, run, summary)
+        let resolve = move |a: &Args| {
+            let (to, inner) = route(a).ok()?;
+            let tool = b3.iter().find(|t| t.name == to)?.clone();
+            let inner = crate::repair::fit(
+                &tool.parameters,
+                inner.into_iter().filter(|(_, v)| !v.is_null()).collect(),
+            )
+            .0;
+            Some((tool, inner))
+        };
+        let mut t = Tool::new(name, desc, params, Risk::Safe, run, summary);
+        t.resolve = Some(Arc::new(resolve));
+        t
     };
     fn name_of(_: &Args) -> String {
         "Do it".into()
