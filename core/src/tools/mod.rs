@@ -14,6 +14,7 @@ pub mod brains;
 pub mod compact;
 pub mod connect;
 pub mod docs;
+pub mod edit;
 pub mod files;
 pub mod groups;
 pub mod intents;
@@ -126,11 +127,21 @@ pub fn guarded_after_untrusted(tool: &str) -> bool {
             | "run_app_action"
             | "copy_to_clipboard"
             | "connect_network"
+            | "write_file"
+            | "edit_file"
+            | "move_file"
+            | "make_folder"
+            | "trash_file"
     ) || tool.contains("__")
 }
 
 /// Tools whose change `undo` can reverse (the window offers Undo on their pill).
-pub const UNDOABLE: [&str; 13] = [
+pub const UNDOABLE: [&str; 18] = [
+    "write_file",
+    "edit_file",
+    "move_file",
+    "make_folder",
+    "trash_file",
     "create_event",
     "set_dark_mode",
     "set_do_not_disturb",
@@ -322,8 +333,37 @@ Characters for emoji, Weather, Settings pages, Files, Contacts and more.",
 mentions one of their own documents or files (\"my lease\", \"the invoice\", \"my CV\"), to read or send it.",
                   obj(json!({"name": {"type": "string"}, "folder": {"type": "string", "description": "Where to look (optional)"}}), &["name"]),
                   Safe, files::find_files, text("name", |n| format!("Find files named “{n}”"))),
-        Tool::new("read_file", "Read a text file (notes, code, configs, CSV…) to answer from it.", path(), Safe,
+        Tool::new("read_file", "Read a text file (notes, code, configs, CSV…) to answer from it or before editing it. \
+Long files come a part at a time: pass from_line to read on.",
+                  obj(json!({"path": {"type": "string"},
+                             "from_line": {"type": "integer", "description": "First line to read (default 1)"}}), &["path"]), Safe,
                   files::read_file, text("path", |p| format!("Read {}", or(p, "a file")))),
+        Tool::new("write_file", "Create a text file (a note, list, script, letter…) with the given content. To change \
+an existing file use edit_file; overwrite true replaces a whole existing file.",
+                  obj(json!({"path": {"type": "string", "description": "e.g. Documents/shopping.txt"},
+                             "content": {"type": "string"},
+                             "overwrite": {"type": "boolean"}}), &["path", "content"]), Confirm,
+                  edit::write_file, text("path", |p| format!("Write {}", or(p, "a file"))))
+            .with_detail(edit::write_detail),
+        Tool::new("edit_file", "Change part of a text file: replaces old_text, copied exactly from the file (read_file \
+it first), with new_text. old_text must appear once, or pass all true to change every place.",
+                  obj(json!({"path": {"type": "string"}, "old_text": {"type": "string"}, "new_text": {"type": "string"},
+                             "all": {"type": "boolean"}}), &["path", "old_text", "new_text"]), Confirm,
+                  edit::edit_file, text("path", |p| format!("Edit {}", or(p, "a file"))))
+            .with_detail(edit::edit_detail),
+        Tool::new("move_file", "Move or rename a file or folder. to: a new name or path, or a folder to move it into.",
+                  obj(json!({"from": {"type": "string"}, "to": {"type": "string"}}), &["from", "to"]), Confirm,
+                  edit::move_file, |a| format!("Move {} to {}", arg_str(a, "from"), arg_str(a, "to"))),
+        Tool::new("make_folder", "Make a new folder (and any missing folders above it).", path(), Safe,
+                  edit::make_folder, text("path", |p| format!("Make the folder {}", or(p, "")))),
+        Tool::new("trash_file", "Move a file or folder to the Trash (it can be restored). Use it when the user asks to \
+delete or remove a file.", path(), Confirm, edit::trash_file,
+                  text("path", |p| format!("Move {} to the Trash", or(p, "it")))),
+        Tool::new("search_text", "Search inside text files (notes, code, configs, CSV) in a folder for words, like \
+grep: returns file:line: matching line. For PDFs and office documents use search_file_contents.",
+                  obj(json!({"query": {"type": "string"},
+                             "folder": {"type": "string", "description": "Where to look (default: home)"}}), &["query"]),
+                  Safe, edit::search_text, text("query", |q| format!("Search text files for “{q}”"))),
         Tool::new("get_battery", "Get the battery charge level and charging state.", obj(json!({}), &[]), Safe,
                   system::get_battery, |_| "Read battery".into()),
         Tool::new("get_system_info", "Get OS, kernel, uptime, memory and disk space.", obj(json!({}), &[]), Safe,
@@ -572,13 +612,22 @@ mod tests {
     #[test]
     fn same_tools_and_risks_as_the_python_app() {
         let names: Vec<String> = all().into_iter().map(|t| t.name).collect();
-        assert_eq!(names.len(), 66, "{names:?}");
+        assert_eq!(names.len(), 72, "{names:?}");
         let risky: Vec<String> = all()
             .into_iter()
             .filter(|t| t.risk == Risk::Confirm)
             .map(|t| t.name)
             .collect();
-        assert_eq!(risky, ["run_command"]);
+        assert_eq!(
+            risky,
+            [
+                "write_file",
+                "edit_file",
+                "move_file",
+                "trash_file",
+                "run_command"
+            ]
+        );
     }
 
     #[test]

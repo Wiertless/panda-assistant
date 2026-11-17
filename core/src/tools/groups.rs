@@ -129,9 +129,38 @@ pub const GROUPS: [(&str, &str, &[&str]); 12] = [
     ),
     (
         "files",
-        "list folders, find files by name or by what's inside, read text files, PDFs and documents, look at images",
+        "list folders, find files by name or by what's inside, read text files, PDFs and documents, look at images; \
+write, edit, rename, move and delete files, make folders",
         &[
             "file",
+            "write",
+            "edit",
+            "rename",
+            "move ",
+            "delete",
+            "remove",
+            "trash",
+            "save as",
+            "note",
+            ".txt",
+            ".md",
+            "script",
+            "grep",
+            "mention",
+            "zapisz",
+            "edytuj",
+            "zmień nazw",
+            "zmien nazw",
+            "przenieś",
+            "przenies",
+            "usuń",
+            "usun",
+            "skasuj",
+            "kosz",
+            "utwórz",
+            "utworz",
+            "stwórz",
+            "stworz",
             "folder",
             "director",
             "document",
@@ -618,7 +647,13 @@ pub fn group_of(tool: &str) -> &'static str {
         | "read_document"
         | "ask_document"
         | "search_file_contents"
-        | "look_at_image" => "files",
+        | "look_at_image"
+        | "write_file"
+        | "edit_file"
+        | "move_file"
+        | "make_folder"
+        | "trash_file"
+        | "search_text" => "files",
         "get_battery" | "get_system_info" => "system",
         "list_networks"
         | "connect_network"

@@ -14,6 +14,8 @@ use crate::tool::{Context, Risk, Tool, ToolError};
 use crate::tools::groups;
 
 pub const MAX_ROUNDS: usize = 8; // room to look something up and retry
+/// For the bigger model on a hand-off: reading, editing and checking several files.
+const HELPER_ROUNDS: usize = 20;
 pub const TOOL_TEMPERATURE: f64 = 0.2;
 const GROUP_IDLE_TURNS: usize = 2;
 /// Failed tool calls in one turn before the smarter model takes over.
@@ -303,6 +305,8 @@ pub struct Agent {
     /// offered: answering is a call too, so a round can't end without one, and
     /// the tool list stays the same between rounds (the server reuses the prompt).
     pub required_rounds: bool,
+    /// Model rounds a turn may take (the bigger model gets more, for multi-step work).
+    pub max_rounds: usize,
     /// Per-round token counts and timings, newest last (the eval reads them).
     pub stats: Vec<RoundStat>,
     /// Append each round's stats to ~/.local/state/panda-assistant/rounds.jsonl.
@@ -351,6 +355,7 @@ impl Agent {
             reply_tool: true,
             think_with_tools: Some(false),
             required_rounds: false,
+            max_rounds: MAX_ROUNDS,
             stats: vec![],
             log_rounds: true,
             turn_no: 0,
@@ -645,6 +650,7 @@ impl Agent {
         h.force_completion = false; // the bigger model doesn't need pushing
         h.reply_tool = false;
         h.think_with_tools = None; // the bigger model gets to think: that's why it was asked
+        h.max_rounds = HELPER_ROUNDS; // it gets the long, many-step jobs
         h
     }
 
@@ -728,7 +734,7 @@ impl Agent {
         turn: &mut Turn,
         cb: &dyn Callbacks,
     ) -> Result<(), FlmError> {
-        for round in 0..MAX_ROUNDS {
+        for round in 0..self.max_rounds {
             if self.cancelled() {
                 return Ok(());
             }

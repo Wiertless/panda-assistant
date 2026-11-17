@@ -307,12 +307,37 @@ pub fn read_file(_: &Context, args: &Args) -> ToolResult {
         .into());
     }
     let text = String::from_utf8_lossy(&data);
-    let body: String = if text.chars().count() > 3000 {
-        format!("{}\n[…]", text.chars().take(3000).collect::<String>())
-    } else {
-        text.to_string()
-    };
-    Ok(format!("{}:\n{body}", short(&path)))
+    let lines: Vec<&str> = text.lines().collect();
+    let from = args
+        .get("from_line")
+        .and_then(|v| v.as_u64().or_else(|| v.as_str()?.trim().parse().ok()))
+        .unwrap_or(1)
+        .max(1) as usize;
+    if from > lines.len().max(1) {
+        return Err(format!("{} has only {} lines", short(&path), lines.len()).into());
+    }
+    // Whole lines, about 3000 characters' worth: a small model's context is short.
+    let mut body = String::new();
+    let mut to = from - 1;
+    while to < lines.len() && (body.len() < 3000 || to == from - 1) {
+        body.push_str(lines[to]);
+        body.push('\n');
+        to += 1;
+    }
+    if from == 1 && to >= lines.len() {
+        return Ok(format!("{}:\n{}", short(&path), body.trim_end()));
+    }
+    Ok(format!(
+        "{} (lines {from}-{to} of {}):\n{}{}",
+        short(&path),
+        lines.len(),
+        body.trim_end(),
+        if to < lines.len() {
+            format!("\n[… read on with from_line {}]", to + 1)
+        } else {
+            String::new()
+        }
+    ))
 }
 
 pub fn open_file(_: &Context, args: &Args) -> ToolResult {

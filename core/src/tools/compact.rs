@@ -170,6 +170,29 @@ fn web_route(a: &Args) -> Result<(String, Args), ToolError> {
     })
 }
 
+fn change_file_route(a: &Args) -> Result<(String, Args), ToolError> {
+    let action = arg_str(a, "action").to_lowercase();
+    let path = s(a, "path");
+    Ok(match action.as_str() {
+        "edit" | "replace" => (
+            "edit_file".into(),
+            args(
+                json!({"path": path, "old_text": s(a, "old_text"), "new_text": s(a, "new_text"), "all": s(a, "all")}),
+            ),
+        ),
+        "move" | "rename" => (
+            "move_file".into(),
+            args(json!({"from": path, "to": s(a, "to")})),
+        ),
+        "make_folder" | "mkdir" | "folder" => ("make_folder".into(), args(json!({"path": path}))),
+        "trash" | "delete" | "remove" => ("trash_file".into(), args(json!({"path": path}))),
+        _ => (
+            "write_file".into(),
+            args(json!({"path": path, "content": s(a, "content"), "overwrite": s(a, "overwrite")})),
+        ),
+    })
+}
+
 fn memory_route(a: &Args) -> Result<(String, Args), ToolError> {
     let forget = arg_str(a, "action").to_lowercase().starts_with("forget");
     Ok((
@@ -272,8 +295,9 @@ fn connect_route(a: &Args) -> Result<(String, Args), ToolError> {
 }
 
 /// Tools kept as they are.
-const KEPT: [&str; 15] = [
+const KEPT: [&str; 16] = [
     "research",
+    "search_text",
     "play_music",
     "get_status",
     "get_datetime",
@@ -405,6 +429,20 @@ lets you look at the screen.",
                 &[],
             ),
             web_route,
+        ),
+        broad(
+            "change_file",
+            "Change files in the home folder. action write: create a text file (content; overwrite true replaces one); \
+edit: replace old_text, copied exactly from the file, with new_text; move or rename: to a new path or folder; \
+make_folder; trash: move to the Trash (for delete).",
+            obj(
+                json!({"action": {"type": "string", "enum": ["write", "edit", "move", "rename", "make_folder", "trash"]},
+                       "path": {"type": "string"}, "content": {"type": "string"}, "old_text": {"type": "string"},
+                       "new_text": {"type": "string"}, "to": {"type": "string"}, "overwrite": {"type": "boolean"},
+                       "all": {"type": "boolean"}}),
+                &["action", "path"],
+            ),
+            change_file_route,
         ),
         broad(
             "memory",
@@ -572,7 +610,7 @@ mod tests {
     fn the_set_is_small_and_complete() {
         let all = crate::tools::all();
         let c = compact(all.clone());
-        assert!(c.len() <= 30, "{}", c.len());
+        assert!(c.len() <= 32, "{}", c.len());
         let tokens =
             crate::agent::estimate_tokens(&Value::Array(c.iter().map(|t| t.schema()).collect()));
         let full =
