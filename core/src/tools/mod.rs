@@ -401,7 +401,7 @@ writes an in-depth report with sections and cited sources, shown to the user as 
 research, look into, review or compare something, or for a question that needs several sources. depth quick gives a \
 short answer from 5 pages. save_as pdf, md or txt saves the report in Documents/Research. For one quick fact, \
 web_search is enough.",
-                  obj(json!({"question": {"type": "string", "description": "The full question, with any details the user gave"},
+                  obj(json!({"question": {"type": "string", "description": "The full question with any details the user gave, in the user's own language (the report is written in it)"},
                              "depth": {"type": "string", "enum": ["in_depth", "quick"]},
                              "save_as": {"type": "string", "enum": ["pdf", "md", "txt"], "description": "Only when the user asks for a file"}}), &["question"]),
                   Safe, research::research, text("question", |q| format!("Research “{q}”"))).with_progress(),
