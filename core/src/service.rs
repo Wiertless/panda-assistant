@@ -1137,6 +1137,34 @@ impl Service {
 }
 
 /// Run the service until it loses its bus name.
+/// The image turns the clipboard extension on with a default, but a user who
+/// enabled any other extension has their own list, which hides that default.
+/// Add it once, unless the user turned it off (then it's in disabled-extensions).
+fn enable_clipboard_extension() {
+    const UUID: &str = "clipboard@assistant.wiertless.github.io";
+    let installed = ["/usr/share", "/usr/local/share"]
+        .iter()
+        .any(|d| std::path::Path::new(&format!("{d}/gnome-shell/extensions/{UUID}")).exists());
+    let Some(src) = gio::SettingsSchemaSource::default() else {
+        return;
+    };
+    if !installed || src.lookup("org.gnome.shell", true).is_none() {
+        return;
+    }
+    let shell = gio::Settings::new("org.gnome.shell");
+    let on: Vec<String> = shell
+        .strv("enabled-extensions")
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let off = shell.strv("disabled-extensions");
+    if !on.iter().any(|u| u == UUID) && !off.iter().any(|u| u.as_str() == UUID) {
+        let mut on: Vec<&str> = on.iter().map(String::as_str).collect();
+        on.push(UUID);
+        let _ = shell.set_strv("enabled-extensions", on.as_slice());
+    }
+}
+
 pub fn run() -> ControlFlow {
     let conn = match gio::bus_get_sync(gio::BusType::Session, None::<&gio::Cancellable>) {
         Ok(c) => c,
@@ -1145,6 +1173,7 @@ pub fn run() -> ControlFlow {
             return ControlFlow::Break;
         }
     };
+    enable_clipboard_extension();
     let service = Service::new(conn.clone(), Arc::new(FlmClient::from_env()));
     // Export the objects first, then take the names: a client D-Bus started
     // us for may call the moment the name is ours.
