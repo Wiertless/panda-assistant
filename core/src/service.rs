@@ -312,7 +312,33 @@ impl Shared {
     }
 
     /// The agent for this chat: the current one, a saved chat, or a new chat.
+    /// The installed models (`flm list`), the embedding model next to the
+    /// chat one, and the default model when the user hasn't chosen one.
+    pub fn refresh_models(&self) {
+        let Ok(models) = self.client.list_models() else { return };
+        let installed: Vec<Model> = models.into_iter().filter(|m| m.installed).collect();
+        // The embedding model, when installed, runs next to the chat model for routing.
+        if installed.iter().any(|m| m.name == flm::EMBED_MODEL) {
+            *self.client.embed_model.lock().unwrap() = Some(flm::EMBED_MODEL.into());
+            self.embedder.lock().unwrap().get_or_insert_with(|| {
+                Arc::new(tools::groups::Embedder::new(self.client.clone(), flm::EMBED_MODEL))
+            });
+        }
+        // No choice yet: the best preferred model that's installed.
+        let mut cfg = self.config.lock().unwrap();
+        if !cfg.model_chosen {
+            cfg.model = flm::default_model(&installed);
+        }
+        drop(cfg);
+        *self.models.lock().unwrap() = installed;
+    }
+
     fn agent_for(self: &Arc<Self>, chat_id: &str) -> (String, Agent) {
+        // Before the first answer, know what's installed: a default that isn't
+        // downloaded would make FLM fail (or start a long download).
+        if !self.config.lock().unwrap().model_chosen && self.models.lock().unwrap().is_empty() {
+            self.refresh_models();
+        }
         let current = self.chat_id.lock().unwrap().clone();
         if !chat_id.is_empty() && chat_id == current
             && let Some(a) = self.agent.lock().unwrap().take() {
@@ -474,26 +500,8 @@ impl Service {
     }
 
     pub fn load_models(self: &Arc<Self>) {
-        let me = self.clone();
-        std::thread::spawn(move || {
-            if let Ok(models) = me.shared.client.list_models() {
-                let installed: Vec<Model> = models.into_iter().filter(|m| m.installed).collect();
-                // The embedding model, when installed, runs next to the chat model for routing.
-                if installed.iter().any(|m| m.name == flm::EMBED_MODEL) {
-                    *me.shared.client.embed_model.lock().unwrap() = Some(flm::EMBED_MODEL.into());
-                    me.shared.embedder.lock().unwrap().get_or_insert_with(|| {
-                        Arc::new(tools::groups::Embedder::new(me.shared.client.clone(), flm::EMBED_MODEL))
-                    });
-                }
-                // No choice yet: the best preferred model that's installed.
-                let mut cfg = me.shared.config.lock().unwrap();
-                if !cfg.model_chosen {
-                    cfg.model = flm::default_model(&installed).to_string();
-                }
-                drop(cfg);
-                *me.shared.models.lock().unwrap() = installed;
-            }
-        });
+        let shared = self.shared.clone();
+        std::thread::spawn(move || shared.refresh_models());
     }
 
     pub fn status(&self) -> Value {

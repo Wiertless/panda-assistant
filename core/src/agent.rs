@@ -208,6 +208,9 @@ pub struct Agent {
     pub force_completion: bool,
     /// The first round of a turn must call a tool, `reply` among them.
     pub reply_tool: bool,
+    /// Thinking on requests that carry tools: Some(false) skips the reasoning
+    /// before each call (the main cost between tool calls); None keeps the model's default.
+    pub think_with_tools: Option<bool>,
     /// Turns counted, and the last turn each tool group was used: groups idle
     /// for a while are dropped, so the tool list doesn't only grow.
     pub turn_no: usize,
@@ -248,6 +251,7 @@ impl Agent {
             nudge: true,
             force_completion: true,
             reply_tool: true,
+            think_with_tools: Some(false),
             turn_no: 0,
             group_seen: std::collections::HashMap::new(),
         }
@@ -476,6 +480,7 @@ impl Agent {
         h.smarter_model = None;
         h.force_completion = false; // the bigger model doesn't need pushing
         h.reply_tool = false;
+        h.think_with_tools = None; // the bigger model gets to think: that's why it was asked
         h
     }
 
@@ -789,6 +794,7 @@ impl Agent {
             temperature: schemas.and(self.tool_temperature),
             max_tokens: Some(MAX_REPLY_TOKENS),
             tool_choice: force.then(|| json!("required")),
+            think: schemas.and(self.think_with_tools),
         };
         let stream = self.client.chat_stream(&self.model, &conversation, schemas, &opts)?;
         let mut content = String::new();
@@ -885,7 +891,8 @@ the user's contacts, files, documents, calendar, settings, devices, or anything 
 /// One question in a fresh context, no tools: the answer text.
 pub fn one_shot(client: &FlmClient, model: &str, system: &str, user: &str) -> Result<String, FlmError> {
     let messages = [json!({"role": "system", "content": system}), json!({"role": "user", "content": user})];
-    let opts = ChatOptions { temperature: Some(TOOL_TEMPERATURE), max_tokens: Some(MAX_REPLY_TOKENS), tool_choice: None };
+    // Answering from excerpts or rewriting text doesn't need reasoning first.
+    let opts = ChatOptions { temperature: Some(TOOL_TEMPERATURE), max_tokens: Some(MAX_REPLY_TOKENS), tool_choice: None, think: Some(false) };
     let mut text = String::new();
     for ev in client.chat_stream(model, &messages, None, &opts)? {
         if let StreamEvent::Text(t) = ev? {
@@ -1322,6 +1329,25 @@ mod tests {
     }
 
     #[test]
+    fn an_older_flm_that_refuses_think_and_tool_choice_still_works() {
+        let _h = temp_home();
+        let flm = FakeFlm::start(vec![
+            (500, r#"{"error": "unknown field think"}"#.into()),
+            (200, tool_reply("set_volume", r#"{"percent": 20}"#, "c1")),
+            (200, text_reply("Volume 20%.")),
+        ]);
+        let mut a = agent(&flm);
+        a.reply_tool = true;
+        a.ask("volume 20", &Rec::default(), &[]).unwrap();
+        let r = flm.requests();
+        assert!(r[0].get("think").is_some() && r[0].get("tool_choice").is_some());
+        assert!(r[1].get("think").is_none() && r[1].get("tool_choice").is_none(), "asked again without them");
+        assert!(r[2].get("think").is_none(), "and not sent again");
+        assert_eq!(a.messages.last().unwrap()["content"], "Volume 20%.");
+        assert!(!a.client.supports("think") && !a.client.supports("tool_choice"));
+    }
+
+    #[test]
     fn a_deliberate_reply_isnt_overruled() {
         let _h = temp_home();
         // "mam dość, dzięki" matches a keyword and isn't a question, but replying was the right call.
@@ -1386,6 +1412,8 @@ mod tests {
         // Tool requests are sampled steadily; the helper gets every tool.
         assert_eq!(reqs[0]["temperature"], TOOL_TEMPERATURE);
         assert_eq!(reqs[0]["max_tokens"], MAX_REPLY_TOKENS);
+        assert_eq!(reqs[0]["think"], false, "no reasoning before tool calls");
+        assert!(reqs[3].get("think").is_none(), "the bigger model thinks");
         assert!(reqs[0]["messages"][0]["content"].as_str().unwrap().contains("Examples:"));
     }
 

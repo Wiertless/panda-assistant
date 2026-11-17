@@ -47,9 +47,12 @@ impl std::error::Error for FlmError {}
 pub const DEFAULT_MODEL: &str = "qwen3.5:4b";
 pub const PREFERRED_MODELS: [&str; 4] = [DEFAULT_MODEL, "gemma4-it:e4b", "gemma4-it:e2b", "qwen3.5:2b"];
 
-/// The default for this machine: the first preferred model that's installed.
-pub fn default_model(installed: &[Model]) -> &'static str {
-    PREFERRED_MODELS.iter().find(|p| installed.iter().any(|m| m.name == **p && m.installed)).copied().unwrap_or(DEFAULT_MODEL)
+/// The default for this machine: the first preferred model that's installed,
+/// else any installed one that can call tools, else Gemma 4 E2B (the small default).
+pub fn default_model(installed: &[Model]) -> String {
+    PREFERRED_MODELS.iter().find(|p| installed.iter().any(|m| m.name == **p && m.installed)).map(|s| s.to_string())
+        .or_else(|| installed.iter().find(|m| m.installed && m.can_use_tools() && !m.single_turn()).map(|m| m.name.clone()))
+        .unwrap_or_else(|| "gemma4-it:e2b".into())
 }
 
 /// Sampling and constraints for one request.
@@ -60,24 +63,43 @@ pub struct ChatOptions {
     /// "required" makes the server's constrained decoding produce a tool call
     /// (FastFlowLM 1.0.10+, llama.cpp); servers without it just ignore it.
     pub tool_choice: Option<Value>,
+    /// FLM's per-request thinking switch: false answers (and calls tools) without
+    /// reasoning first, the biggest cost between tool calls on Qwen 3.5.
+    pub think: Option<bool>,
 }
 
 /// The embedding model FLM serves next to the chat model, when installed.
 pub const EMBED_MODEL: &str = "embed-gemma:300m";
 
-pub fn serve_command(flm: &str, model: &str, ctx_len: Option<u32>, embed: Option<&str>) -> Vec<String> {
+/// The `flm serve` command. `version` is FLM's (major, minor, patch) when
+/// known: 1.0.11 and later cache prompts for most models by default (8
+/// slots, 4 GiB), better than the 1 GiB override older ones needed for Qwen.
+/// `extras` false leaves out the optional flags (for an FLM that rejects them).
+pub fn serve_command(flm: &str, model: &str, ctx_len: Option<u32>, embed: Option<&str>, version: Option<(u32, u32, u32)>,
+                     extras: bool) -> Vec<String> {
     let mut cmd = vec![flm.to_string(), "serve".into(), model.to_string()];
-    if let Some(e) = embed {
-        cmd.extend(["--embed".into(), e.to_string()]);
-    }
     if let Some(ctx) = ctx_len {
         cmd.extend(["--ctx-len".into(), ctx.to_string()]);
     }
+    if !extras {
+        return cmd;
+    }
+    if let Some(e) = embed {
+        cmd.extend(["--embed".into(), e.to_string()]);
+    }
     let family = model.split(':').next().unwrap_or("").split('-').next().unwrap_or("");
-    if PREFIX_CACHE_FAMILIES.contains(&family) {
+    let modern = version.is_some_and(|v| v >= (1, 0, 11));
+    if PREFIX_CACHE_FAMILIES.contains(&family) && !modern {
         cmd.extend(["--prefix-cache-mb".into(), PREFIX_CACHE_MB.to_string()]);
     }
     cmd
+}
+
+/// "FLM v1.0.9" -> (1, 0, 9).
+pub fn parse_version(text: &str) -> Option<(u32, u32, u32)> {
+    let v = text.split_whitespace().find_map(|w| w.trim_start_matches(['v', 'V']).split('.').map(|p| p.parse::<u32>().ok())
+        .collect::<Option<Vec<u32>>>().filter(|p| p.len() >= 2))?;
+    Some((v[0], v[1], v.get(2).copied().unwrap_or(0)))
 }
 
 // -- models -------------------------------------------------------------------
@@ -392,6 +414,11 @@ pub struct FlmClient {
     pub last_model: Mutex<Option<String>>,
     /// Serve this embedding model too (set when it's installed).
     pub embed_model: Mutex<Option<String>>,
+    /// This FLM wouldn't start with the optional flags (--embed, prefix cache): leave them out.
+    plain_serve: std::sync::atomic::AtomicBool,
+    /// Request fields this FLM refused (tool_choice, think): left out from then on.
+    unsupported: Mutex<std::collections::HashSet<&'static str>>,
+    version: Mutex<Option<Option<(u32, u32, u32)>>>,
 }
 
 impl FlmClient {
@@ -408,6 +435,9 @@ impl FlmClient {
             server: Mutex::new(None),
             last_model: Mutex::new(None),
             embed_model: Mutex::new(None),
+            plain_serve: std::sync::atomic::AtomicBool::new(false),
+            unsupported: Mutex::new(Default::default()),
+            version: Mutex::new(None),
         }
     }
 
@@ -443,7 +473,28 @@ impl FlmClient {
 
     /// Start `flm serve` unless one is listening. True if this call started it.
     /// A server this service started with another context length is restarted.
+    /// FLM's version (asked once).
+    pub fn version(&self) -> Option<(u32, u32, u32)> {
+        *self.version.lock().unwrap().get_or_insert_with(|| {
+            let flm = which("flm")?;
+            let out = Command::new(flm).arg("--version").stdin(Stdio::null()).output().ok()?;
+            parse_version(&format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr)))
+        })
+    }
+
     pub fn ensure_server(&self, model: &str, ctx_len: Option<u32>, wait: Duration) -> Result<bool, FlmError> {
+        match self.start_server(model, ctx_len, wait, !self.plain_serve.load(std::sync::atomic::Ordering::SeqCst)) {
+            // It quit at once with the optional flags: an FLM that doesn't know them. Without.
+            Err(e) if e.message.contains("stopped while starting") && !self.plain_serve.swap(true, std::sync::atomic::Ordering::SeqCst) => {
+                eprintln!("assistantd: FastFlowLM failed with the optional flags; starting it without them");
+                self.start_server(model, ctx_len, wait, false)
+            }
+            other => other,
+        }
+    }
+
+    fn start_server(&self, model: &str, ctx_len: Option<u32>, wait: Duration, extras: bool) -> Result<bool, FlmError> {
+        let version = self.version();
         let mut guard = self.server.lock().unwrap();
         if let Some(s) = guard.as_mut()
             && s.ctx != ctx_len && matches!(s.child.try_wait(), Ok(None)) {
@@ -460,7 +511,7 @@ impl FlmClient {
         let log = OpenOptions::new().create(true).append(true).open(&log_path)
             .map_err(|e| FlmError::new(format!("Can't write {}: {e}", log_path.display())))?;
         let embed = self.embed_model.lock().unwrap().clone();
-        let cmd = serve_command(&flm.to_string_lossy(), model, ctx_len, embed.as_deref());
+        let cmd = serve_command(&flm.to_string_lossy(), model, ctx_len, embed.as_deref(), version, extras);
         let mut command = Command::new(&cmd[0]);
         command.args(&cmd[1..]).stdin(Stdio::null()).stdout(log.try_clone().map_err(|e| FlmError::new(e.to_string()))?)
             .stderr(log);
@@ -562,6 +613,32 @@ sudo modprobe -r amdxdna && sudo modprobe amdxdna")
 
     pub fn chat_stream(&self, model: &str, messages: &[Value], tools: Option<&[Value]>, opts: &ChatOptions)
                        -> Result<ChatStream, FlmError> {
+        match self.chat_stream_once(model, messages, tools, opts) {
+            // An older FLM may refuse the newer fields: drop the ones sent, remember, ask again.
+            Err(e) if (opts.tool_choice.is_some() || opts.think.is_some())
+                && (e.status.is_some_and(|s| s >= 500) || e.message.contains("tool_choice") || e.message.contains("think")) => {
+                let mut u = self.unsupported.lock().unwrap();
+                if opts.tool_choice.is_some() {
+                    u.insert("tool_choice");
+                }
+                if opts.think.is_some() {
+                    u.insert("think");
+                }
+                drop(u);
+                eprintln!("assistantd: FastFlowLM refused tool_choice/think ({}); asking without them", e.message);
+                self.chat_stream_once(model, messages, tools, &ChatOptions { tool_choice: None, think: None, ..opts.clone() })
+            }
+            other => other,
+        }
+    }
+
+    /// Whether this server took a request field (tool_choice, think) so far.
+    pub fn supports(&self, field: &str) -> bool {
+        !self.unsupported.lock().unwrap().contains(field)
+    }
+
+    fn chat_stream_once(&self, model: &str, messages: &[Value], tools: Option<&[Value]>, opts: &ChatOptions)
+                        -> Result<ChatStream, FlmError> {
         *self.last_model.lock().unwrap() = Some(model.to_string());
         let mut body = json!({"model": model, "messages": messages, "stream": true});
         if let Some(t) = tools.filter(|t| !t.is_empty()) {
@@ -573,8 +650,11 @@ sudo modprobe -r amdxdna && sudo modprobe amdxdna")
         if let Some(n) = opts.max_tokens {
             body["max_tokens"] = json!(n);
         }
-        if let Some(c) = &opts.tool_choice {
+        if let Some(c) = opts.tool_choice.as_ref().filter(|_| self.supports("tool_choice")) {
             body["tool_choice"] = c.clone();
+        }
+        if let Some(t) = opts.think.filter(|_| self.supports("think")) {
+            body["think"] = json!(t);
         }
         let resp = self
             .agent
@@ -716,10 +796,15 @@ mod tests {
 
     #[test]
     fn serve_command_sizes_context_and_prefix_cache() {
-        assert_eq!(serve_command("flm", "gemma4-it:e2b", Some(8192), None), ["flm", "serve", "gemma4-it:e2b", "--ctx-len", "8192"]);
-        assert_eq!(serve_command("flm", "qwen3.5:9b", None, None), ["flm", "serve", "qwen3.5:9b", "--prefix-cache-mb", "1024"]);
-        assert_eq!(serve_command("flm", "gemma4-it:e2b", None, Some(EMBED_MODEL)),
+        assert_eq!(serve_command("flm", "gemma4-it:e2b", Some(8192), None, None, true), ["flm", "serve", "gemma4-it:e2b", "--ctx-len", "8192"]);
+        assert_eq!(serve_command("flm", "qwen3.5:9b", None, None, Some((1, 0, 9)), true), ["flm", "serve", "qwen3.5:9b", "--prefix-cache-mb", "1024"]);
+        assert_eq!(serve_command("flm", "qwen3.5:9b", None, None, Some((1, 0, 11)), true), ["flm", "serve", "qwen3.5:9b"], "FLM's own defaults");
+        assert_eq!(serve_command("flm", "gemma4-it:e2b", None, Some(EMBED_MODEL), None, true),
                    ["flm", "serve", "gemma4-it:e2b", "--embed", "embed-gemma:300m"]);
+        assert_eq!(serve_command("flm", "qwen3.5:4b", Some(8192), Some(EMBED_MODEL), None, false),
+                   ["flm", "serve", "qwen3.5:4b", "--ctx-len", "8192"], "an FLM that rejects the optional flags");
+        assert_eq!(parse_version("FLM v1.0.9"), Some((1, 0, 9)));
+        assert_eq!(parse_version("flm 1.0.11\n"), Some((1, 0, 11)));
     }
 
     #[test]
@@ -779,7 +864,8 @@ mod tests {
         let installed = vec![Model::new("gemma4-it:e2b", true, &[]), Model::new("qwen3.5:4b", false, &[])];
         assert_eq!(default_model(&installed), "gemma4-it:e2b", "the preferred one isn't downloaded");
         assert_eq!(default_model(&[Model::new("qwen3.5:4b", true, &[])]), DEFAULT_MODEL);
-        assert_eq!(default_model(&[]), DEFAULT_MODEL);
+        assert_eq!(default_model(&[]), "gemma4-it:e2b", "nothing listed: the small default, not a model that may be missing");
+        assert_eq!(default_model(&[Model::new("lfm2:2.6b", true, &["tool-calling"])]), "lfm2:2.6b");
         assert!(server_trouble(&FlmError { message: "FLM returned 500: oops".into(), status: Some(500) }));
         assert!(server_trouble(&FlmError::new("Can't reach FastFlowLM at http://127.0.0.1:52625: io: Connection refused")));
         assert!(!server_trouble(&FlmError { message: "FLM returned 400: bad tools".into(), status: Some(400) }));
