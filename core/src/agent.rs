@@ -574,13 +574,13 @@ impl Agent {
         out
     }
 
-    /// Summarize the oldest turns once the chat fills most of the context.
-    fn maybe_compact(&mut self, cb: &dyn Callbacks) {
+    /// Summarize the oldest turns once the chat fills more than `at` of the context.
+    fn maybe_compact(&mut self, cb: &dyn Callbacks, at: f64) {
         let head = self.system_message();
         let budget = self.budget(&head) as f64;
         let live = Self::tokens(&self.messages[self.compacted.min(self.messages.len())..]) as f64;
         let starts = self.turn_starts();
-        if live <= budget * COMPACT_AT || starts.len() < 2 {
+        if live <= budget * at || starts.len() < 2 {
             return;
         }
         let cut = starts[1..]
@@ -600,8 +600,10 @@ impl Agent {
             json!({"role": "user", "content": format!("{previous}Conversation:\n{transcript}\n\n{COMPACT_PROMPT}")}),
         ];
         cb.compacting();
+        // Without thinking: with it, 400 tokens can run out before the summary starts.
         let opts = ChatOptions {
             max_tokens: Some(400),
+            think: Some(false),
             ..Default::default()
         };
         let Ok(stream) = self.client.chat_stream(&self.model, &prompt, None, &opts) else {
@@ -668,8 +670,9 @@ impl Agent {
         });
         self.cancel.store(false, Ordering::SeqCst);
         self.drop_old_images();
+        // Normally the chat is summarized after an answer; here only when it no longer fits.
         if self.use_tools || !self.messages.is_empty() {
-            self.maybe_compact(cb);
+            self.maybe_compact(cb, 1.0);
         }
         let mut images = images.to_vec();
         if !images.is_empty() && !self.sees_now() {
@@ -707,6 +710,11 @@ impl Agent {
         // The nudge was for the model only: it isn't part of the chat.
         if let Some(i) = turn.nudge_at.filter(|i| *i < self.messages.len()) {
             self.messages.remove(i);
+        }
+        // Summarize old turns now, after the answer was shown, so the next question
+        // doesn't wait for it.
+        if result.is_ok() && !self.cancelled() {
+            self.maybe_compact(cb, COMPACT_AT);
         }
         result
     }

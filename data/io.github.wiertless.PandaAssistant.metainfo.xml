@@ -21,6 +21,15 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.23.0" date="2026-11-17">
+      <description>
+        <ul>
+          <li>Long chats are summarized right after an answer instead of before the next one</li>
+          <li>Connecting to a Wi-Fi network turns Wi-Fi on first</li>
+          <li>A log of each model call's tokens and timings, to see where the time goes</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.22.0" date="2026-11-17">
       <description>
         <ul>

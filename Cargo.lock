@@ -19,7 +19,7 @@ dependencies = [
 
 [[package]]
 name = "assistant-core"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "gdk-pixbuf",
  "gio",
@@ -712,7 +712,7 @@ checksum = "7e036b411754132fd6b74e94b74e9a13c5cf606fa93d1885c35860d3060820b1"
 
 [[package]]
 name = "panda-assistant"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "assistant-core",
  "gio",

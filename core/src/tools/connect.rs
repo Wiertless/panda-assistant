@@ -166,11 +166,21 @@ pub fn connect_network(_: &Context, args: &Args) -> ToolResult {
     if nets.iter().any(|n| n.name == name && n.active) {
         return Ok(format!("Already connected to {name}."));
     }
+    // A Wi-Fi network with Wi-Fi off: turn it on first, as the user would.
+    let mut turned_on = "";
+    if nets.iter().any(|n| n.name == name && n.kind == "Wi-Fi")
+        && run(&["nmcli", "radio", "wifi"], 5).is_ok_and(|s| s.trim() == "disabled")
+    {
+        run(&["nmcli", "radio", "wifi", "on"], 15)?;
+        turned_on = "Turned Wi-Fi on. ";
+        // The card needs a moment before it can see networks.
+        std::thread::sleep(Duration::from_secs(3));
+    }
     run(
         &["nmcli", "--wait", "40", "connection", "up", "id", &name],
         50,
     )?;
-    Ok(format!("Connected to {name}."))
+    Ok(format!("{turned_on}Connected to {name}."))
 }
 
 pub fn disconnect_network(_: &Context, args: &Args) -> ToolResult {
@@ -488,7 +498,10 @@ fn taildrop(path: &std::path::Path, wanted: &str) -> ToolResult {
         }
     };
     if !peer.online {
-        return Err(format!("{} is offline", peer.name).into());
+        return Err(ToolError::cannot(format!(
+            "{} is offline on Tailscale; turn it on or open Tailscale on it",
+            peer.name
+        )));
     }
     let target = format!(
         "{}:",
@@ -506,11 +519,10 @@ fn taildrop(path: &std::path::Path, wanted: &str) -> ToolResult {
     if out.code != 0 {
         let err = format!("{}{}", out.stderr, out.stdout).trim().to_string();
         if err.to_lowercase().contains("access denied") || err.to_lowercase().contains("operator") {
-            return Err(
+            return Err(ToolError::cannot(
                 "Tailscale won't let this user send files yet. Run once in a terminal: \
-sudo tailscale set --operator=$USER"
-                    .into(),
-            );
+sudo tailscale set --operator=$USER",
+            ));
         }
         return Err(if err.is_empty() {
             "tailscale file cp failed".to_string()
