@@ -30,7 +30,10 @@ pub struct Entry<'a> {
 }
 
 pub fn record(e: &Entry) {
-    let time = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let time = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
     let mut line = json!({"time": time, "chat_id": e.chat_id, "tool": e.tool, "summary": e.summary,
                           "result": e.result.chars().take(RESULT_CHARS).collect::<String>(), "ok": e.ok, "from": e.from});
     if let Some(d) = e.decision {
@@ -45,7 +48,9 @@ pub fn record(e: &Entry) {
 }
 
 fn trim(path: &std::path::Path) {
-    let Ok(text) = fs::read_to_string(path) else { return };
+    let Ok(text) = fs::read_to_string(path) else {
+        return;
+    };
     let lines: Vec<&str> = text.lines().collect();
     if lines.len() > KEEP + 50 {
         let _ = fs::write(path, lines[lines.len() - KEEP..].join("\n") + "\n");
@@ -55,7 +60,11 @@ fn trim(path: &std::path::Path) {
 /// The newest `n` entries, newest first.
 pub fn recent(n: usize) -> Vec<Value> {
     let text = fs::read_to_string(file()).unwrap_or_default();
-    text.lines().rev().filter_map(|l| serde_json::from_str(l).ok()).take(n).collect()
+    text.lines()
+        .rev()
+        .filter_map(|l| serde_json::from_str(l).ok())
+        .take(n)
+        .collect()
 }
 
 pub fn clear() {
@@ -71,16 +80,36 @@ mod tests {
     fn records_newest_first_and_trims() {
         let _h = temp_home();
         for i in 0..(KEEP + 60) {
-            record(&Entry { chat_id: "c", tool: "set_volume", summary: &format!("Set volume {i}"), result: "ok",
-                            ok: true, from: "window", decision: None });
+            record(&Entry {
+                chat_id: "c",
+                tool: "set_volume",
+                summary: &format!("Set volume {i}"),
+                result: "ok",
+                ok: true,
+                from: "window",
+                decision: None,
+            });
         }
         let all = recent(10_000);
         assert!(all.len() <= KEEP + 50 && all.len() >= KEEP);
         assert_eq!(all[0]["summary"], format!("Set volume {}", KEEP + 59));
-        record(&Entry { chat_id: "c", tool: "run_command", summary: "Run ls", result: &"x".repeat(1000), ok: true,
-                        from: "search", decision: Some("allowed") });
+        record(&Entry {
+            chat_id: "c",
+            tool: "run_command",
+            summary: "Run ls",
+            result: &"x".repeat(1000),
+            ok: true,
+            from: "search",
+            decision: Some("allowed"),
+        });
         let last = &recent(1)[0];
-        assert_eq!((last["decision"].as_str(), last["result"].as_str().unwrap().len()), (Some("allowed"), RESULT_CHARS));
+        assert_eq!(
+            (
+                last["decision"].as_str(),
+                last["result"].as_str().unwrap().len()
+            ),
+            (Some("allowed"), RESULT_CHARS)
+        );
         clear();
         assert!(recent(5).is_empty());
     }

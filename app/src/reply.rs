@@ -63,12 +63,21 @@ fn plain(markdown: &str) -> String {
 
 #[cfg(feature = "adw-1-8")]
 fn spinner() -> gtk::Widget {
-    adw::Spinner::builder().halign(gtk::Align::Start).width_request(24).height_request(24).build().upcast()
+    adw::Spinner::builder()
+        .halign(gtk::Align::Start)
+        .width_request(24)
+        .height_request(24)
+        .build()
+        .upcast()
 }
 
 #[cfg(not(feature = "adw-1-8"))]
 fn spinner() -> gtk::Widget {
-    gtk::Spinner::builder().spinning(true).halign(gtk::Align::Start).build().upcast()
+    gtk::Spinner::builder()
+        .spinning(true)
+        .halign(gtk::Align::Start)
+        .build()
+        .upcast()
 }
 
 struct Inner {
@@ -91,19 +100,33 @@ pub struct Reply {
 impl Reply {
     pub fn new(win: &Rc<Window>, live: bool, model: Option<&str>) -> Rc<Self> {
         // The name and model, then the turn's content (no avatar, like a plain message).
-        let bx = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(8).hexpand(true).build();
+        let bx = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(8)
+            .hexpand(true)
+            .build();
         let row = bx.clone();
         let name = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         let title = gtk::Label::builder().label(APP_NAME).xalign(0.0).build();
         title.add_css_class("assistant-name");
-        let model_label = gtk::Label::builder().label(model.map(String::from).unwrap_or_else(|| win.st.borrow().model.clone())).xalign(0.0).build();
+        let model_label = gtk::Label::builder()
+            .label(
+                model
+                    .map(String::from)
+                    .unwrap_or_else(|| win.st.borrow().model.clone()),
+            )
+            .xalign(0.0)
+            .build();
         model_label.add_css_class("dim-label");
         model_label.add_css_class("caption");
         name.append(&title);
         name.append(&model_label);
         bx.append(&name);
         // The "working" pill: spinner + label, removed when the turn ends.
-        let spin = gtk::Box::builder().spacing(8).halign(gtk::Align::Start).build();
+        let spin = gtk::Box::builder()
+            .spacing(8)
+            .halign(gtk::Align::Start)
+            .build();
         spin.add_css_class("pill");
         spin.add_css_class("quiet");
         spin.append(&spinner());
@@ -116,8 +139,18 @@ impl Reply {
             win.messages.append(&row);
         }
         Rc::new(Self {
-            win: win.weak(), bx, model_label, spin, spin_label,
-            inner: RefCell::new(Inner { summaries: HashMap::new(), label: None, text: String::new(), answer: String::new(), failure: String::new() }),
+            win: win.weak(),
+            bx,
+            model_label,
+            spin,
+            spin_label,
+            inner: RefCell::new(Inner {
+                summaries: HashMap::new(),
+                label: None,
+                text: String::new(),
+                answer: String::new(),
+                failure: String::new(),
+            }),
         })
     }
 
@@ -129,14 +162,18 @@ impl Reply {
 
     fn before_spinner(&self, widget: &impl IsA<gtk::Widget>) {
         if self.spin.parent().is_some() {
-            self.bx.insert_child_after(widget, self.spin.prev_sibling().as_ref());
+            self.bx
+                .insert_child_after(widget, self.spin.prev_sibling().as_ref());
         } else {
             self.bx.append(widget);
         }
     }
 
     pub fn set_summary(&self, name: &str, summary: &str) {
-        self.inner.borrow_mut().summaries.insert(name.into(), summary.into());
+        self.inner
+            .borrow_mut()
+            .summaries
+            .insert(name.into(), summary.into());
     }
 
     /// A finished answer paragraph (history).
@@ -148,20 +185,34 @@ impl Reply {
     }
 
     fn pill(&self, icon: &str, text: &str, failed: bool, tooltip: Option<&str>) -> gtk::Box {
-        let pill = gtk::Box::builder().spacing(8).halign(gtk::Align::Start).build();
+        let pill = gtk::Box::builder()
+            .spacing(8)
+            .halign(gtk::Align::Start)
+            .build();
         pill.set_tooltip_text(tooltip);
         pill.add_css_class("pill");
         if failed {
             pill.add_css_class("failed");
         }
         pill.append(&gtk::Image::from_icon_name(icon));
-        pill.append(&gtk::Label::builder().label(text).wrap(true).xalign(0.0).build());
+        pill.append(
+            &gtk::Label::builder()
+                .label(text)
+                .wrap(true)
+                .xalign(0.0)
+                .build(),
+        );
         pill
     }
 
     pub fn error(&self, text: &str) {
         self.inner.borrow_mut().failure = text.into();
-        let label = gtk::Label::builder().label(text).wrap(true).xalign(0.0).selectable(true).build();
+        let label = gtk::Label::builder()
+            .label(text)
+            .wrap(true)
+            .xalign(0.0)
+            .selectable(true)
+            .build();
         label.add_css_class("error");
         self.before_spinner(&label);
     }
@@ -174,9 +225,15 @@ impl Reply {
             let i = self.inner.borrow();
             (i.answer.trim().to_string(), i.failure.clone())
         };
-        let Some(win) = self.win.upgrade() else { return };
+        let Some(win) = self.win.upgrade() else {
+            return;
+        };
         if !answer.is_empty() {
-            let copy = gtk::Button::builder().icon_name("edit-copy-symbolic").tooltip_text("Copy").halign(gtk::Align::Start).build();
+            let copy = gtk::Button::builder()
+                .icon_name("edit-copy-symbolic")
+                .tooltip_text("Copy")
+                .halign(gtk::Align::Start)
+                .build();
             copy.add_css_class("flat");
             copy.add_css_class("circular");
             let (w, a) = (self.win.clone(), answer.clone());
@@ -193,7 +250,13 @@ impl Reply {
             if !answer.is_empty() {
                 notify_app(&win.app, APP_NAME, &plain(&answer), &chat, "Open Chat");
             } else if !failure.is_empty() {
-                notify_app(&win.app, &format!("{APP_NAME} couldn't answer"), &failure, &chat, "Open Chat");
+                notify_app(
+                    &win.app,
+                    &format!("{APP_NAME} couldn't answer"),
+                    &failure,
+                    &chat,
+                    "Open Chat",
+                );
             }
         }
     }
@@ -202,12 +265,32 @@ impl Reply {
         let card = gtk::Box::new(gtk::Orientation::Vertical, 10);
         card.add_css_class("card");
         card.add_css_class("confirm-card");
-        let head = gtk::Box::builder().spacing(10).margin_top(12).margin_start(12).margin_end(12).build();
-        head.append(&gtk::Image::builder().icon_name("dialog-question-symbolic").pixel_size(20).build());
-        let title = gtk::Label::builder().label(format!("{summary}?")).xalign(0.0).wrap(true).hexpand(true).build();
+        let head = gtk::Box::builder()
+            .spacing(10)
+            .margin_top(12)
+            .margin_start(12)
+            .margin_end(12)
+            .build();
+        head.append(
+            &gtk::Image::builder()
+                .icon_name("dialog-question-symbolic")
+                .pixel_size(20)
+                .build(),
+        );
+        let title = gtk::Label::builder()
+            .label(format!("{summary}?"))
+            .xalign(0.0)
+            .wrap(true)
+            .hexpand(true)
+            .build();
         title.add_css_class("heading");
         head.append(&title);
-        let buttons = gtk::Box::builder().spacing(6).halign(gtk::Align::End).margin_bottom(12).margin_end(12).build();
+        let buttons = gtk::Box::builder()
+            .spacing(6)
+            .halign(gtk::Align::End)
+            .margin_bottom(12)
+            .margin_end(12)
+            .build();
         let cancel = gtk::Button::with_mnemonic("_Cancel");
         let allow = gtk::Button::with_mnemonic("_Allow");
         allow.add_css_class("suggested-action");
@@ -221,8 +304,15 @@ impl Reply {
         buttons.append(&allow);
         card.append(&head);
         if !detail.is_empty() {
-            let code = gtk::Label::builder().label(detail).xalign(0.0).wrap(true).wrap_mode(gtk::pango::WrapMode::WordChar)
-                .selectable(true).margin_start(12).margin_end(12).build();
+            let code = gtk::Label::builder()
+                .label(detail)
+                .xalign(0.0)
+                .wrap(true)
+                .wrap_mode(gtk::pango::WrapMode::WordChar)
+                .selectable(true)
+                .margin_start(12)
+                .margin_end(12)
+                .build();
             code.add_css_class("monospace");
             code.add_css_class("confirm-detail");
             card.append(&code);
@@ -233,13 +323,26 @@ impl Reply {
         self.spin_label.set_label("Waiting for you…");
         self.scroll();
         let pick = {
-            let (me, card, buttons, title, summary) = (Rc::downgrade(self), card.clone(), buttons.clone(), title.clone(), summary.to_string());
+            let (me, card, buttons, title, summary) = (
+                Rc::downgrade(self),
+                card.clone(),
+                buttons.clone(),
+                title.clone(),
+                summary.to_string(),
+            );
             Rc::new(move |answer: &str| {
                 let Some(me) = me.upgrade() else { return };
                 me.spin_label.set_label("Working…");
                 card.remove(&buttons);
                 title.remove_css_class("heading");
-                title.set_label(&format!("{summary}: {}", if answer == "deny" { "cancelled" } else { "allowed" }));
+                title.set_label(&format!(
+                    "{summary}: {}",
+                    if answer == "deny" {
+                        "cancelled"
+                    } else {
+                        "allowed"
+                    }
+                ));
                 if let Some(w) = me.win.upgrade() {
                     w.core.confirm(request, answer);
                 }
@@ -254,10 +357,17 @@ impl Reply {
         }
         allow.grab_focus();
         if let Some(win) = self.win.upgrade()
-            && !win.in_view() {
-                let chat = win.st.borrow().chat_id.clone();
-                notify_app(&win.app, &format!("{APP_NAME} needs your OK"), &format!("{summary}?"), &chat, "Review");
-            }
+            && !win.in_view()
+        {
+            let chat = win.st.borrow().chat_id.clone();
+            notify_app(
+                &win.app,
+                &format!("{APP_NAME} needs your OK"),
+                &format!("{summary}?"),
+                &chat,
+                "Review",
+            );
+        }
     }
 }
 
@@ -275,7 +385,12 @@ impl Turn for Reply {
         self.spin_label.set_label("Writing…");
         let mut i = self.inner.borrow_mut();
         if i.label.is_none() {
-            let label = gtk::Label::builder().wrap(true).wrap_mode(gtk::pango::WrapMode::WordChar).xalign(0.0).selectable(true).build();
+            let label = gtk::Label::builder()
+                .wrap(true)
+                .wrap_mode(gtk::pango::WrapMode::WordChar)
+                .xalign(0.0)
+                .selectable(true)
+                .build();
             label.add_css_class("assistant-text");
             self.before_spinner(&label);
             i.label = Some(label);
@@ -324,23 +439,47 @@ impl Turn for Reply {
         let short = result.chars().count() <= 90 && !result.contains('\n');
         let pill = if ok {
             // Short confirmations ("Dark mode on.") read best; long results go in the tooltip.
-            let summary = self.inner.borrow().summaries.get(name).cloned().unwrap_or_else(|| name.to_string());
+            let summary = self
+                .inner
+                .borrow()
+                .summaries
+                .get(name)
+                .cloned()
+                .unwrap_or_else(|| name.to_string());
             let tooltip: String = result.chars().take(600).collect();
-            self.pill(tool_icon(name), if short { result } else { &summary }, false, (!short).then_some(tooltip.as_str()))
+            self.pill(
+                tool_icon(name),
+                if short { result } else { &summary },
+                false,
+                (!short).then_some(tooltip.as_str()),
+            )
         } else {
-            let text: String = if short { result.to_string() } else { result.chars().take(200).collect() };
+            let text: String = if short {
+                result.to_string()
+            } else {
+                result.chars().take(200).collect()
+            };
             self.pill("dialog-warning-symbolic", &text, true, None)
         };
-        if ok && assistant_core::tools::UNDOABLE.contains(&name) && let Some(win) = self.win.upgrade() {
+        if ok
+            && assistant_core::tools::UNDOABLE.contains(&name)
+            && let Some(win) = self.win.upgrade()
+        {
             // Undo right on the action: the service reverses its newest change.
-            let undo = gtk::Button::builder().icon_name("edit-undo-symbolic").tooltip_text("Undo").valign(gtk::Align::Center).build();
+            let undo = gtk::Button::builder()
+                .icon_name("edit-undo-symbolic")
+                .tooltip_text("Undo")
+                .valign(gtk::Align::Center)
+                .build();
             undo.add_css_class("flat");
             undo.add_css_class("circular");
             let w = win.weak();
-            undo.connect_clicked(move |b| if let Some(w) = w.upgrade() {
-                b.set_sensitive(false);
-                let msg = w.core.undo();
-                w.toast(&msg);
+            undo.connect_clicked(move |b| {
+                if let Some(w) = w.upgrade() {
+                    b.set_sensitive(false);
+                    let msg = w.core.undo();
+                    w.toast(&msg);
+                }
             });
             pill.append(&undo);
         }
@@ -359,7 +498,12 @@ impl Turn for Reply {
     }
 
     fn on_handoff(&self, model: &str) {
-        self.before_spinner(&self.pill("go-next-symbolic", &format!("Handed to {model}"), false, None));
+        self.before_spinner(&self.pill(
+            "go-next-symbolic",
+            &format!("Handed to {model}"),
+            false,
+            None,
+        ));
         self.model_label.set_label(model);
         self.spin_label.set_label(&format!("Loading {model}…"));
         let mut i = self.inner.borrow_mut();

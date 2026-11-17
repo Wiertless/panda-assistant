@@ -29,7 +29,10 @@ pub struct FlmError {
 
 impl FlmError {
     pub fn new(message: impl Into<String>) -> Self {
-        Self { message: message.into(), status: None }
+        Self {
+            message: message.into(),
+            status: None,
+        }
     }
 }
 
@@ -45,13 +48,26 @@ impl std::error::Error for FlmError {}
 /// the eval that keeps up on the NPU, then the others in order, whichever is
 /// installed first.
 pub const DEFAULT_MODEL: &str = "qwen3.5:4b";
-pub const PREFERRED_MODELS: [&str; 4] = [DEFAULT_MODEL, "gemma4-it:e4b", "gemma4-it:e2b", "qwen3.5:2b"];
+pub const PREFERRED_MODELS: [&str; 4] = [
+    DEFAULT_MODEL,
+    "gemma4-it:e4b",
+    "gemma4-it:e2b",
+    "qwen3.5:2b",
+];
 
 /// The default for this machine: the first preferred model that's installed,
 /// else any installed one that can call tools, else Gemma 4 E2B (the small default).
 pub fn default_model(installed: &[Model]) -> String {
-    PREFERRED_MODELS.iter().find(|p| installed.iter().any(|m| m.name == **p && m.installed)).map(|s| s.to_string())
-        .or_else(|| installed.iter().find(|m| m.installed && m.can_use_tools() && !m.single_turn()).map(|m| m.name.clone()))
+    PREFERRED_MODELS
+        .iter()
+        .find(|p| installed.iter().any(|m| m.name == **p && m.installed))
+        .map(|s| s.to_string())
+        .or_else(|| {
+            installed
+                .iter()
+                .find(|m| m.installed && m.can_use_tools() && !m.single_turn())
+                .map(|m| m.name.clone())
+        })
         .unwrap_or_else(|| "gemma4-it:e2b".into())
 }
 
@@ -75,8 +91,14 @@ pub const EMBED_MODEL: &str = "embed-gemma:300m";
 /// known: 1.0.11 and later cache prompts for most models by default (8
 /// slots, 4 GiB), better than the 1 GiB override older ones needed for Qwen.
 /// `extras` false leaves out the optional flags (for an FLM that rejects them).
-pub fn serve_command(flm: &str, model: &str, ctx_len: Option<u32>, embed: Option<&str>, version: Option<(u32, u32, u32)>,
-                     extras: bool) -> Vec<String> {
+pub fn serve_command(
+    flm: &str,
+    model: &str,
+    ctx_len: Option<u32>,
+    embed: Option<&str>,
+    version: Option<(u32, u32, u32)>,
+    extras: bool,
+) -> Vec<String> {
     let mut cmd = vec![flm.to_string(), "serve".into(), model.to_string()];
     if let Some(ctx) = ctx_len {
         cmd.extend(["--ctx-len".into(), ctx.to_string()]);
@@ -87,7 +109,13 @@ pub fn serve_command(flm: &str, model: &str, ctx_len: Option<u32>, embed: Option
     if let Some(e) = embed {
         cmd.extend(["--embed".into(), e.to_string()]);
     }
-    let family = model.split(':').next().unwrap_or("").split('-').next().unwrap_or("");
+    let family = model
+        .split(':')
+        .next()
+        .unwrap_or("")
+        .split('-')
+        .next()
+        .unwrap_or("");
     let modern = version.is_some_and(|v| v >= (1, 0, 11));
     if PREFIX_CACHE_FAMILIES.contains(&family) && !modern {
         cmd.extend(["--prefix-cache-mb".into(), PREFIX_CACHE_MB.to_string()]);
@@ -97,8 +125,13 @@ pub fn serve_command(flm: &str, model: &str, ctx_len: Option<u32>, embed: Option
 
 /// "FLM v1.0.9" -> (1, 0, 9).
 pub fn parse_version(text: &str) -> Option<(u32, u32, u32)> {
-    let v = text.split_whitespace().find_map(|w| w.trim_start_matches(['v', 'V']).split('.').map(|p| p.parse::<u32>().ok())
-        .collect::<Option<Vec<u32>>>().filter(|p| p.len() >= 2))?;
+    let v = text.split_whitespace().find_map(|w| {
+        w.trim_start_matches(['v', 'V'])
+            .split('.')
+            .map(|p| p.parse::<u32>().ok())
+            .collect::<Option<Vec<u32>>>()
+            .filter(|p| p.len() >= 2)
+    })?;
     Some((v[0], v[1], v.get(2).copied().unwrap_or(0)))
 }
 
@@ -113,7 +146,11 @@ pub struct Model {
 
 impl Model {
     pub fn new(name: &str, installed: bool, labels: &[&str]) -> Self {
-        Self { name: name.into(), installed, labels: labels.iter().map(|s| s.to_string()).collect() }
+        Self {
+            name: name.into(),
+            installed,
+            labels: labels.iter().map(|s| s.to_string()).collect(),
+        }
     }
     fn has(&self, label: &str) -> bool {
         self.labels.iter().any(|l| l == label)
@@ -129,7 +166,8 @@ impl Model {
     }
     /// Rough parameter count in billions from the tag ("e4b" -> 4, "35b-a3b" -> 35).
     pub fn size_b(&self) -> f64 {
-        static SIZE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^e?(\d+(?:\.\d+)?)([bm])").unwrap());
+        static SIZE: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"^e?(\d+(?:\.\d+)?)([bm])").unwrap());
         let tag = self.name.split_once(':').map(|(_, t)| t).unwrap_or("");
         match SIZE.captures(tag) {
             Some(c) => {
@@ -189,11 +227,20 @@ fn find_model_list() -> Option<PathBuf> {
     let mut candidates = Vec::new();
     if let Some(flm) = which("flm")
         && let Ok(real) = fs::canonicalize(&flm)
-            && let Some(dir) = real.parent() {
-                candidates.push(dir.join("model_list.json"));
-            }
-    for dir in ["/usr/share/flm", "/usr/share/fastflowlm", "/usr/lib64/flm", "/usr/lib/flm", "/usr/lib64/fastflowlm",
-                "/usr/lib/fastflowlm", "/opt/fastflowlm", "/opt/flm"] {
+        && let Some(dir) = real.parent()
+    {
+        candidates.push(dir.join("model_list.json"));
+    }
+    for dir in [
+        "/usr/share/flm",
+        "/usr/share/fastflowlm",
+        "/usr/lib64/flm",
+        "/usr/lib/flm",
+        "/usr/lib64/fastflowlm",
+        "/usr/lib/fastflowlm",
+        "/opt/fastflowlm",
+        "/opt/flm",
+    ] {
         candidates.push(Path::new(dir).join("model_list.json"));
     }
     candidates.into_iter().find(|p| p.is_file())
@@ -209,14 +256,20 @@ pub fn model_labels() -> BTreeMap<String, Vec<String>> {
 
 pub fn parse_model_labels(json_text: &str) -> BTreeMap<String, Vec<String>> {
     let mut out = BTreeMap::new();
-    let Ok(config) = serde_json::from_str::<Value>(json_text) else { return out };
+    let Ok(config) = serde_json::from_str::<Value>(json_text) else {
+        return out;
+    };
     if let Some(models) = config.get("models").and_then(Value::as_object) {
         for (family, sizes) in models {
             for (size, info) in sizes.as_object().into_iter().flatten() {
                 let labels = info
                     .get("label")
                     .and_then(Value::as_array)
-                    .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
                     .unwrap_or_default();
                 out.insert(format!("{family}:{size}"), labels);
             }
@@ -230,18 +283,24 @@ pub fn parse_flm_list(output: &str) -> Vec<(String, bool)> {
     static LINE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*-\s*(\S+)\s*(.*)$").unwrap());
     output
         .lines()
-        .filter_map(|l| LINE.captures(l).map(|c| (c[1].to_string(), c[2].contains('✅'))))
+        .filter_map(|l| {
+            LINE.captures(l)
+                .map(|c| (c[1].to_string(), c[2].contains('✅')))
+        })
         .collect()
 }
 
 /// Drop inline <think> blocks some models leave in the answer text.
 pub fn strip_think(text: &str) -> String {
-    static THINK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)<think>.*?(</think>|$)").unwrap());
+    static THINK: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?s)<think>.*?(</think>|$)").unwrap());
     THINK.replace_all(text, "").trim_start().to_string()
 }
 
 fn log_tail(path: &Path, lines: usize) -> String {
-    let Ok(text) = fs::read_to_string(path) else { return String::new() };
+    let Ok(text) = fs::read_to_string(path) else {
+        return String::new();
+    };
     let all: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
     let tail = &all[all.len().saturating_sub(lines)..];
     if tail.is_empty() {
@@ -253,7 +312,9 @@ fn log_tail(path: &Path, lines: usize) -> String {
 
 pub fn which(cmd: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path).map(|d| d.join(cmd)).find(|p| p.is_file())
+    std::env::split_paths(&path)
+        .map(|d| d.join(cmd))
+        .find(|p| p.is_file())
 }
 
 // -- streaming ------------------------------------------------------------------
@@ -282,7 +343,10 @@ impl ToolCall {
 pub enum StreamEvent {
     Text(String),
     Reasoning(String),
-    Done { tool_calls: Vec<ToolCall>, finish_reason: Option<String> },
+    Done {
+        tool_calls: Vec<ToolCall>,
+        finish_reason: Option<String>,
+    },
 }
 
 /// Turns OpenAI chat-completion SSE lines into events. Tool call deltas are
@@ -299,41 +363,69 @@ impl SseParser {
     pub fn feed(&mut self, raw: &str) -> Result<Vec<StreamEvent>, FlmError> {
         let mut out = Vec::new();
         let line = raw.trim();
-        let Some(data) = line.strip_prefix("data:").map(str::trim) else { return Ok(out) };
+        let Some(data) = line.strip_prefix("data:").map(str::trim) else {
+            return Ok(out);
+        };
         if data == "[DONE]" {
             self.finished = true;
             return Ok(out);
         }
-        let Ok(chunk) = serde_json::from_str::<Value>(data) else { return Ok(out) };
+        let Ok(chunk) = serde_json::from_str::<Value>(data) else {
+            return Ok(out);
+        };
         let choices = chunk.get("choices").and_then(Value::as_array);
         if let (Some(err), true) = (chunk.get("error"), choices.is_none_or(|c| c.is_empty())) {
-            let msg = err.get("message").and_then(Value::as_str).map(String::from).unwrap_or_else(|| err.to_string());
+            let msg = err
+                .get("message")
+                .and_then(Value::as_str)
+                .map(String::from)
+                .unwrap_or_else(|| err.to_string());
             return Err(FlmError::new(msg));
         }
         for choice in choices.into_iter().flatten() {
             if let Some(reason) = choice.get("finish_reason").and_then(Value::as_str) {
                 self.finish_reason = Some(reason.to_string());
             }
-            let Some(delta) = choice.get("delta") else { continue };
-            if let Some(r) = delta.get("reasoning_content").and_then(Value::as_str).filter(|s| !s.is_empty()) {
+            let Some(delta) = choice.get("delta") else {
+                continue;
+            };
+            if let Some(r) = delta
+                .get("reasoning_content")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+            {
                 out.push(StreamEvent::Reasoning(r.to_string()));
             }
-            if let Some(t) = delta.get("content").and_then(Value::as_str).filter(|s| !s.is_empty()) {
+            if let Some(t) = delta
+                .get("content")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+            {
                 out.push(StreamEvent::Text(t.to_string()));
             }
-            for tc in delta.get("tool_calls").and_then(Value::as_array).into_iter().flatten() {
+            for tc in delta
+                .get("tool_calls")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
                 let idx = tc.get("index").and_then(Value::as_i64).unwrap_or(0);
                 let func = tc.get("function").cloned().unwrap_or(Value::Null);
                 let name = func.get("name").and_then(Value::as_str).unwrap_or("");
                 let call = self.calls.entry(idx).or_insert_with(|| ToolCall {
-                    id: tc.get("id").and_then(Value::as_str).map(String::from).unwrap_or(format!("call_{idx}")),
+                    id: tc
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .map(String::from)
+                        .unwrap_or(format!("call_{idx}")),
                     name: String::new(),
                     arguments: String::new(),
                 });
                 if !name.is_empty() {
                     call.name = name.to_string();
                 }
-                call.arguments.push_str(func.get("arguments").and_then(Value::as_str).unwrap_or(""));
+                call.arguments
+                    .push_str(func.get("arguments").and_then(Value::as_str).unwrap_or(""));
             }
         }
         Ok(out)
@@ -358,8 +450,12 @@ pub struct ChatStream {
 
 impl ChatStream {
     pub fn from_reader(reader: impl Read + Send + 'static) -> Self {
-        Self { reader: Some(Box::new(BufReader::new(reader))), parser: SseParser::default(),
-               pending: Default::default(), done: false }
+        Self {
+            reader: Some(Box::new(BufReader::new(reader))),
+            parser: SseParser::default(),
+            pending: Default::default(),
+            done: false,
+        }
     }
 }
 
@@ -392,7 +488,9 @@ impl Iterator for ChatStream {
                 },
                 Err(e) => {
                     self.done = true;
-                    return Some(Err(FlmError::new(format!("Lost the connection to FastFlowLM: {e}"))));
+                    return Some(Err(FlmError::new(format!(
+                        "Lost the connection to FastFlowLM: {e}"
+                    ))));
                 }
             }
         }
@@ -477,47 +575,99 @@ impl FlmClient {
     pub fn version(&self) -> Option<(u32, u32, u32)> {
         *self.version.lock().unwrap().get_or_insert_with(|| {
             let flm = which("flm")?;
-            let out = Command::new(flm).arg("--version").stdin(Stdio::null()).output().ok()?;
-            parse_version(&format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr)))
+            let out = Command::new(flm)
+                .arg("--version")
+                .stdin(Stdio::null())
+                .output()
+                .ok()?;
+            parse_version(&format!(
+                "{}{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            ))
         })
     }
 
-    pub fn ensure_server(&self, model: &str, ctx_len: Option<u32>, wait: Duration) -> Result<bool, FlmError> {
-        match self.start_server(model, ctx_len, wait, !self.plain_serve.load(std::sync::atomic::Ordering::SeqCst)) {
+    pub fn ensure_server(
+        &self,
+        model: &str,
+        ctx_len: Option<u32>,
+        wait: Duration,
+    ) -> Result<bool, FlmError> {
+        match self.start_server(
+            model,
+            ctx_len,
+            wait,
+            !self.plain_serve.load(std::sync::atomic::Ordering::SeqCst),
+        ) {
             // It quit at once with the optional flags: an FLM that doesn't know them. Without.
-            Err(e) if e.message.contains("stopped while starting") && !self.plain_serve.swap(true, std::sync::atomic::Ordering::SeqCst) => {
-                eprintln!("assistantd: FastFlowLM failed with the optional flags; starting it without them");
+            Err(e)
+                if e.message.contains("stopped while starting")
+                    && !self
+                        .plain_serve
+                        .swap(true, std::sync::atomic::Ordering::SeqCst) =>
+            {
+                eprintln!(
+                    "assistantd: FastFlowLM failed with the optional flags; starting it without them"
+                );
                 self.start_server(model, ctx_len, wait, false)
             }
             other => other,
         }
     }
 
-    fn start_server(&self, model: &str, ctx_len: Option<u32>, wait: Duration, extras: bool) -> Result<bool, FlmError> {
+    fn start_server(
+        &self,
+        model: &str,
+        ctx_len: Option<u32>,
+        wait: Duration,
+        extras: bool,
+    ) -> Result<bool, FlmError> {
         let version = self.version();
         let mut guard = self.server.lock().unwrap();
         if let Some(s) = guard.as_mut()
-            && s.ctx != ctx_len && matches!(s.child.try_wait(), Ok(None)) {
-                stop_child(guard.take().unwrap().child);
-            }
+            && s.ctx != ctx_len
+            && matches!(s.child.try_wait(), Ok(None))
+        {
+            stop_child(guard.take().unwrap().child);
+        }
         if self.is_up() {
             return Ok(false);
         }
-        let flm = which("flm").ok_or_else(|| FlmError::new("FastFlowLM (flm) is not installed."))?;
+        let flm =
+            which("flm").ok_or_else(|| FlmError::new("FastFlowLM (flm) is not installed."))?;
         let log_path = Self::log_path();
         if let Some(dir) = log_path.parent() {
             let _ = fs::create_dir_all(dir);
         }
-        let log = OpenOptions::new().create(true).append(true).open(&log_path)
+        let log = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
             .map_err(|e| FlmError::new(format!("Can't write {}: {e}", log_path.display())))?;
         let embed = self.embed_model.lock().unwrap().clone();
-        let cmd = serve_command(&flm.to_string_lossy(), model, ctx_len, embed.as_deref(), version, extras);
+        let cmd = serve_command(
+            &flm.to_string_lossy(),
+            model,
+            ctx_len,
+            embed.as_deref(),
+            version,
+            extras,
+        );
         let mut command = Command::new(&cmd[0]);
-        command.args(&cmd[1..]).stdin(Stdio::null()).stdout(log.try_clone().map_err(|e| FlmError::new(e.to_string()))?)
+        command
+            .args(&cmd[1..])
+            .stdin(Stdio::null())
+            .stdout(log.try_clone().map_err(|e| FlmError::new(e.to_string()))?)
             .stderr(log);
         new_session(&mut command);
-        let child = command.spawn().map_err(|e| FlmError::new(format!("Couldn't start FastFlowLM: {e}")))?;
-        *guard = Some(Server { child, ctx: ctx_len });
+        let child = command
+            .spawn()
+            .map_err(|e| FlmError::new(format!("Couldn't start FastFlowLM: {e}")))?;
+        *guard = Some(Server {
+            child,
+            ctx: ctx_len,
+        });
         *self.last_model.lock().unwrap() = Some(model.to_string());
         let deadline = Instant::now() + wait;
         while Instant::now() < deadline {
@@ -525,7 +675,9 @@ impl FlmClient {
                 *guard = None;
                 return Err(FlmError::new(format!(
                     "FastFlowLM stopped while starting (exit code {}).{}",
-                    status.code().unwrap_or(-1), log_tail(&log_path, 6))));
+                    status.code().unwrap_or(-1),
+                    log_tail(&log_path, 6)
+                )));
             }
             if self.is_up() {
                 return Ok(true);
@@ -533,14 +685,19 @@ impl FlmClient {
             std::thread::sleep(Duration::from_millis(250));
         }
         stop_child(guard.take().unwrap().child);
-        Err(FlmError::new(format!("FastFlowLM didn't start within {} minutes.{}", wait.as_secs() / 60,
-                                  log_tail(&log_path, 6))))
+        Err(FlmError::new(format!(
+            "FastFlowLM didn't start within {} minutes.{}",
+            wait.as_secs() / 60,
+            log_tail(&log_path, 6)
+        )))
     }
 
     /// Stop the server only if this service started it. True if one was stopped.
     pub fn stop_server(&self) -> bool {
         *self.last_model.lock().unwrap() = None;
-        let Some(mut s) = self.server.lock().unwrap().take() else { return false };
+        let Some(mut s) = self.server.lock().unwrap().take() else {
+            return false;
+        };
         if matches!(s.child.try_wait(), Ok(None)) {
             stop_child(s.child);
             true
@@ -555,7 +712,11 @@ impl FlmClient {
     /// after 5 s, then wait for the port to close. Returns how many it stopped.
     pub fn stop_all_servers(&self) -> usize {
         let mine = self.stop_server();
-        let port = self.base_url.rsplit(':').next().and_then(|p| p.trim_end_matches('/').parse::<u16>().ok());
+        let port = self
+            .base_url
+            .rsplit(':')
+            .next()
+            .and_then(|p| p.trim_end_matches('/').parse::<u16>().ok());
         let pids = flm_serve_pids(port);
         for pid in &pids {
             // SAFETY: plain kill(2) on a pid we just read as this user's flm serve.
@@ -579,7 +740,8 @@ impl FlmClient {
     /// Stop whatever FLM is running and start it again with this model.
     pub fn restart_server(&self, model: &str, ctx_len: Option<u32>) -> Result<(), FlmError> {
         self.stop_all_servers();
-        self.ensure_server(model, ctx_len, Duration::from_secs(300)).map(|_| ())
+        self.ensure_server(model, ctx_len, Duration::from_secs(300))
+            .map(|_| ())
     }
 
     /// The end of FLM's log, and a hint when it points at the NPU driver
@@ -587,16 +749,22 @@ impl FlmClient {
     pub fn diagnose(&self) -> String {
         let tail = log_tail(&Self::log_path(), 6);
         if npu_driver_trouble(&tail) {
-            format!("{tail}\n\nThe NPU driver looks stuck, which restarting FastFlowLM can't fix. Reboot, or reload it: \
-sudo modprobe -r amdxdna && sudo modprobe amdxdna")
+            format!(
+                "{tail}\n\nThe NPU driver looks stuck, which restarting FastFlowLM can't fix. Reboot, or reload it: \
+sudo modprobe -r amdxdna && sudo modprobe amdxdna"
+            )
         } else {
             tail
         }
     }
 
     pub fn list_models(&self) -> Result<Vec<Model>, FlmError> {
-        let flm = which("flm").ok_or_else(|| FlmError::new("FastFlowLM (flm) is not installed."))?;
-        let out = Command::new(flm).arg("list").stdin(Stdio::null()).output()
+        let flm =
+            which("flm").ok_or_else(|| FlmError::new("FastFlowLM (flm) is not installed."))?;
+        let out = Command::new(flm)
+            .arg("list")
+            .stdin(Stdio::null())
+            .output()
             .map_err(|e| FlmError::new(format!("flm list failed: {e}")))?;
         let installed = parse_flm_list(&String::from_utf8_lossy(&out.stdout));
         let labels = model_labels();
@@ -607,16 +775,29 @@ sudo modprobe -r amdxdna && sudo modprobe amdxdna")
         };
         Ok(names
             .into_iter()
-            .map(|(name, inst)| Model { labels: labels.get(&name).cloned().unwrap_or_default(), name, installed: inst })
+            .map(|(name, inst)| Model {
+                labels: labels.get(&name).cloned().unwrap_or_default(),
+                name,
+                installed: inst,
+            })
             .collect())
     }
 
-    pub fn chat_stream(&self, model: &str, messages: &[Value], tools: Option<&[Value]>, opts: &ChatOptions)
-                       -> Result<ChatStream, FlmError> {
+    pub fn chat_stream(
+        &self,
+        model: &str,
+        messages: &[Value],
+        tools: Option<&[Value]>,
+        opts: &ChatOptions,
+    ) -> Result<ChatStream, FlmError> {
         match self.chat_stream_once(model, messages, tools, opts) {
             // An older FLM may refuse the newer fields: drop the ones sent, remember, ask again.
-            Err(e) if (opts.tool_choice.is_some() || opts.think.is_some())
-                && (e.status.is_some_and(|s| s >= 500) || e.message.contains("tool_choice") || e.message.contains("think")) => {
+            Err(e)
+                if (opts.tool_choice.is_some() || opts.think.is_some())
+                    && (e.status.is_some_and(|s| s >= 500)
+                        || e.message.contains("tool_choice")
+                        || e.message.contains("think")) =>
+            {
                 let mut u = self.unsupported.lock().unwrap();
                 if opts.tool_choice.is_some() {
                     u.insert("tool_choice");
@@ -625,8 +806,20 @@ sudo modprobe -r amdxdna && sudo modprobe amdxdna")
                     u.insert("think");
                 }
                 drop(u);
-                eprintln!("assistantd: FastFlowLM refused tool_choice/think ({}); asking without them", e.message);
-                self.chat_stream_once(model, messages, tools, &ChatOptions { tool_choice: None, think: None, ..opts.clone() })
+                eprintln!(
+                    "assistantd: FastFlowLM refused tool_choice/think ({}); asking without them",
+                    e.message
+                );
+                self.chat_stream_once(
+                    model,
+                    messages,
+                    tools,
+                    &ChatOptions {
+                        tool_choice: None,
+                        think: None,
+                        ..opts.clone()
+                    },
+                )
             }
             other => other,
         }
@@ -637,8 +830,13 @@ sudo modprobe -r amdxdna && sudo modprobe amdxdna")
         !self.unsupported.lock().unwrap().contains(field)
     }
 
-    fn chat_stream_once(&self, model: &str, messages: &[Value], tools: Option<&[Value]>, opts: &ChatOptions)
-                        -> Result<ChatStream, FlmError> {
+    fn chat_stream_once(
+        &self,
+        model: &str,
+        messages: &[Value],
+        tools: Option<&[Value]>,
+        opts: &ChatOptions,
+    ) -> Result<ChatStream, FlmError> {
         *self.last_model.lock().unwrap() = Some(model.to_string());
         let mut body = json!({"model": model, "messages": messages, "stream": true});
         if let Some(t) = tools.filter(|t| !t.is_empty()) {
@@ -650,7 +848,11 @@ sudo modprobe -r amdxdna && sudo modprobe amdxdna")
         if let Some(n) = opts.max_tokens {
             body["max_tokens"] = json!(n);
         }
-        if let Some(c) = opts.tool_choice.as_ref().filter(|_| self.supports("tool_choice")) {
+        if let Some(c) = opts
+            .tool_choice
+            .as_ref()
+            .filter(|_| self.supports("tool_choice"))
+        {
             body["tool_choice"] = c.clone();
         }
         if let Some(t) = opts.think.filter(|_| self.supports("think")) {
@@ -665,13 +867,18 @@ sudo modprobe -r amdxdna && sudo modprobe amdxdna")
             .timeout_global(Some(Duration::from_secs(600)))
             .build()
             .send(&serde_json::to_vec(&body).unwrap_or_default()[..])
-            .map_err(|e| FlmError::new(format!("Can't reach FastFlowLM at {}: {e}", self.base_url)))?;
+            .map_err(|e| {
+                FlmError::new(format!("Can't reach FastFlowLM at {}: {e}", self.base_url))
+            })?;
         let status = resp.status().as_u16();
         let reader = resp.into_body().into_reader();
         if status >= 400 {
             let mut detail = String::new();
             let _ = reader.take(500).read_to_string(&mut detail);
-            return Err(FlmError { message: format!("FLM returned {status}: {detail}"), status: Some(status) });
+            return Err(FlmError {
+                message: format!("FLM returned {status}: {detail}"),
+                status: Some(status),
+            });
         }
         Ok(ChatStream::from_reader(reader))
     }
@@ -680,22 +887,50 @@ sudo modprobe -r amdxdna && sudo modprobe amdxdna")
 impl FlmClient {
     /// Embedding vectors for `inputs` (one per string), from /v1/embeddings.
     /// `task` is FLM's EmbeddingGemma prompt: "query" or "document".
-    pub fn embed(&self, model: &str, inputs: &[String], task: &str) -> Result<Vec<Vec<f32>>, FlmError> {
+    pub fn embed(
+        &self,
+        model: &str,
+        inputs: &[String],
+        task: &str,
+    ) -> Result<Vec<Vec<f32>>, FlmError> {
         let body = json!({"model": model, "input": inputs, "task": task});
-        let resp = self.agent.post(&format!("{}/v1/embeddings", self.base_url))
-            .header("Authorization", "Bearer flm").header("Content-Type", "application/json")
-            .config().timeout_global(Some(Duration::from_secs(20))).build()
+        let resp = self
+            .agent
+            .post(&format!("{}/v1/embeddings", self.base_url))
+            .header("Authorization", "Bearer flm")
+            .header("Content-Type", "application/json")
+            .config()
+            .timeout_global(Some(Duration::from_secs(20)))
+            .build()
             .send(&serde_json::to_vec(&body).unwrap_or_default()[..])
             .map_err(|e| FlmError::new(format!("embeddings: {e}")))?;
         let status = resp.status().as_u16();
         let mut text = String::new();
-        let _ = resp.into_body().into_reader().take(4 << 20).read_to_string(&mut text);
+        let _ = resp
+            .into_body()
+            .into_reader()
+            .take(4 << 20)
+            .read_to_string(&mut text);
         if status >= 400 {
-            return Err(FlmError { message: format!("embeddings: {status}"), status: Some(status) });
+            return Err(FlmError {
+                message: format!("embeddings: {status}"),
+                status: Some(status),
+            });
         }
-        let v: Value = serde_json::from_str(&text).map_err(|e| FlmError::new(format!("embeddings: {e}")))?;
-        let vecs: Vec<Vec<f32>> = v["data"].as_array().into_iter().flatten()
-            .map(|d| d["embedding"].as_array().into_iter().flatten().filter_map(|x| x.as_f64().map(|f| f as f32)).collect())
+        let v: Value =
+            serde_json::from_str(&text).map_err(|e| FlmError::new(format!("embeddings: {e}")))?;
+        let vecs: Vec<Vec<f32>> = v["data"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|d| {
+                d["embedding"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|x| x.as_f64().map(|f| f as f32))
+                    .collect()
+            })
             .collect();
         if vecs.len() != inputs.len() || vecs.iter().any(|v| v.is_empty()) {
             return Err(FlmError::new("embeddings: unexpected answer"));
@@ -713,26 +948,52 @@ impl Drop for FlmClient {
 /// Errors that mean the server, not the request, is broken.
 pub fn server_trouble(e: &FlmError) -> bool {
     let m = e.message.to_lowercase();
-    e.status.is_some_and(|s| s >= 500) || m.contains("can't reach fastflowlm") || m.contains("connection")
-        || m.contains("timed out") || m.contains("timeout") || m.contains("stopped while") || m.contains("broken pipe")
-        || m.contains("unexpected end") || m.contains("reset by peer")
+    e.status.is_some_and(|s| s >= 500)
+        || m.contains("can't reach fastflowlm")
+        || m.contains("connection")
+        || m.contains("timed out")
+        || m.contains("timeout")
+        || m.contains("stopped while")
+        || m.contains("broken pipe")
+        || m.contains("unexpected end")
+        || m.contains("reset by peer")
 }
 
 fn npu_driver_trouble(log: &str) -> bool {
     let l = log.to_lowercase();
-    ["amdxdna", "xrt", "/dev/accel", "hwctx", "failed to open device", "no npu", "device busy", "ert_cmd", "aie"]
-        .iter().any(|w| l.contains(w)) && (l.contains("error") || l.contains("fail") || l.contains("timeout"))
+    [
+        "amdxdna",
+        "xrt",
+        "/dev/accel",
+        "hwctx",
+        "failed to open device",
+        "no npu",
+        "device busy",
+        "ert_cmd",
+        "aie",
+    ]
+    .iter()
+    .any(|w| l.contains(w))
+        && (l.contains("error") || l.contains("fail") || l.contains("timeout"))
 }
 
 fn own_uid() -> Option<String> {
-    fs::read_to_string("/proc/self/status").ok()?.lines().find(|l| l.starts_with("Uid:"))
+    fs::read_to_string("/proc/self/status")
+        .ok()?
+        .lines()
+        .find(|l| l.starts_with("Uid:"))
         .and_then(|l| l.split_whitespace().nth(1).map(String::from))
 }
 
 /// The port an `flm serve` command line listens on (FLM's default when not given).
 fn serve_port(args: &[String]) -> u16 {
-    args.windows(2).find(|w| w[0] == "--port" || w[0] == "-p").and_then(|w| w[1].parse().ok())
-        .or_else(|| args.iter().find_map(|a| a.strip_prefix("--port=")?.parse().ok()))
+    args.windows(2)
+        .find(|w| w[0] == "--port" || w[0] == "-p")
+        .and_then(|w| w[1].parse().ok())
+        .or_else(|| {
+            args.iter()
+                .find_map(|a| a.strip_prefix("--port=")?.parse().ok())
+        })
         .unwrap_or(52625)
 }
 
@@ -740,21 +1001,43 @@ fn serve_port(args: &[String]) -> u16 {
 fn flm_serve_pids(port: Option<u16>) -> Vec<i32> {
     let Some(uid) = own_uid() else { return vec![] };
     let me = std::process::id() as i32;
-    fs::read_dir("/proc").into_iter().flatten().flatten().filter_map(|e| {
-        let pid: i32 = e.file_name().to_str()?.parse().ok()?;
-        let status = fs::read_to_string(e.path().join("status")).ok()?;
-        let owner = status.lines().find(|l| l.starts_with("Uid:"))?.split_whitespace().nth(1)?.to_string();
-        let cmd = fs::read(e.path().join("cmdline")).ok()?;
-        let args: Vec<String> = cmd.split(|b| *b == 0).map(|a| String::from_utf8_lossy(a).to_string()).collect();
-        let is_flm = args.first().is_some_and(|a| Path::new(a).file_name().is_some_and(|n| n == "flm"));
-        let ours = port.is_none_or(|p| serve_port(&args) == p);
-        (pid != me && owner == uid && is_flm && args.get(1).is_some_and(|a| a == "serve") && ours).then_some(pid)
-    }).collect()
+    fs::read_dir("/proc")
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| {
+            let pid: i32 = e.file_name().to_str()?.parse().ok()?;
+            let status = fs::read_to_string(e.path().join("status")).ok()?;
+            let owner = status
+                .lines()
+                .find(|l| l.starts_with("Uid:"))?
+                .split_whitespace()
+                .nth(1)?
+                .to_string();
+            let cmd = fs::read(e.path().join("cmdline")).ok()?;
+            let args: Vec<String> = cmd
+                .split(|b| *b == 0)
+                .map(|a| String::from_utf8_lossy(a).to_string())
+                .collect();
+            let is_flm = args
+                .first()
+                .is_some_and(|a| Path::new(a).file_name().is_some_and(|n| n == "flm"));
+            let ours = port.is_none_or(|p| serve_port(&args) == p);
+            (pid != me
+                && owner == uid
+                && is_flm
+                && args.get(1).is_some_and(|a| a == "serve")
+                && ours)
+                .then_some(pid)
+        })
+        .collect()
 }
 
 fn alive(pid: i32) -> bool {
     Path::new(&format!("/proc/{pid}")).exists()
-        && !fs::read_to_string(format!("/proc/{pid}/status")).unwrap_or_default().contains("State:\tZ")
+        && !fs::read_to_string(format!("/proc/{pid}/status"))
+            .unwrap_or_default()
+            .contains("State:\tZ")
 }
 
 fn stop_child(mut child: Child) {
@@ -796,13 +1079,41 @@ mod tests {
 
     #[test]
     fn serve_command_sizes_context_and_prefix_cache() {
-        assert_eq!(serve_command("flm", "gemma4-it:e2b", Some(8192), None, None, true), ["flm", "serve", "gemma4-it:e2b", "--ctx-len", "8192"]);
-        assert_eq!(serve_command("flm", "qwen3.5:9b", None, None, Some((1, 0, 9)), true), ["flm", "serve", "qwen3.5:9b", "--prefix-cache-mb", "1024"]);
-        assert_eq!(serve_command("flm", "qwen3.5:9b", None, None, Some((1, 0, 11)), true), ["flm", "serve", "qwen3.5:9b"], "FLM's own defaults");
-        assert_eq!(serve_command("flm", "gemma4-it:e2b", None, Some(EMBED_MODEL), None, true),
-                   ["flm", "serve", "gemma4-it:e2b", "--embed", "embed-gemma:300m"]);
-        assert_eq!(serve_command("flm", "qwen3.5:4b", Some(8192), Some(EMBED_MODEL), None, false),
-                   ["flm", "serve", "qwen3.5:4b", "--ctx-len", "8192"], "an FLM that rejects the optional flags");
+        assert_eq!(
+            serve_command("flm", "gemma4-it:e2b", Some(8192), None, None, true),
+            ["flm", "serve", "gemma4-it:e2b", "--ctx-len", "8192"]
+        );
+        assert_eq!(
+            serve_command("flm", "qwen3.5:9b", None, None, Some((1, 0, 9)), true),
+            ["flm", "serve", "qwen3.5:9b", "--prefix-cache-mb", "1024"]
+        );
+        assert_eq!(
+            serve_command("flm", "qwen3.5:9b", None, None, Some((1, 0, 11)), true),
+            ["flm", "serve", "qwen3.5:9b"],
+            "FLM's own defaults"
+        );
+        assert_eq!(
+            serve_command("flm", "gemma4-it:e2b", None, Some(EMBED_MODEL), None, true),
+            [
+                "flm",
+                "serve",
+                "gemma4-it:e2b",
+                "--embed",
+                "embed-gemma:300m"
+            ]
+        );
+        assert_eq!(
+            serve_command(
+                "flm",
+                "qwen3.5:4b",
+                Some(8192),
+                Some(EMBED_MODEL),
+                None,
+                false
+            ),
+            ["flm", "serve", "qwen3.5:4b", "--ctx-len", "8192"],
+            "an FLM that rejects the optional flags"
+        );
         assert_eq!(parse_version("FLM v1.0.9"), Some((1, 0, 9)));
         assert_eq!(parse_version("flm 1.0.11\n"), Some((1, 0, 11)));
     }
@@ -819,9 +1130,15 @@ mod tests {
             Model::new("gemma4e-flash:e4b", true, &["vision", "single-turn"]),
             Model::new("gemma3:1b", true, &[]),
         ];
-        assert_eq!(pick_smarter_model(&models, "gemma4-it:e2b", Some(16.0)).as_deref(), Some("qwen3.5:9b"));
+        assert_eq!(
+            pick_smarter_model(&models, "gemma4-it:e2b", Some(16.0)).as_deref(),
+            Some("qwen3.5:9b")
+        );
         assert_eq!(pick_smarter_model(&models, "qwen3.5:9b", Some(16.0)), None);
-        assert_eq!(pick_vision_model(&models, "gemma3:1b", Some(16.0)).as_deref(), Some("gemma4-it:e2b"));
+        assert_eq!(
+            pick_vision_model(&models, "gemma3:1b", Some(16.0)).as_deref(),
+            Some("gemma4-it:e2b")
+        );
     }
 
     #[test]
@@ -843,7 +1160,13 @@ mod tests {
         events.push(p.finish());
         assert_eq!(events[0], StreamEvent::Reasoning("hmm".into()));
         assert_eq!(events[1], StreamEvent::Text("Hi".into()));
-        let StreamEvent::Done { tool_calls, finish_reason } = &events[2] else { panic!() };
+        let StreamEvent::Done {
+            tool_calls,
+            finish_reason,
+        } = &events[2]
+        else {
+            panic!()
+        };
         assert_eq!(finish_reason.as_deref(), Some("tool_calls"));
         assert_eq!(tool_calls[0].name, "get_battery");
         assert_eq!(tool_calls[0].parsed_arguments().unwrap()["a"], 1);
@@ -852,35 +1175,85 @@ mod tests {
     #[test]
     fn sse_error_and_stream() {
         let mut p = SseParser::default();
-        assert_eq!(p.feed(r#"data: {"error": {"message": "model not found"}}"#).unwrap_err().message, "model not found");
+        assert_eq!(
+            p.feed(r#"data: {"error": {"message": "model not found"}}"#)
+                .unwrap_err()
+                .message,
+            "model not found"
+        );
         let body = "data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"b\"}}]}\n\ndata: [DONE]\n\n";
-        let events: Vec<_> = ChatStream::from_reader(std::io::Cursor::new(body.to_string())).map(Result::unwrap).collect();
+        let events: Vec<_> = ChatStream::from_reader(std::io::Cursor::new(body.to_string()))
+            .map(Result::unwrap)
+            .collect();
         assert_eq!(events.len(), 3);
-        assert!(matches!(&events[2], StreamEvent::Done { tool_calls, .. } if tool_calls.is_empty()));
+        assert!(
+            matches!(&events[2], StreamEvent::Done { tool_calls, .. } if tool_calls.is_empty())
+        );
     }
 
     #[test]
     fn list_labels_and_think() {
-        let installed = vec![Model::new("gemma4-it:e2b", true, &[]), Model::new("qwen3.5:4b", false, &[])];
-        assert_eq!(default_model(&installed), "gemma4-it:e2b", "the preferred one isn't downloaded");
-        assert_eq!(default_model(&[Model::new("qwen3.5:4b", true, &[])]), DEFAULT_MODEL);
-        assert_eq!(default_model(&[]), "gemma4-it:e2b", "nothing listed: the small default, not a model that may be missing");
-        assert_eq!(default_model(&[Model::new("lfm2:2.6b", true, &["tool-calling"])]), "lfm2:2.6b");
-        assert!(server_trouble(&FlmError { message: "FLM returned 500: oops".into(), status: Some(500) }));
-        assert!(server_trouble(&FlmError::new("Can't reach FastFlowLM at http://127.0.0.1:52625: io: Connection refused")));
-        assert!(!server_trouble(&FlmError { message: "FLM returned 400: bad tools".into(), status: Some(400) }));
-        assert!(npu_driver_trouble("[XRT] ERROR: failed to open device /dev/accel/accel0"));
+        let installed = vec![
+            Model::new("gemma4-it:e2b", true, &[]),
+            Model::new("qwen3.5:4b", false, &[]),
+        ];
+        assert_eq!(
+            default_model(&installed),
+            "gemma4-it:e2b",
+            "the preferred one isn't downloaded"
+        );
+        assert_eq!(
+            default_model(&[Model::new("qwen3.5:4b", true, &[])]),
+            DEFAULT_MODEL
+        );
+        assert_eq!(
+            default_model(&[]),
+            "gemma4-it:e2b",
+            "nothing listed: the small default, not a model that may be missing"
+        );
+        assert_eq!(
+            default_model(&[Model::new("lfm2:2.6b", true, &["tool-calling"])]),
+            "lfm2:2.6b"
+        );
+        assert!(server_trouble(&FlmError {
+            message: "FLM returned 500: oops".into(),
+            status: Some(500)
+        }));
+        assert!(server_trouble(&FlmError::new(
+            "Can't reach FastFlowLM at http://127.0.0.1:52625: io: Connection refused"
+        )));
+        assert!(!server_trouble(&FlmError {
+            message: "FLM returned 400: bad tools".into(),
+            status: Some(400)
+        }));
+        assert!(npu_driver_trouble(
+            "[XRT] ERROR: failed to open device /dev/accel/accel0"
+        ));
         let a = |s: &str| s.split(' ').map(String::from).collect::<Vec<_>>();
-        assert_eq!((serve_port(&a("flm serve m")), serve_port(&a("flm serve m --port 9000")), serve_port(&a("flm serve m --port=9001"))),
-                   (52625, 9000, 9001));
+        assert_eq!(
+            (
+                serve_port(&a("flm serve m")),
+                serve_port(&a("flm serve m --port 9000")),
+                serve_port(&a("flm serve m --port=9001"))
+            ),
+            (52625, 9000, 9001)
+        );
         assert!(!npu_driver_trouble("loading model qwen3.5:4b ... ok"));
         let list = "Models:\n  - gemma4-it:e2b ✅\n  - qwen3.5:9b ⏬\n";
-        assert_eq!(parse_flm_list(list), vec![("gemma4-it:e2b".into(), true), ("qwen3.5:9b".into(), false)]);
-        let labels = parse_model_labels(r#"{"models": {"qwen3.5": {"9b": {"label": ["vision", "tool-calling"]}}}}"#);
+        assert_eq!(
+            parse_flm_list(list),
+            vec![("gemma4-it:e2b".into(), true), ("qwen3.5:9b".into(), false)]
+        );
+        let labels = parse_model_labels(
+            r#"{"models": {"qwen3.5": {"9b": {"label": ["vision", "tool-calling"]}}}}"#,
+        );
         assert_eq!(labels["qwen3.5:9b"], ["vision", "tool-calling"]);
         assert_eq!(strip_think("<think>plan</think>  Answer"), "Answer");
         assert_eq!(strip_think("Hi <think>unfinished"), "Hi ");
-        let call = ToolCall { arguments: "[1]".into(), ..Default::default() };
+        let call = ToolCall {
+            arguments: "[1]".into(),
+            ..Default::default()
+        };
         assert!(call.parsed_arguments().is_err());
     }
 }

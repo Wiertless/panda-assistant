@@ -7,8 +7,13 @@ use assistant_core::tools::intents::{FILE_MANAGER, default_for};
 use gio::prelude::*;
 
 fn desktop(dir: &std::path::Path, id: &str, implements: &str) {
-    fs::write(dir.join(format!("{id}.desktop")),
-              format!("[Desktop Entry]\nType=Application\nName={id}\nExec=true\nImplements={implements}\n")).unwrap();
+    fs::write(
+        dir.join(format!("{id}.desktop")),
+        format!(
+            "[Desktop Entry]\nType=Application\nName={id}\nExec=true\nImplements={implements}\n"
+        ),
+    )
+    .unwrap();
 }
 
 #[test]
@@ -30,10 +35,19 @@ fn intentapps_list_picks_the_default_and_checks_implements() {
         std::env::set_var("XDG_CURRENT_DESKTOP", "GNOME");
     }
     // No list: the first implementation by desktop ID.
-    assert_eq!(default_for(FILE_MANAGER).unwrap().id().unwrap(), "aaa.files.desktop");
+    assert_eq!(
+        default_for(FILE_MANAGER).unwrap().id().unwrap(),
+        "aaa.files.desktop"
+    );
     // The user's choice wins, but only apps that really implement the intent count.
-    fs::write(config.join("intentapps.list"),
-              "[Default Applications]\norg.freedesktop.FileManager1=liar.desktop;zzz.files.desktop;\n").unwrap();
-    assert_eq!(default_for(FILE_MANAGER).unwrap().id().unwrap(), "zzz.files.desktop");
+    fs::write(
+        config.join("intentapps.list"),
+        "[Default Applications]\norg.freedesktop.FileManager1=liar.desktop;zzz.files.desktop;\n",
+    )
+    .unwrap();
+    assert_eq!(
+        default_for(FILE_MANAGER).unwrap().id().unwrap(),
+        "zzz.files.desktop"
+    );
     assert!(default_for("com.example.Nothing1").is_none());
 }

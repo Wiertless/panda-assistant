@@ -10,8 +10,8 @@ use serde_json::json;
 use crate::tool::{Args, Risk, Tool, ToolError, arg_str, obj};
 
 pub mod apps;
-pub mod compact;
 pub mod brains;
+pub mod compact;
 pub mod connect;
 pub mod docs;
 pub mod files;
@@ -30,10 +30,15 @@ pub mod web;
 /// Spawn a program and forget it (opening a window, a Settings page…).
 pub fn spawn_detached(cmd: &[&str]) -> Result<(), ToolError> {
     use std::os::unix::process::CommandExt;
-    std::process::Command::new(cmd[0]).args(&cmd[1..])
-        .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null())
+    std::process::Command::new(cmd[0])
+        .args(&cmd[1..])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
         .process_group(0)
-        .spawn().map(|_| ()).map_err(|e| ToolError(format!("couldn't start {}: {e}", cmd[0])))
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| ToolError(format!("couldn't start {}: {e}", cmd[0])))
 }
 
 /// Asked every time, never "Always Allow": a command can do anything.
@@ -43,7 +48,10 @@ pub fn norm_name(text: &str) -> String {
     static POSSESSIVE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[’'`]s\b").unwrap());
     static NON_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[^\w]+").unwrap());
     let lower = text.to_lowercase();
-    NON_WORD.replace_all(&POSSESSIVE.replace_all(&lower, ""), " ").trim().to_string()
+    NON_WORD
+        .replace_all(&POSSESSIVE.replace_all(&lower, ""), " ")
+        .trim()
+        .to_string()
 }
 
 /// The tools that finish what a lookup started ("change it", "connect it"),
@@ -55,11 +63,26 @@ pub fn completes(lookup: &str) -> &'static [&'static str] {
         "list_bluetooth" => &["connect_bluetooth", "disconnect_bluetooth"],
         "list_networks" => &["connect_network", "disconnect_network"],
         "list_devices" => &["send_file", "send_text"],
-        "find_files" | "search_file_contents" | "list_folder" =>
-            &["send_file", "ask_document", "read_document", "read_file", "open_file", "show_in_files"],
+        "find_files" | "search_file_contents" | "list_folder" => &[
+            "send_file",
+            "ask_document",
+            "read_document",
+            "read_file",
+            "open_file",
+            "show_in_files",
+        ],
         "list_app_actions" => &["run_app_action"],
-        "get_status" => &["set_volume", "set_mute", "set_brightness", "set_dark_mode", "set_do_not_disturb",
-                          "set_night_light", "set_power_mode", "set_wifi", "set_bluetooth"],
+        "get_status" => &[
+            "set_volume",
+            "set_mute",
+            "set_brightness",
+            "set_dark_mode",
+            "set_do_not_disturb",
+            "set_night_light",
+            "set_power_mode",
+            "set_wifi",
+            "set_bluetooth",
+        ],
         _ => &[],
     }
 }
@@ -68,32 +91,72 @@ pub fn completes(lookup: &str) -> &'static [&'static str] {
 /// a calendar invite, the clipboard, another app. After one runs, text in
 /// the chat may be written to steer the model.
 pub fn reads_untrusted(tool: &str) -> bool {
-    matches!(tool, "web_search" | "read_web_page" | "read_document" | "ask_document" | "read_file" | "search_file_contents" | "get_events"
-        | "clipboard_history" | "read_window" | "look_at_image" | "find_contact" | "rewrite_selection") || tool.contains("__")
+    matches!(
+        tool,
+        "web_search"
+            | "read_web_page"
+            | "read_document"
+            | "ask_document"
+            | "read_file"
+            | "search_file_contents"
+            | "get_events"
+            | "clipboard_history"
+            | "read_window"
+            | "look_at_image"
+            | "find_contact"
+            | "rewrite_selection"
+    ) || tool.contains("__")
 }
 
 /// Tools that send something out, keep something, or change the machine
 /// quietly: after untrusted text came in this turn, they ask first.
 pub fn guarded_after_untrusted(tool: &str) -> bool {
-    matches!(tool, "send_file" | "send_text" | "open_url" | "remember" | "save_skill" | "change_setting" | "create_event"
-        | "draft_email"
-        | "run_app_action" | "copy_to_clipboard" | "connect_network") || tool.contains("__")
+    matches!(
+        tool,
+        "send_file"
+            | "send_text"
+            | "open_url"
+            | "remember"
+            | "save_skill"
+            | "change_setting"
+            | "create_event"
+            | "draft_email"
+            | "run_app_action"
+            | "copy_to_clipboard"
+            | "connect_network"
+    ) || tool.contains("__")
 }
 
 /// Tools whose change `undo` can reverse (the window offers Undo on their pill).
-pub const UNDOABLE: [&str; 13] = ["create_event", "set_dark_mode", "set_do_not_disturb", "set_night_light", "set_volume", "set_mute",
-    "set_brightness", "set_wifi", "set_bluetooth", "set_power_mode", "change_setting", "set_reminder", "remember"];
+pub const UNDOABLE: [&str; 13] = [
+    "create_event",
+    "set_dark_mode",
+    "set_do_not_disturb",
+    "set_night_light",
+    "set_volume",
+    "set_mute",
+    "set_brightness",
+    "set_wifi",
+    "set_bluetooth",
+    "set_power_mode",
+    "change_setting",
+    "set_reminder",
+    "remember",
+];
 
 /// What to do with a lookup's result, appended to it so the model keeps the
 /// thread ("found it" → "now use it"). Only for results that found something.
 pub fn next_step(tool: &str) -> Option<&'static str> {
     Some(match tool {
-        "find_files" | "search_file_contents" | "list_folder" =>
-            "(To send one, pass its exact path to send_file; to answer what it says, ask_document with the question.)",
+        "find_files" | "search_file_contents" | "list_folder" => {
+            "(To send one, pass its exact path to send_file; to answer what it says, ask_document with the question.)"
+        }
         "list_devices" => "(To send something, pass one of these names to send_file or send_text.)",
         "list_networks" => "(To connect, pass the network's name to connect_network.)",
         "list_bluetooth" => "(To connect, pass the device's name to connect_bluetooth.)",
-        "find_settings" => "(To change one, call change_setting with its schema, key and the new value.)",
+        "find_settings" => {
+            "(To change one, call change_setting with its schema, key and the new value.)"
+        }
         "get_setting" => "(To change it, call change_setting with a new value.)",
         "list_app_actions" => "(To do one, call run_app_action with the app and the action.)",
         "find_contact" => "(Answer with the details asked for.)",
@@ -104,14 +167,29 @@ pub fn next_step(tool: &str) -> Option<&'static str> {
 /// Names that share a word (or a word's start) with the query, best first, so
 /// an error can say "did you mean" instead of leaving the model stuck.
 pub fn close_to(query: &str, names: &[String], n: usize) -> Vec<String> {
-    let words = |s: &str| norm_name(&s.replace(['_', '-', '.'], " ")).split(' ')
-        .filter(|w| w.chars().count() >= 3).map(String::from).collect::<Vec<_>>();
+    let words = |s: &str| {
+        norm_name(&s.replace(['_', '-', '.'], " "))
+            .split(' ')
+            .filter(|w| w.chars().count() >= 3)
+            .map(String::from)
+            .collect::<Vec<_>>()
+    };
     let q = words(query);
-    let mut scored: Vec<(usize, &String)> = names.iter().map(|name| {
-        let ws = words(name);
-        let score = q.iter().filter(|w| ws.iter().any(|x| x.starts_with(w.as_str()) || w.starts_with(x.as_str()))).count();
-        (score, name)
-    }).filter(|(s, _)| *s > 0).collect();
+    let mut scored: Vec<(usize, &String)> = names
+        .iter()
+        .map(|name| {
+            let ws = words(name);
+            let score = q
+                .iter()
+                .filter(|w| {
+                    ws.iter()
+                        .any(|x| x.starts_with(w.as_str()) || w.starts_with(x.as_str()))
+                })
+                .count();
+            (score, name)
+        })
+        .filter(|(s, _)| *s > 0)
+        .collect();
     scored.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.len().cmp(&b.1.len())));
     let mut out: Vec<String> = vec![];
     for (_, name) in scored {
@@ -124,7 +202,8 @@ pub fn close_to(query: &str, names: &[String], n: usize) -> Vec<String> {
 
 /// The one name the query means: exact, then prefix, then substring, then all words.
 pub fn pick(query: &str, names: &[String], what: &str) -> Result<String, ToolError> {
-    static FILLER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^(my|the|a|an|to|moje?|m[oó]j)\s+").unwrap());
+    static FILLER: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?i)^(my|the|a|an|to|moje?|m[oó]j)\s+").unwrap());
     let q = norm_name(&FILLER.replace(query.trim(), ""));
     if q.is_empty() {
         return Err(format!("say which {what}").into());
@@ -133,25 +212,57 @@ pub fn pick(query: &str, names: &[String], what: &str) -> Result<String, ToolErr
     // Last: any real word ("iphone (jakub)" -> the one device with iphone in its name).
     let words: Vec<&str> = q.split(' ').filter(|w| w.chars().count() >= 3).collect();
     let tests: [&dyn Fn(&str) -> bool; 5] = [
-        &|n| n == q, &|n| n.starts_with(&q), &|n| n.contains(&q),
+        &|n| n == q,
+        &|n| n.starts_with(&q),
+        &|n| n.contains(&q),
         &|n| q.split(' ').all(|w| n.contains(w)),
-        &|n| words.iter().any(|w| n.split(' ').any(|nw| nw.contains(w) || (nw.len() >= 3 && w.contains(nw)))),
+        &|n| {
+            words.iter().any(|w| {
+                n.split(' ')
+                    .any(|nw| nw.contains(w) || (nw.len() >= 3 && w.contains(nw)))
+            })
+        },
     ];
     for test in tests {
-        let mut hits: Vec<&String> = normed.iter().filter(|(_, n)| test(n)).map(|(name, _)| *name).collect();
+        let mut hits: Vec<&String> = normed
+            .iter()
+            .filter(|(_, n)| test(n))
+            .map(|(name, _)| *name)
+            .collect();
         hits.dedup();
         match hits.len() {
             0 => continue,
             1 => return Ok(hits[0].clone()),
-            _ => return Err(format!("more than one {what} matches '{query}': {}",
-                                    hits.iter().take(8).map(|s| s.as_str()).collect::<Vec<_>>().join(", ")).into()),
+            _ => {
+                return Err(format!(
+                    "more than one {what} matches '{query}': {}",
+                    hits.iter()
+                        .take(8)
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+                .into());
+            }
         }
     }
-    let known = if names.is_empty() { "none".to_string() } else { names.iter().take(12).cloned().collect::<Vec<_>>().join(", ") };
+    let known = if names.is_empty() {
+        "none".to_string()
+    } else {
+        names
+            .iter()
+            .take(12)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
     Err(format!("no {what} called '{query}' (known: {known})").into())
 }
 
-fn text(key: &'static str, f: impl Fn(String) -> String + Send + Sync + 'static) -> impl Fn(&Args) -> String + Send + Sync {
+fn text(
+    key: &'static str,
+    f: impl Fn(String) -> String + Send + Sync + 'static,
+) -> impl Fn(&Args) -> String + Send + Sync {
     move |a| f(arg_str(a, key))
 }
 
@@ -387,7 +498,10 @@ tools; the home folder is shared). For building, compiling, git, scripts. Output
 
 /// File name of a path argument, for summaries.
 pub fn base_name(raw: &str) -> String {
-    Path::new(raw).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| raw.to_string())
+    Path::new(raw)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| raw.to_string())
 }
 
 #[cfg(test)]
@@ -396,33 +510,66 @@ mod tests {
 
     #[test]
     fn picking_by_everyday_name() {
-        let names: Vec<String> = ["Wiertless's AirPods Pro", "MX Master 3", "JBL Flip 5"].map(String::from).to_vec();
-        assert_eq!(pick("my airpods", &names, "device").unwrap(), "Wiertless's AirPods Pro");
+        let names: Vec<String> = ["Wiertless's AirPods Pro", "MX Master 3", "JBL Flip 5"]
+            .map(String::from)
+            .to_vec();
+        assert_eq!(
+            pick("my airpods", &names, "device").unwrap(),
+            "Wiertless's AirPods Pro"
+        );
         assert_eq!(pick("mx master", &names, "device").unwrap(), "MX Master 3");
         assert_eq!(pick("flip", &names, "device").unwrap(), "JBL Flip 5");
         assert!(pick("headphones", &names, "device").is_err());
         for t in all() {
             if let Some(hint) = next_step(&t.name) {
-                assert!(all().iter().any(|o| hint.contains(&o.name) || hint.starts_with("(Answer")), "{}: {hint}", t.name);
+                assert!(
+                    all()
+                        .iter()
+                        .any(|o| hint.contains(&o.name) || hint.starts_with("(Answer")),
+                    "{}: {hint}",
+                    t.name
+                );
             }
         }
-        let keys: Vec<String> = ["text-scaling-factor", "font-name", "cursor-size"].map(String::from).to_vec();
+        let keys: Vec<String> = ["text-scaling-factor", "font-name", "cursor-size"]
+            .map(String::from)
+            .to_vec();
         assert_eq!(close_to("text scale", &keys, 3), ["text-scaling-factor"]);
         assert!(close_to("wallpaper", &keys, 3).is_empty());
-        let peers: Vec<String> = ["jakubs-iphone", "framework", "ipad-mini"].map(String::from).to_vec();
-        assert_eq!(pick("iphone (jakub)", &peers, "device").unwrap(), "jakubs-iphone");
-        assert_eq!(pick("Jakub's iPhone", &peers, "device").unwrap(), "jakubs-iphone");
+        let peers: Vec<String> = ["jakubs-iphone", "framework", "ipad-mini"]
+            .map(String::from)
+            .to_vec();
+        assert_eq!(
+            pick("iphone (jakub)", &peers, "device").unwrap(),
+            "jakubs-iphone"
+        );
+        assert_eq!(
+            pick("Jakub's iPhone", &peers, "device").unwrap(),
+            "jakubs-iphone"
+        );
         let peers: Vec<String> = ["iphone-15", "framework"].map(String::from).to_vec();
-        assert_eq!(pick("iphone (jakub)", &peers, "device").unwrap(), "iphone-15");
+        assert_eq!(
+            pick("iphone (jakub)", &peers, "device").unwrap(),
+            "iphone-15"
+        );
         let nets: Vec<String> = ["Home 5G", "Home 2.4"].map(String::from).to_vec();
-        assert!(pick("home", &nets, "network").unwrap_err().0.contains("more than one"));
+        assert!(
+            pick("home", &nets, "network")
+                .unwrap_err()
+                .0
+                .contains("more than one")
+        );
     }
 
     #[test]
     fn same_tools_and_risks_as_the_python_app() {
         let names: Vec<String> = all().into_iter().map(|t| t.name).collect();
         assert_eq!(names.len(), 65, "{names:?}");
-        let risky: Vec<String> = all().into_iter().filter(|t| t.risk == Risk::Confirm).map(|t| t.name).collect();
+        let risky: Vec<String> = all()
+            .into_iter()
+            .filter(|t| t.risk == Risk::Confirm)
+            .map(|t| t.name)
+            .collect();
         assert_eq!(risky, ["run_command"]);
     }
 

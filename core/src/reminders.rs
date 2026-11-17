@@ -29,18 +29,25 @@ fn file() -> std::path::PathBuf {
 }
 
 pub fn now() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 pub fn load() -> Vec<Reminder> {
-    fs::read_to_string(file()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+    fs::read_to_string(file())
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
 }
 
 fn save(all: &[Reminder]) -> Result<(), ToolError> {
     let f = file();
     fs::create_dir_all(f.parent().unwrap()).map_err(|e| ToolError(e.to_string()))?;
     let tmp = f.with_extension("json.tmp");
-    fs::write(&tmp, serde_json::to_string_pretty(all).unwrap()).map_err(|e| ToolError(e.to_string()))?;
+    fs::write(&tmp, serde_json::to_string_pretty(all).unwrap())
+        .map_err(|e| ToolError(e.to_string()))?;
     fs::rename(tmp, f).map_err(|e| ToolError(e.to_string()))
 }
 
@@ -52,7 +59,12 @@ pub fn pending() -> Vec<Reminder> {
 
 pub fn add(due: i64, text: &str) -> Result<Reminder, ToolError> {
     let mut all = load();
-    let r = Reminder { id: format!("r{}{}", now(), all.len()), due, text: text.trim().to_string(), fired: false };
+    let r = Reminder {
+        id: format!("r{}{}", now(), all.len()),
+        due,
+        text: text.trim().to_string(),
+        fired: false,
+    };
     all.push(r.clone());
     save(&all)?;
     Ok(r)
@@ -95,24 +107,54 @@ pub fn remove(id: &str) -> Option<Reminder> {
 /// "17:30", "2026-11-20 09:00", "2026-11-20T09:00", "tomorrow 9:00", "jutro 9:00"
 /// in local time; a bare time already past today means tomorrow.
 pub fn parse_at(text: &str, now: &glib::DateTime) -> Option<glib::DateTime> {
-    static ISO_T: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r"(\d)t(\d)").unwrap());
-    let t = ISO_T.replace_all(&text.trim().to_lowercase(), "$1 $2").replace("  ", " ");
-    const DAYS: [[&str; 2]; 7] = [["monday", "poniedział"], ["tuesday", "wtor"], ["wednesday", "środ"], ["thursday", "czwart"],
-                                  ["friday", "piąt"], ["saturday", "sobot"], ["sunday", "niedziel"]];
-    let t = t.trim_start_matches("on ").trim_start_matches("next ").trim_start_matches("w ").trim_start_matches("we ").to_string();
-    let weekday = |w: &str| DAYS.iter().position(|d| w.starts_with(d[0]) || w.starts_with(d[1]) || (w.len() >= 3 && d[0].starts_with(w)));
+    static ISO_T: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"(\d)t(\d)").unwrap());
+    let t = ISO_T
+        .replace_all(&text.trim().to_lowercase(), "$1 $2")
+        .replace("  ", " ");
+    const DAYS: [[&str; 2]; 7] = [
+        ["monday", "poniedział"],
+        ["tuesday", "wtor"],
+        ["wednesday", "środ"],
+        ["thursday", "czwart"],
+        ["friday", "piąt"],
+        ["saturday", "sobot"],
+        ["sunday", "niedziel"],
+    ];
+    let t = t
+        .trim_start_matches("on ")
+        .trim_start_matches("next ")
+        .trim_start_matches("w ")
+        .trim_start_matches("we ")
+        .to_string();
+    let weekday = |w: &str| {
+        DAYS.iter().position(|d| {
+            w.starts_with(d[0]) || w.starts_with(d[1]) || (w.len() >= 3 && d[0].starts_with(w))
+        })
+    };
     let (day_word, rest) = match t.split_once(' ') {
         Some((d, r)) if ["tomorrow", "jutro"].contains(&d) => (Some(1), r.to_string()),
-        Some((d, r)) if ["today", "dziś", "dzis", "dzisiaj"].contains(&d) => (Some(0), r.to_string()),
+        Some((d, r)) if ["today", "dziś", "dzis", "dzisiaj"].contains(&d) => {
+            (Some(0), r.to_string())
+        }
         Some((d, r)) if let Some(w) = weekday(d) => {
             // The next such day (a week ahead when it's today).
             let ahead = (w as i32 - (now.day_of_week() - 1)).rem_euclid(7);
-            (Some(if ahead == 0 { 7 } else { ahead }), r.trim_start_matches("o ").trim_start_matches("at ").to_string())
+            (
+                Some(if ahead == 0 { 7 } else { ahead }),
+                r.trim_start_matches("o ")
+                    .trim_start_matches("at ")
+                    .to_string(),
+            )
         }
         _ => (None, t.clone()),
     };
     let hm = |s: &str| -> Option<(i32, i32)> {
-        let s = s.trim().trim_end_matches("am").trim_end_matches("pm").trim();
+        let s = s
+            .trim()
+            .trim_end_matches("am")
+            .trim_end_matches("pm")
+            .trim();
         let (h, m) = s.split_once([':', '.']).unwrap_or((s, "0"));
         let (mut h, m): (i32, i32) = (h.trim().parse().ok()?, m.trim().parse().ok()?);
         if text.to_lowercase().contains("pm") && h < 12 {
@@ -120,23 +162,40 @@ pub fn parse_at(text: &str, now: &glib::DateTime) -> Option<glib::DateTime> {
         }
         (h < 24 && m < 60).then_some((h, m))
     };
-    if let Some((date, time)) = rest.split_once(' ') && date.contains('-') {
+    if let Some((date, time)) = rest.split_once(' ')
+        && date.contains('-')
+    {
         let mut d = date.split('-').map(|p| p.parse::<i32>().ok());
         let (y, mo, da) = (d.next()??, d.next()??, d.next()??);
         let (h, m) = hm(time)?;
         return glib::DateTime::from_local(y, mo, da, h, m, 0.0).ok();
     }
     let (h, m) = hm(&rest)?;
-    let today = glib::DateTime::from_local(now.year(), now.month(), now.day_of_month(), h, m, 0.0).ok()?;
-    let plus = day_word.unwrap_or(if today.to_unix() <= now.to_unix() { 1 } else { 0 });
+    let today =
+        glib::DateTime::from_local(now.year(), now.month(), now.day_of_month(), h, m, 0.0).ok()?;
+    let plus = day_word.unwrap_or(if today.to_unix() <= now.to_unix() {
+        1
+    } else {
+        0
+    });
     today.add_days(plus).ok()
 }
 
 fn when(due: i64) -> String {
-    let Ok(d) = glib::DateTime::from_unix_local(due) else { return String::new() };
-    let today = glib::DateTime::now_local().ok().map(|n| (n.year(), n.day_of_year()));
-    let fmt = if today == Some((d.year(), d.day_of_year())) { "%H:%M" } else { "%a %e %b, %H:%M" };
-    d.format(fmt).map(|s| s.to_string().replace("  ", " ")).unwrap_or_default()
+    let Ok(d) = glib::DateTime::from_unix_local(due) else {
+        return String::new();
+    };
+    let today = glib::DateTime::now_local()
+        .ok()
+        .map(|n| (n.year(), n.day_of_year()));
+    let fmt = if today == Some((d.year(), d.day_of_year())) {
+        "%H:%M"
+    } else {
+        "%a %e %b, %H:%M"
+    };
+    d.format(fmt)
+        .map(|s| s.to_string().replace("  ", " "))
+        .unwrap_or_default()
 }
 
 fn changed(ctx: &Context) {
@@ -148,13 +207,23 @@ fn changed(ctx: &Context) {
 /// set_reminder: in_minutes or at; a timer is a reminder too.
 pub fn set_reminder(ctx: &Context, args: &Args) -> ToolResult {
     let text = arg_str(args, "text");
-    let text = if text.trim().is_empty() { "Timer".to_string() } else { text };
+    let text = if text.trim().is_empty() {
+        "Timer".to_string()
+    } else {
+        text
+    };
     let now_dt = glib::DateTime::now_local().map_err(|_| ToolError("no local time".into()))?;
-    let minutes = args.get("in_minutes").and_then(|v| v.as_f64().or_else(|| v.as_str()?.trim().parse().ok()));
+    let minutes = args
+        .get("in_minutes")
+        .and_then(|v| v.as_f64().or_else(|| v.as_str()?.trim().parse().ok()));
     let due = match (minutes, arg_str(args, "at")) {
         (Some(m), _) if m > 0.0 => now() + (m * 60.0).round() as i64,
         (_, at) if !at.trim().is_empty() => parse_at(&at, &now_dt)
-            .ok_or_else(|| ToolError(format!("couldn't read the time '{at}': use HH:MM, YYYY-MM-DD HH:MM, or in_minutes")))?
+            .ok_or_else(|| {
+                ToolError(format!(
+                    "couldn't read the time '{at}': use HH:MM, YYYY-MM-DD HH:MM, or in_minutes"
+                ))
+            })?
             .to_unix(),
         _ => return Err("say when: in_minutes, or at (HH:MM or YYYY-MM-DD HH:MM)".into()),
     };
@@ -170,22 +239,36 @@ pub fn set_reminder(ctx: &Context, args: &Args) -> ToolResult {
         Ok("the reminder is cancelled.".into())
     });
     let mins = (due - now() + 30) / 60;
-    let left = if mins < 60 { format!("in {mins} min") } else { format!("at {}", when(due)) };
+    let left = if mins < 60 {
+        format!("in {mins} min")
+    } else {
+        format!("at {}", when(due))
+    };
     Ok(format!("Reminder set {left} ({}): {}", when(due), r.text))
 }
 
 pub fn list_reminders(_: &Context, _: &Args) -> ToolResult {
     let p = pending();
-    Ok(if p.is_empty() { "No reminders.".into() } else {
-        p.iter().map(|r| format!("{}: {}", when(r.due), r.text)).collect::<Vec<_>>().join("\n")
+    Ok(if p.is_empty() {
+        "No reminders.".into()
+    } else {
+        p.iter()
+            .map(|r| format!("{}: {}", when(r.due), r.text))
+            .collect::<Vec<_>>()
+            .join("\n")
     })
 }
 
 pub fn cancel_reminder(ctx: &Context, args: &Args) -> ToolResult {
     let which = arg_str(args, "which");
     let p = pending();
-    let names: Vec<String> = p.iter().map(|r| format!("{} {}", when(r.due), r.text)).collect();
-    let pick = if p.len() == 1 && which.trim().is_empty() { names[0].clone() } else {
+    let names: Vec<String> = p
+        .iter()
+        .map(|r| format!("{} {}", when(r.due), r.text))
+        .collect();
+    let pick = if p.len() == 1 && which.trim().is_empty() {
+        names[0].clone()
+    } else {
         crate::tools::pick(&which, &names, "reminder")?
     };
     let i = names.iter().position(|n| *n == pick).unwrap();
@@ -209,15 +292,27 @@ mod tests {
         let now = glib::DateTime::from_local(2026, 11, 15, 16, 0, 0.0).unwrap();
         let at = |s: &str| parse_at(s, &now).map(|d| d.format("%F %R").unwrap().to_string());
         assert_eq!(at("17:30").as_deref(), Some("2026-11-15 17:30"));
-        assert_eq!(at("9:00").as_deref(), Some("2026-11-16 09:00"), "already past today");
+        assert_eq!(
+            at("9:00").as_deref(),
+            Some("2026-11-16 09:00"),
+            "already past today"
+        );
         assert_eq!(at("tomorrow 9:00").as_deref(), Some("2026-11-16 09:00"));
         assert_eq!(at("jutro 9.15").as_deref(), Some("2026-11-16 09:15"));
         assert_eq!(at("2026-11-20 08:05").as_deref(), Some("2026-11-20 08:05"));
         assert_eq!(at("2026-11-20T08:05").as_deref(), Some("2026-11-20 08:05"));
         assert_eq!(at("5pm").as_deref(), Some("2026-11-15 17:00"));
-        assert_eq!(at("friday 13:00").as_deref(), Some("2026-11-20 13:00"), "2026-11-15 is a Sunday");
+        assert_eq!(
+            at("friday 13:00").as_deref(),
+            Some("2026-11-20 13:00"),
+            "2026-11-15 is a Sunday"
+        );
         assert_eq!(at("w piątek o 13:00").as_deref(), Some("2026-11-20 13:00"));
-        assert_eq!(at("sunday 10:00").as_deref(), Some("2026-11-22 10:00"), "today's weekday means next week");
+        assert_eq!(
+            at("sunday 10:00").as_deref(),
+            Some("2026-11-22 10:00"),
+            "today's weekday means next week"
+        );
         assert!(at("soon").is_none());
     }
 
@@ -225,7 +320,11 @@ mod tests {
     fn set_fire_snooze_cancel() {
         let _h = temp_home();
         let ctx = Context::default();
-        let out = set_reminder(&ctx, &args(json!({"text": "take the pizza out", "in_minutes": 20}))).unwrap();
+        let out = set_reminder(
+            &ctx,
+            &args(json!({"text": "take the pizza out", "in_minutes": 20})),
+        )
+        .unwrap();
         assert!(out.contains("in 20 min") && out.contains("pizza"), "{out}");
         set_reminder(&ctx, &args(json!({"in_minutes": "5"}))).unwrap();
         assert!(set_reminder(&ctx, &args(json!({"text": "x"}))).is_err());
@@ -240,7 +339,15 @@ mod tests {
         assert!(take_due().is_empty());
         assert!(snooze(&fired[0].id, SNOOZE_MINUTES).is_some_and(|r| !r.fired && r.due > now()));
         assert_eq!(pending().len(), 2);
-        assert!(cancel_reminder(&ctx, &args(json!({"which": "pizza"}))).unwrap().contains("pizza"));
-        assert!(list_reminders(&ctx, &Args::new()).unwrap().contains("Timer"));
+        assert!(
+            cancel_reminder(&ctx, &args(json!({"which": "pizza"})))
+                .unwrap()
+                .contains("pizza")
+        );
+        assert!(
+            list_reminders(&ctx, &Args::new())
+                .unwrap()
+                .contains("Timer")
+        );
     }
 }

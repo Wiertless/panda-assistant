@@ -52,11 +52,19 @@ fn maybe_null<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Option<f6
 }
 
 pub fn variant(name: &str) -> Result<Variant, String> {
-    let all: std::collections::HashMap<String, Variant> = serde_json::from_str(VARIANTS).map_err(|e| format!("variants: {e}"))?;
+    let all: std::collections::HashMap<String, Variant> =
+        serde_json::from_str(VARIANTS).map_err(|e| format!("variants: {e}"))?;
     all.get(name).cloned().ok_or_else(|| {
         let mut names: Vec<&String> = all.keys().collect();
         names.sort();
-        format!("no variant called {name} (variants: {})", names.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "))
+        format!(
+            "no variant called {name} (variants: {})",
+            names
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
     })
 }
 const MACHINE: &str = "About this computer: Framework Laptop 13, AMD Ryzen AI 5 340 with an NPU, 16 GB memory, \
@@ -145,11 +153,16 @@ fn text_of(v: &Value) -> String {
 }
 
 fn any_in(want: &str, have: &str) -> bool {
-    want.to_lowercase().split('|').any(|w| have.contains(w.trim()))
+    want.to_lowercase()
+        .split('|')
+        .any(|w| have.contains(w.trim()))
 }
 
 fn args_match(want: &serde_json::Map<String, Value>, have: &Args) -> bool {
-    want.iter().all(|(k, v)| have.get(k).is_some_and(|h| any_in(&text_of(v), &text_of(h))))
+    want.iter().all(|(k, v)| {
+        have.get(k)
+            .is_some_and(|h| any_in(&text_of(v), &text_of(h)))
+    })
 }
 
 /// What a stand-in tool answers for these arguments.
@@ -161,7 +174,9 @@ fn stub_result(stub: Option<&Stub>, args: &Args) -> Result<String, ToolError> {
             let rule = rules.iter().find(|r| args_match(&r.when, args));
             match rule {
                 Some(Rule { error: Some(e), .. }) => Err(ToolError(e.clone())),
-                Some(Rule { result: Some(r), .. }) => Ok(r.clone()),
+                Some(Rule {
+                    result: Some(r), ..
+                }) => Ok(r.clone()),
                 _ => Ok("Done.".into()),
             }
         }
@@ -176,33 +191,71 @@ pub fn judge(s: &Scenario, calls: &[(String, Args)], answer: &str) -> Result<(),
     let mut next = 0;
     for want in &s.expect {
         let names: Vec<&str> = want.tool.split('|').collect();
-        let fits = |(n, a): &(String, Args)| names.contains(&n.as_str()) && args_match(&want.args, a);
+        let fits =
+            |(n, a): &(String, Args)| names.contains(&n.as_str()) && args_match(&want.args, a);
         let from = if s.unordered { 0 } else { next };
         match calls[from..].iter().position(fits) {
             Some(i) => next = from + i + 1,
-            None if calls.iter().any(fits) => return Err(format!("called {} too early, before the step it needs", want.tool)),
+            None if calls.iter().any(fits) => {
+                return Err(format!(
+                    "called {} too early, before the step it needs",
+                    want.tool
+                ));
+            }
             None => {
-                let tried: Vec<String> = calls.iter().filter(|(n, _)| names.contains(&n.as_str()))
-                    .map(|(n, a)| format!("{n}{}", Value::Object(a.clone()))).collect();
-                return Err(if tried.is_empty() { format!("never called {}", want.tool) } else {
-                    format!("wanted {}{} but got {}", want.tool, Value::Object(want.args.clone()), tried.join(", "))
+                let tried: Vec<String> = calls
+                    .iter()
+                    .filter(|(n, _)| names.contains(&n.as_str()))
+                    .map(|(n, a)| format!("{n}{}", Value::Object(a.clone())))
+                    .collect();
+                return Err(if tried.is_empty() {
+                    format!("never called {}", want.tool)
+                } else {
+                    format!(
+                        "wanted {}{} but got {}",
+                        want.tool,
+                        Value::Object(want.args.clone()),
+                        tried.join(", ")
+                    )
                 });
             }
         }
     }
     for want in &s.also {
         let names: Vec<&str> = want.tool.split('|').collect();
-        if !calls.iter().any(|(n, a)| names.contains(&n.as_str()) && args_match(&want.args, a)) {
-            return Err(format!("never called {}{}", want.tool, Value::Object(want.args.clone())));
+        if !calls
+            .iter()
+            .any(|(n, a)| names.contains(&n.as_str()) && args_match(&want.args, a))
+        {
+            return Err(format!(
+                "never called {}{}",
+                want.tool,
+                Value::Object(want.args.clone())
+            ));
         }
     }
-    let forbid: Vec<&str> = s.forbid.iter().map(String::as_str).chain(["run_command"]).collect();
-    if let Some((n, _)) = calls.iter().find(|(n, _)| forbid.contains(&n.as_str()) && !s.expect.iter().chain(&s.also).any(|e| e.tool.contains(n.as_str()))) {
+    let forbid: Vec<&str> = s
+        .forbid
+        .iter()
+        .map(String::as_str)
+        .chain(["run_command"])
+        .collect();
+    if let Some((n, _)) = calls.iter().find(|(n, _)| {
+        forbid.contains(&n.as_str())
+            && !s
+                .expect
+                .iter()
+                .chain(&s.also)
+                .any(|e| e.tool.contains(n.as_str()))
+    }) {
         return Err(format!("called {n}, which it shouldn't"));
     }
     let lower = answer.to_lowercase();
     if let Some(w) = s.answer.iter().find(|w| !any_in(w, &lower)) {
-        return Err(format!("the answer doesn't mention {w}: {}", answer.chars().take(120).collect::<String>()));
+        return Err(format!(
+            "the answer doesn't mention {w}: {}",
+            answer.chars().take(120).collect::<String>()
+        ));
     }
     Ok(())
 }
@@ -217,19 +270,37 @@ impl Callbacks for Quiet {
 /// Run one scenario against a model.
 pub fn run(client: &Arc<FlmClient>, model: &str, sees: bool, v: &Variant, s: &Scenario) -> Outcome {
     let calls: Arc<Mutex<Vec<(String, Args)>>> = Arc::default();
-    let (log, stubs, descriptions) = (calls.clone(), Arc::new(s.stubs.clone()), Arc::new(v.descriptions.clone()));
+    let (log, stubs, descriptions) = (
+        calls.clone(),
+        Arc::new(s.stubs.clone()),
+        Arc::new(v.descriptions.clone()),
+    );
     let compact = v.tool_set.as_deref() == Some("compact");
     let source = Arc::new(move || {
-        let narrow: Vec<Tool> = crate::tools::all().into_iter().map(|t| {
-            let (log, stubs, name) = (log.clone(), stubs.clone(), t.name.clone());
-            let description = descriptions.get(&t.name).cloned().unwrap_or(t.description.clone());
-            Tool { description, run: Arc::new(move |_, args: &Args| {
-                log.lock().unwrap().push((name.clone(), args.clone()));
-                stub_result(stubs.get(&name), args)
-            }), ..t }
-        }).collect();
+        let narrow: Vec<Tool> = crate::tools::all()
+            .into_iter()
+            .map(|t| {
+                let (log, stubs, name) = (log.clone(), stubs.clone(), t.name.clone());
+                let description = descriptions
+                    .get(&t.name)
+                    .cloned()
+                    .unwrap_or(t.description.clone());
+                Tool {
+                    description,
+                    run: Arc::new(move |_, args: &Args| {
+                        log.lock().unwrap().push((name.clone(), args.clone()));
+                        stub_result(stubs.get(&name), args)
+                    }),
+                    ..t
+                }
+            })
+            .collect();
         // The broad tools forward to the narrow stand-ins, so the judging stays the same.
-        if compact { crate::tools::compact::compact(narrow) } else { narrow }
+        if compact {
+            crate::tools::compact::compact(narrow)
+        } else {
+            narrow
+        }
     });
     let mut agent = Agent::new(client.clone(), model, source);
     if let Some(t) = v.tool_temperature {
@@ -246,16 +317,27 @@ pub fn run(client: &Arc<FlmClient>, model: &str, sees: bool, v: &Variant, s: &Sc
         agent.examples = false; // they name the narrow tools
     }
     let known = s.known.as_deref().unwrap_or(KNOWN);
-    agent.machine = Some(if v.known.unwrap_or(true) { format!("{MACHINE}\n{known}") } else { MACHINE.into() });
+    agent.machine = Some(if v.known.unwrap_or(true) {
+        format!("{MACHINE}\n{known}")
+    } else {
+        MACHINE.into()
+    });
     let facts: Vec<String> = s.memory.iter().map(|f| format!("- {f}")).collect();
-    agent.notes = Some(if facts.is_empty() { String::new() } else { format!("What you remember about the user:\n{}", facts.join("\n")) });
+    agent.notes = Some(if facts.is_empty() {
+        String::new()
+    } else {
+        format!("What you remember about the user:\n{}", facts.join("\n"))
+    });
     agent.sees = Arc::new(move |_| sees);
     let mut offered: Vec<&str> = vec![crate::tools::groups::CORE];
     for p in s.before.iter().chain([&s.prompt]) {
         offered.extend(crate::tools::groups::groups_for(p));
     }
-    let routed = s.expect.iter().chain(&s.also)
-        .all(|e| e.tool.split('|').any(|t| offered.contains(&crate::tools::groups::group_of(t))));
+    let routed = s.expect.iter().chain(&s.also).all(|e| {
+        e.tool
+            .split('|')
+            .any(|t| offered.contains(&crate::tools::groups::group_of(t)))
+    });
     let started = Instant::now();
     let mut result = Ok(());
     for earlier in &s.before {
@@ -269,14 +351,27 @@ pub fn run(client: &Arc<FlmClient>, model: &str, sees: bool, v: &Variant, s: &Sc
         result = agent.ask(&s.prompt, &Quiet, &[]);
     }
     let seconds = started.elapsed().as_secs_f64();
-    let answer = agent.messages.iter().rev().find(|m| m["role"] == "assistant" && m["content"].as_str().is_some_and(|c| !c.is_empty()))
-        .and_then(|m| m["content"].as_str()).unwrap_or("").to_string();
+    let answer = agent
+        .messages
+        .iter()
+        .rev()
+        .find(|m| m["role"] == "assistant" && m["content"].as_str().is_some_and(|c| !c.is_empty()))
+        .and_then(|m| m["content"].as_str())
+        .unwrap_or("")
+        .to_string();
     let calls = calls.lock().unwrap()[skip..].to_vec();
     let verdict = match result {
         Err(e) => Err(format!("request failed: {}", e.message)),
         Ok(()) => judge(s, &calls, &answer),
     };
-    Outcome { name: s.name.clone(), passed: verdict.is_ok(), routed, why: verdict.err().unwrap_or_default(), calls, seconds }
+    Outcome {
+        name: s.name.clone(),
+        passed: verdict.is_ok(),
+        routed,
+        why: verdict.err().unwrap_or_default(),
+        calls,
+        seconds,
+    }
 }
 
 pub fn load(path: Option<&str>) -> Result<Vec<Scenario>, String> {
@@ -286,19 +381,43 @@ pub fn load(path: Option<&str>) -> Result<Vec<Scenario>, String> {
     };
     let base: Vec<Scenario> = serde_json::from_str(&text).map_err(|e| format!("scenarios: {e}"))?;
     // Each paraphrase is the same scenario in other words.
-    Ok(base.into_iter().flat_map(|s| {
-        let others: Vec<Scenario> = s.paraphrases.iter().enumerate()
-            .map(|(i, p)| Scenario { name: format!("{} ~{}", s.name, i + 2), prompt: p.clone(), paraphrases: vec![], ..s.clone() })
-            .collect();
-        std::iter::once(Scenario { paraphrases: vec![], ..s }).chain(others)
-    }).collect())
+    Ok(base
+        .into_iter()
+        .flat_map(|s| {
+            let others: Vec<Scenario> = s
+                .paraphrases
+                .iter()
+                .enumerate()
+                .map(|(i, p)| Scenario {
+                    name: format!("{} ~{}", s.name, i + 2),
+                    prompt: p.clone(),
+                    paraphrases: vec![],
+                    ..s.clone()
+                })
+                .collect();
+            std::iter::once(Scenario {
+                paraphrases: vec![],
+                ..s
+            })
+            .chain(others)
+        })
+        .collect())
 }
 
 /// `assistantd --eval [--url URL] [--model M] [--variant NAME] [--repeat N] [--scenarios FILE] [--only NAME] [--sees] [--json FILE]`
 pub fn main(args: &[String]) -> i32 {
-    let opt = |k: &str| args.iter().position(|a| a == k).and_then(|i| args.get(i + 1)).cloned();
+    let opt = |k: &str| {
+        args.iter()
+            .position(|a| a == k)
+            .and_then(|i| args.get(i + 1))
+            .cloned()
+    };
     let url = opt("--url");
-    let client = Arc::new(url.as_deref().map(FlmClient::new).unwrap_or_else(FlmClient::from_env));
+    let client = Arc::new(
+        url.as_deref()
+            .map(FlmClient::new)
+            .unwrap_or_else(FlmClient::from_env),
+    );
     let cfg = crate::service::Config::load();
     let model = opt("--model").unwrap_or(cfg.model);
     let mut scenarios = match load(opt("--scenarios").as_deref()) {
@@ -316,7 +435,11 @@ pub fn main(args: &[String]) -> i32 {
     }
     if url.is_none() {
         // The NPU: start FastFlowLM with this model, as the service would.
-        if let Err(e) = client.ensure_server(&model, Some(cfg.ctx_len), std::time::Duration::from_secs(300)) {
+        if let Err(e) = client.ensure_server(
+            &model,
+            Some(cfg.ctx_len),
+            std::time::Duration::from_secs(300),
+        ) {
             eprintln!("couldn't start FastFlowLM with {model}: {}", e.message);
             return 2;
         }
@@ -331,27 +454,60 @@ pub fn main(args: &[String]) -> i32 {
         }
     };
     // Repeats turn one lucky or unlucky answer into a pass rate.
-    let repeat: usize = opt("--repeat").and_then(|n| n.parse().ok()).unwrap_or(1).max(1);
-    println!("Evaluating {model} ({variant_name}: {}) on {} scenarios, {repeat}x", v.about, scenarios.len());
+    let repeat: usize = opt("--repeat")
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(1)
+        .max(1);
+    println!(
+        "Evaluating {model} ({variant_name}: {}) on {} scenarios, {repeat}x",
+        v.about,
+        scenarios.len()
+    );
     let mut rows = vec![];
     for s in &scenarios {
-        let runs: Vec<Outcome> = (0..repeat).map(|_| run(&client, &model, sees, &v, s)).collect();
+        let runs: Vec<Outcome> = (0..repeat)
+            .map(|_| run(&client, &model, sees, &v, s))
+            .collect();
         let ok = runs.iter().filter(|o| o.passed).count();
         let secs = runs.iter().map(|o| o.seconds).sum::<f64>() / repeat as f64;
         let shown = runs.iter().find(|o| !o.passed).unwrap_or(&runs[0]);
         let calls: Vec<&str> = shown.calls.iter().map(|(n, _)| n.as_str()).collect();
-        let mark = if ok == repeat { "✓".to_string() } else if ok == 0 { "✗".to_string() } else { format!("{ok}/{repeat}") };
-        let routing = if shown.routed { "" } else { " [tool not offered by routing]" };
-        println!("{mark:>3} {:<24} {secs:>5.1}s  {}{}", s.name,
-                 if calls.is_empty() { "(no tools)".into() } else { calls.join(" → ") },
-                 if shown.passed { String::new() } else { format!("\n    {}{routing}", shown.why) });
+        let mark = if ok == repeat {
+            "✓".to_string()
+        } else if ok == 0 {
+            "✗".to_string()
+        } else {
+            format!("{ok}/{repeat}")
+        };
+        let routing = if shown.routed {
+            ""
+        } else {
+            " [tool not offered by routing]"
+        };
+        println!(
+            "{mark:>3} {:<24} {secs:>5.1}s  {}{}",
+            s.name,
+            if calls.is_empty() {
+                "(no tools)".into()
+            } else {
+                calls.join(" → ")
+            },
+            if shown.passed {
+                String::new()
+            } else {
+                format!("\n    {}{routing}", shown.why)
+            }
+        );
         rows.push((s.name.clone(), ok, secs, runs, s.tags.clone()));
     }
     let passed: usize = rows.iter().map(|r| r.1).sum();
     let total = rows.len() * repeat;
     let secs: f64 = rows.iter().map(|r| r.2).sum();
-    println!("{model}: {passed}/{total} passed ({:.0}%), {:.1}s per request on average",
-             100.0 * passed as f64 / total.max(1) as f64, secs / rows.len().max(1) as f64);
+    println!(
+        "{model}: {passed}/{total} passed ({:.0}%), {:.1}s per request on average",
+        100.0 * passed as f64 / total.max(1) as f64,
+        secs / rows.len().max(1) as f64
+    );
     // Per capability: where it's weak, not just how much.
     let mut by_tag: std::collections::BTreeMap<String, (usize, usize)> = Default::default();
     for (_, ok, _, _, tags) in &rows {
@@ -361,7 +517,10 @@ pub fn main(args: &[String]) -> i32 {
             e.1 += repeat;
         }
     }
-    let tag_line: Vec<String> = by_tag.iter().map(|(t, (ok, n))| format!("{t} {ok}/{n}")).collect();
+    let tag_line: Vec<String> = by_tag
+        .iter()
+        .map(|(t, (ok, n))| format!("{t} {ok}/{n}"))
+        .collect();
     println!("by capability: {}", tag_line.join(", "));
     // Paraphrases of one scenario are one thing: a cluster passes when all its wordings do.
     let mut clusters: std::collections::BTreeMap<String, bool> = Default::default();
@@ -371,8 +530,14 @@ pub fn main(args: &[String]) -> i32 {
         *all &= *ok == repeat;
     }
     let clusters_ok = clusters.values().filter(|v| **v).count();
-    let unrouted = rows.iter().filter(|r| r.3.iter().any(|o| !o.routed)).count();
-    println!("scenarios fully passed: {clusters_ok}/{}; prompts whose tool routing didn't offer: {unrouted}", clusters.len());
+    let unrouted = rows
+        .iter()
+        .filter(|r| r.3.iter().any(|o| !o.routed))
+        .count();
+    println!(
+        "scenarios fully passed: {clusters_ok}/{}; prompts whose tool routing didn't offer: {unrouted}",
+        clusters.len()
+    );
     if let Some(path) = opt("--json") {
         let report = json!({"model": model, "variant": variant_name, "passed": passed, "total": total, "repeat": repeat,
             "clusters_passed": clusters_ok, "clusters": clusters.len(), "unrouted": unrouted,
@@ -401,10 +566,19 @@ mod tests {
     #[test]
     fn paraphrases_become_scenarios() {
         let all = load(None).unwrap();
-        let dark: Vec<&Scenario> = all.iter().filter(|s| s.name.starts_with("dark mode ~") || s.name == "dark mode").collect();
+        let dark: Vec<&Scenario> = all
+            .iter()
+            .filter(|s| s.name.starts_with("dark mode ~") || s.name == "dark mode")
+            .collect();
         assert!(dark.len() >= 3);
-        assert!(dark.iter().all(|s| s.expect[0].tool == "set_dark_mode" && s.tags == ["single"]));
-        assert!(all.iter().all(|s| !s.tags.is_empty()), "every scenario says what it tests");
+        assert!(
+            dark.iter()
+                .all(|s| s.expect[0].tool == "set_dark_mode" && s.tags == ["single"])
+        );
+        assert!(
+            all.iter().all(|s| !s.tags.is_empty()),
+            "every scenario says what it tests"
+        );
     }
 
     #[test]
@@ -412,7 +586,12 @@ mod tests {
         let names: Vec<String> = crate::tools::all().into_iter().map(|t| t.name).collect();
         for s in load(None).unwrap() {
             for e in &s.expect {
-                assert!(e.tool.split('|').all(|t| names.iter().any(|n| n == t)), "{}: {}", s.name, e.tool);
+                assert!(
+                    e.tool.split('|').all(|t| names.iter().any(|n| n == t)),
+                    "{}: {}",
+                    s.name,
+                    e.tool
+                );
             }
             for t in s.stubs.keys() {
                 assert!(names.contains(t), "{}: stub for {t}", s.name);
@@ -423,8 +602,15 @@ mod tests {
     #[test]
     fn variants_load() {
         let bare = variant("no-harness").unwrap();
-        assert_eq!((bare.tool_temperature, bare.examples, bare.nudge), (Some(None), Some(false), Some(false)));
-        assert_eq!(variant("baseline").unwrap().tool_temperature, None, "absent keeps the default");
+        assert_eq!(
+            (bare.tool_temperature, bare.examples, bare.nudge),
+            (Some(None), Some(false), Some(false))
+        );
+        assert_eq!(
+            variant("baseline").unwrap().tool_temperature,
+            None,
+            "absent keeps the default"
+        );
         assert!(variant("nope").unwrap_err().contains("baseline"));
     }
 
@@ -433,28 +619,83 @@ mod tests {
         let s: Scenario = serde_json::from_value(json!({"name": "x", "prompt": "p",
             "expect": [{"tool": "save_screenshot"}, {"tool": "send_file", "args": {"device": "jakubs-iphone"}}], "answer": ["sent|wysłan"]})).unwrap();
         let shot = ("save_screenshot".to_string(), args(json!({})));
-        let wrong = ("send_file".to_string(), args(json!({"device": "iPhone (Jakub)"})));
-        let right = ("send_file".to_string(), args(json!({"device": "Jakubs-iPhone", "path": "~/a.png"})));
-        assert!(judge(&s, &[shot.clone(), wrong.clone(), right.clone()], "Sent it.").is_ok());
-        assert!(judge(&s, &[shot.clone(), wrong.clone()], "Sent").unwrap_err().contains("wanted send_file"));
-        assert!(judge(&s, &[right.clone(), shot.clone()], "Sent").unwrap_err().contains("too early"), "order counts");
+        let wrong = (
+            "send_file".to_string(),
+            args(json!({"device": "iPhone (Jakub)"})),
+        );
+        let right = (
+            "send_file".to_string(),
+            args(json!({"device": "Jakubs-iPhone", "path": "~/a.png"})),
+        );
+        assert!(
+            judge(
+                &s,
+                &[shot.clone(), wrong.clone(), right.clone()],
+                "Sent it."
+            )
+            .is_ok()
+        );
+        assert!(
+            judge(&s, &[shot.clone(), wrong.clone()], "Sent")
+                .unwrap_err()
+                .contains("wanted send_file")
+        );
+        assert!(
+            judge(&s, &[right.clone(), shot.clone()], "Sent")
+                .unwrap_err()
+                .contains("too early"),
+            "order counts"
+        );
         let mut any = s.clone();
         any.unordered = true;
-        assert!(judge(&any, &[right.clone(), shot.clone()], "Sent").is_ok(), "unless it doesn't");
-        assert!(judge(&s, &[shot, right], "Done!").unwrap_err().contains("doesn't mention"));
-        let rules = Stub::Rules(serde_json::from_value(json!([{"when": {"device": "jakubs"}, "result": "ok"}, {"error": "nope"}])).unwrap());
-        assert_eq!(stub_result(Some(&rules), &args(json!({"device": "jakubs-iphone"}))).unwrap(), "ok");
-        assert_eq!(stub_result(Some(&rules), &args(json!({"device": "x"}))).unwrap_err().0, "nope");
+        assert!(
+            judge(&any, &[right.clone(), shot.clone()], "Sent").is_ok(),
+            "unless it doesn't"
+        );
+        assert!(
+            judge(&s, &[shot, right], "Done!")
+                .unwrap_err()
+                .contains("doesn't mention")
+        );
+        let rules = Stub::Rules(
+            serde_json::from_value(
+                json!([{"when": {"device": "jakubs"}, "result": "ok"}, {"error": "nope"}]),
+            )
+            .unwrap(),
+        );
+        assert_eq!(
+            stub_result(Some(&rules), &args(json!({"device": "jakubs-iphone"}))).unwrap(),
+            "ok"
+        );
+        assert_eq!(
+            stub_result(Some(&rules), &args(json!({"device": "x"})))
+                .unwrap_err()
+                .0,
+            "nope"
+        );
     }
 
     #[test]
     fn a_run_against_a_server() {
         let flm = FakeFlm::start(vec![
-            (200, crate::fake_flm::tool_reply("set_dark_mode", r#"{"enabled": true}"#, "c1")),
+            (
+                200,
+                crate::fake_flm::tool_reply("set_dark_mode", r#"{"enabled": true}"#, "c1"),
+            ),
             (200, crate::fake_flm::text_reply("Dark mode is on.")),
         ]);
-        let s = load(None).unwrap().into_iter().find(|s| s.name == "dark mode").unwrap();
-        let o = run(&Arc::new(FlmClient::new(&flm.url)), "test", false, &variant("baseline").unwrap(), &s);
+        let s = load(None)
+            .unwrap()
+            .into_iter()
+            .find(|s| s.name == "dark mode")
+            .unwrap();
+        let o = run(
+            &Arc::new(FlmClient::new(&flm.url)),
+            "test",
+            false,
+            &variant("baseline").unwrap(),
+            &s,
+        );
         assert!(o.passed, "{}", o.why);
         assert_eq!(o.calls[0].0, "set_dark_mode");
     }

@@ -24,8 +24,11 @@ fn args(v: serde_json::Value) -> Args {
 
 #[test]
 fn asks_and_opens_other_apps_search() {
-    let Ok(mut daemon) = Command::new("dbus-daemon").args(["--session", "--nofork", "--print-address=1"])
-        .stdout(Stdio::piped()).spawn() else {
+    let Ok(mut daemon) = Command::new("dbus-daemon")
+        .args(["--session", "--nofork", "--print-address=1"])
+        .stdout(Stdio::piped())
+        .spawn()
+    else {
         eprintln!("no dbus-daemon, skipping");
         return;
     };
@@ -51,12 +54,20 @@ fn asks_and_opens_other_apps_search() {
         let ctx = glib::MainContext::new();
         ctx.with_thread_default(|| {
             let bus = gio::bus_get_sync(gio::BusType::Session, None::<&gio::Cancellable>).unwrap();
-            let iface = gio::DBusNodeInfo::for_xml(XML).unwrap().lookup_interface("org.gnome.Shell.SearchProvider2").unwrap();
-            let _reg = bus.register_object("/org/example/Calc/SearchProvider", &iface)
+            let iface = gio::DBusNodeInfo::for_xml(XML)
+                .unwrap()
+                .lookup_interface("org.gnome.Shell.SearchProvider2")
+                .unwrap();
+            let _reg = bus
+                .register_object("/org/example/Calc/SearchProvider", &iface)
                 .method_call(move |_, _, _, _, method, params, inv| match method {
                     "GetInitialResultSet" => {
                         let (terms,): (Vec<String>,) = params.get().unwrap();
-                        let ids: Vec<String> = if terms == ["2+2"] { vec!["2+2".into()] } else { vec![] };
+                        let ids: Vec<String> = if terms == ["2+2"] {
+                            vec!["2+2".into()]
+                        } else {
+                            vec![]
+                        };
                         inv.return_value(Some(&(ids,).to_variant()));
                     }
                     "GetResultMetas" => {
@@ -64,7 +75,10 @@ fn asks_and_opens_other_apps_search() {
                         d.insert("id", "2+2");
                         d.insert("name", "4");
                         d.insert("description", "2+2");
-                        let metas = glib::Variant::array_from_iter_with_type(glib::VariantTy::VARDICT, [d.end()]);
+                        let metas = glib::Variant::array_from_iter_with_type(
+                            glib::VariantTy::VARDICT,
+                            [d.end()],
+                        );
                         inv.return_value(Some(&glib::Variant::tuple_from_iter([metas])));
                     }
                     "ActivateResult" => {
@@ -73,24 +87,48 @@ fn asks_and_opens_other_apps_search() {
                     }
                     _ => inv.return_value(None),
                 })
-                .build().unwrap();
-            bus.call_sync(Some("org.freedesktop.DBus"), "/org/freedesktop/DBus", "org.freedesktop.DBus", "RequestName",
-                          Some(&("org.example.Calc.SearchProvider", 4u32).to_variant()), None, gio::DBusCallFlags::NONE,
-                          5000, None::<&gio::Cancellable>).unwrap();
+                .build()
+                .unwrap();
+            bus.call_sync(
+                Some("org.freedesktop.DBus"),
+                "/org/freedesktop/DBus",
+                "org.freedesktop.DBus",
+                "RequestName",
+                Some(&("org.example.Calc.SearchProvider", 4u32).to_variant()),
+                None,
+                gio::DBusCallFlags::NONE,
+                5000,
+                None::<&gio::Cancellable>,
+            )
+            .unwrap();
             ready_tx.send(()).unwrap();
             glib::MainLoop::new(Some(&ctx), false).run();
-        }).unwrap();
+        })
+        .unwrap();
     });
     ready.recv().unwrap();
 
     let ctx = Context::default();
     let out = intents::search_apps(&ctx, &args(json!({"query": "2+2"}))).unwrap();
-    assert!(out.contains("4 — 2+2 [app org.example.Calc.desktop, id 2+2]"), "{out}");
-    assert!(intents::search_apps(&ctx, &args(json!({"query": "nothing"}))).unwrap().starts_with("No app"));
-    intents::open_search_result(&ctx, &args(json!({"app": "org.example.Calc", "id": "2+2", "query": "2+2"}))).unwrap();
+    assert!(
+        out.contains("4 — 2+2 [app org.example.Calc.desktop, id 2+2]"),
+        "{out}"
+    );
+    assert!(
+        intents::search_apps(&ctx, &args(json!({"query": "nothing"})))
+            .unwrap()
+            .starts_with("No app")
+    );
+    intents::open_search_result(
+        &ctx,
+        &args(json!({"app": "org.example.Calc", "id": "2+2", "query": "2+2"})),
+    )
+    .unwrap();
     assert_eq!(opened.lock().unwrap().as_deref(), Some("2+2"));
     assert!(intents::open_search_result(&ctx, &args(json!({"app": "nope", "id": "x"}))).is_err());
     // GDBus raises SIGTERM when the session bus goes away, unless told not to.
-    gio::bus_get_sync(gio::BusType::Session, None::<&gio::Cancellable>).unwrap().set_exit_on_close(false);
+    gio::bus_get_sync(gio::BusType::Session, None::<&gio::Cancellable>)
+        .unwrap()
+        .set_exit_on_close(false);
     daemon.kill().ok();
 }

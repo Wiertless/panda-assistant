@@ -14,18 +14,31 @@ use crate::tool::{Args, Context, ToolError, ToolResult, arg_str};
 pub const FILE_MANAGER: &str = "org.freedesktop.FileManager1";
 
 fn desktops() -> Vec<String> {
-    std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().split(':')
-        .filter(|d| !d.is_empty()).map(|d| d.to_ascii_lowercase()).collect()
+    std::env::var("XDG_CURRENT_DESKTOP")
+        .unwrap_or_default()
+        .split(':')
+        .filter(|d| !d.is_empty())
+        .map(|d| d.to_ascii_lowercase())
+        .collect()
 }
 
 fn env_dirs(var: &str, default: &str) -> Vec<PathBuf> {
-    std::env::var(var).ok().filter(|v| !v.is_empty()).unwrap_or_else(|| default.into())
-        .split(':').filter(|d| !d.is_empty()).map(PathBuf::from).collect()
+    std::env::var(var)
+        .ok()
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| default.into())
+        .split(':')
+        .filter(|d| !d.is_empty())
+        .map(PathBuf::from)
+        .collect()
 }
 
 /// The intentapps.list files, most important first (spec section 2).
 pub fn list_files() -> Vec<PathBuf> {
-    let config_home = crate::paths::config_dir().parent().map(Path::to_path_buf).unwrap_or_default();
+    let config_home = crate::paths::config_dir()
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_default();
     let config_dirs = env_dirs("XDG_CONFIG_DIRS", "/etc/xdg");
     let data_dirs = env_dirs("XDG_DATA_DIRS", "/usr/local/share:/usr/share");
     let desks = desktops();
@@ -54,22 +67,31 @@ pub fn defaults_in(text: &str, intent: &str) -> Vec<String> {
             in_group = line == "[Default Applications]";
         } else if in_group
             && let Some((k, v)) = line.split_once('=')
-                && k.trim() == intent {
-                    return v.split(';').map(str::trim).filter(|s| !s.is_empty()).map(String::from).collect();
-                }
+            && k.trim() == intent
+        {
+            return v
+                .split(';')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(String::from)
+                .collect();
+        }
     }
     vec![]
 }
 
 fn implements(app: &gio::DesktopAppInfo, intent: &str) -> bool {
-    app.string("Implements").is_some_and(|v| v.split(';').any(|i| i.trim() == intent))
+    app.string("Implements")
+        .is_some_and(|v| v.split(';').any(|i| i.trim() == intent))
 }
 
 /// The user's app for an intent: the first listed one that's installed and
 /// really implements it, else the first implementation by desktop ID.
 pub fn default_for(intent: &str) -> Option<gio::DesktopAppInfo> {
     for file in list_files() {
-        let Ok(text) = std::fs::read_to_string(&file) else { continue };
+        let Ok(text) = std::fs::read_to_string(&file) else {
+            continue;
+        };
         for id in defaults_in(&text, intent) {
             if let Some(app) = gio::DesktopAppInfo::new(&id).filter(|a| implements(a, intent)) {
                 return Some(app);
@@ -85,9 +107,17 @@ pub fn default_for(intent: &str) -> Option<gio::DesktopAppInfo> {
 pub fn show_in_files(_: &Context, args: &Args) -> ToolResult {
     let path = home_path(&arg_str(args, "path"), true)?;
     let uri = gio::File::for_path(&path).uri().to_string();
-    dbus_call(false, FILE_MANAGER, "/org/freedesktop/FileManager1", FILE_MANAGER, "ShowItems",
-              Some(&(vec![uri], "").to_variant()), None, 10000)
-        .map_err(|e| ToolError(format!("the file manager didn't answer: {}", e.message())))?;
+    dbus_call(
+        false,
+        FILE_MANAGER,
+        "/org/freedesktop/FileManager1",
+        FILE_MANAGER,
+        "ShowItems",
+        Some(&(vec![uri], "").to_variant()),
+        None,
+        10000,
+    )
+    .map_err(|e| ToolError(format!("the file manager didn't answer: {}", e.message())))?;
     Ok(format!("Showing {} in Files.", short(&path)))
 }
 
@@ -99,9 +129,18 @@ mod tests {
     fn reads_default_applications() {
         let text = "[Default Applications]\norg.freedesktop.FileManager1=org.gnome.Nautilus.desktop;nemo.desktop;\n\
                     [org.freedesktop.FileManager1]\nhttp=x.desktop;\n";
-        assert_eq!(defaults_in(text, FILE_MANAGER), ["org.gnome.Nautilus.desktop", "nemo.desktop"]);
+        assert_eq!(
+            defaults_in(text, FILE_MANAGER),
+            ["org.gnome.Nautilus.desktop", "nemo.desktop"]
+        );
         assert!(defaults_in(text, "com.example.Calculator1").is_empty());
-        assert!(defaults_in("[org.freedesktop.FileManager1]\norg.freedesktop.FileManager1=a;", FILE_MANAGER).is_empty());
+        assert!(
+            defaults_in(
+                "[org.freedesktop.FileManager1]\norg.freedesktop.FileManager1=a;",
+                FILE_MANAGER
+            )
+            .is_empty()
+        );
     }
 
     #[test]
@@ -113,12 +152,24 @@ mod tests {
             std::env::set_var("XDG_CONFIG_DIRS", "/etc/xdg");
             std::env::set_var("XDG_DATA_DIRS", "/usr/share");
         }
-        let files: Vec<String> = list_files().iter().map(|p| p.display().to_string()).collect();
+        let files: Vec<String> = list_files()
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect();
         let home = crate::paths::home();
-        assert_eq!(files[0], format!("{}/config/gnome-intentapps.list", home.display()));
-        assert_eq!(files[2], format!("{}/config/intentapps.list", home.display()));
+        assert_eq!(
+            files[0],
+            format!("{}/config/gnome-intentapps.list", home.display())
+        );
+        assert_eq!(
+            files[2],
+            format!("{}/config/intentapps.list", home.display())
+        );
         assert_eq!(files[3], "/etc/xdg/gnome-intentapps.list");
-        assert_eq!(files.last().unwrap(), "/usr/share/applications/intentapps.list");
+        assert_eq!(
+            files.last().unwrap(),
+            "/usr/share/applications/intentapps.list"
+        );
     }
 }
 
@@ -141,7 +192,12 @@ pub struct Provider {
 
 /// A search-provider .ini file ([Shell Search Provider] group).
 pub fn parse_provider(text: &str) -> Option<Provider> {
-    let mut p = Provider { desktop_id: String::new(), bus_name: String::new(), object_path: String::new(), default_disabled: false };
+    let mut p = Provider {
+        desktop_id: String::new(),
+        bus_name: String::new(),
+        object_path: String::new(),
+        default_disabled: false,
+    };
     let mut version = 0;
     let mut in_group = false;
     for line in text.lines().map(str::trim) {
@@ -149,7 +205,9 @@ pub fn parse_provider(text: &str) -> Option<Provider> {
             in_group = line == "[Shell Search Provider]";
             continue;
         }
-        let Some((k, v)) = line.split_once('=').filter(|_| in_group) else { continue };
+        let Some((k, v)) = line.split_once('=').filter(|_| in_group) else {
+            continue;
+        };
         match k.trim() {
             "DesktopId" => p.desktop_id = v.trim().into(),
             "BusName" => p.bus_name = v.trim().into(),
@@ -159,7 +217,11 @@ pub fn parse_provider(text: &str) -> Option<Provider> {
             _ => {}
         }
     }
-    (version == 2 && !p.desktop_id.is_empty() && !p.bus_name.is_empty() && !p.object_path.is_empty()).then_some(p)
+    (version == 2
+        && !p.desktop_id.is_empty()
+        && !p.bus_name.is_empty()
+        && !p.object_path.is_empty())
+    .then_some(p)
 }
 
 /// Installed providers the user hasn't turned off in Settings → Search (ours excluded).
@@ -167,21 +229,42 @@ pub fn providers() -> Vec<Provider> {
     let settings = gio::SettingsSchemaSource::default()
         .and_then(|s| s.lookup("org.gnome.desktop.search-providers", true))
         .map(|_| gio::Settings::new("org.gnome.desktop.search-providers"));
-    if settings.as_ref().is_some_and(|s| s.boolean("disable-external")) {
+    if settings
+        .as_ref()
+        .is_some_and(|s| s.boolean("disable-external"))
+    {
         return vec![];
     }
-    let disabled: Vec<String> = settings.as_ref().map(|s| s.strv("disabled").iter().map(|x| x.to_string()).collect()).unwrap_or_default();
-    let enabled: Vec<String> = settings.as_ref().map(|s| s.strv("enabled").iter().map(|x| x.to_string()).collect()).unwrap_or_default();
+    let disabled: Vec<String> = settings
+        .as_ref()
+        .map(|s| s.strv("disabled").iter().map(|x| x.to_string()).collect())
+        .unwrap_or_default();
+    let enabled: Vec<String> = settings
+        .as_ref()
+        .map(|s| s.strv("enabled").iter().map(|x| x.to_string()).collect())
+        .unwrap_or_default();
     let mut seen = std::collections::HashSet::new();
     let mut out = vec![];
     for dir in env_dirs("XDG_DATA_DIRS", "/usr/local/share:/usr/share") {
-        let Ok(entries) = std::fs::read_dir(dir.join("gnome-shell/search-providers")) else { continue };
+        let Ok(entries) = std::fs::read_dir(dir.join("gnome-shell/search-providers")) else {
+            continue;
+        };
         let mut files: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
         files.sort();
         for f in files {
-            let Some(p) = std::fs::read_to_string(&f).ok().and_then(|t| parse_provider(&t)) else { continue };
-            let off = disabled.contains(&p.desktop_id) || (p.default_disabled && !enabled.contains(&p.desktop_id));
-            if off || p.desktop_id.starts_with("io.github.wiertless.PandaAssistant") || !seen.insert(p.desktop_id.clone()) {
+            let Some(p) = std::fs::read_to_string(&f)
+                .ok()
+                .and_then(|t| parse_provider(&t))
+            else {
+                continue;
+            };
+            let off = disabled.contains(&p.desktop_id)
+                || (p.default_disabled && !enabled.contains(&p.desktop_id));
+            if off
+                || p.desktop_id
+                    .starts_with("io.github.wiertless.PandaAssistant")
+                || !seen.insert(p.desktop_id.clone())
+            {
                 continue;
             }
             out.push(p);
@@ -191,30 +274,58 @@ pub fn providers() -> Vec<Provider> {
 }
 
 fn app_name(desktop_id: &str) -> String {
-    gio::DesktopAppInfo::new(desktop_id).map(|a| a.display_name().to_string())
+    gio::DesktopAppInfo::new(desktop_id)
+        .map(|a| a.display_name().to_string())
         .unwrap_or_else(|| desktop_id.trim_end_matches(".desktop").to_string())
 }
 
 fn ask_provider(p: &Provider, terms: &[String]) -> Vec<(String, String, String)> {
     let call = |method: &str, args: glib::Variant, reply: &str| {
-        dbus_call(false, &p.bus_name, &p.object_path, PROVIDER_IFACE, method, Some(&args),
-                  Some(glib::VariantTy::new(reply).unwrap()), 2500).ok()
+        dbus_call(
+            false,
+            &p.bus_name,
+            &p.object_path,
+            PROVIDER_IFACE,
+            method,
+            Some(&args),
+            Some(glib::VariantTy::new(reply).unwrap()),
+            2500,
+        )
+        .ok()
     };
-    let Some(ids) = call("GetInitialResultSet", (terms.to_vec(),).to_variant(), "(as)")
-        .and_then(|v| v.child_value(0).get::<Vec<String>>()) else { return vec![] };
+    let Some(ids) = call(
+        "GetInitialResultSet",
+        (terms.to_vec(),).to_variant(),
+        "(as)",
+    )
+    .and_then(|v| v.child_value(0).get::<Vec<String>>()) else {
+        return vec![];
+    };
     let ids: Vec<String> = ids.into_iter().take(MAX_PER_APP).collect();
     if ids.is_empty() {
         return vec![];
     }
-    let Some(metas) = call("GetResultMetas", (ids,).to_variant(), "(aa{sv})") else { return vec![] };
+    let Some(metas) = call("GetResultMetas", (ids,).to_variant(), "(aa{sv})") else {
+        return vec![];
+    };
     let metas = metas.child_value(0);
-    (0..metas.n_children()).filter_map(|i| {
-        let d = glib::VariantDict::new(Some(&metas.child_value(i)));
-        let id = d.lookup::<String>("id").ok().flatten()?;
-        let name = d.lookup::<String>("name").ok().flatten().unwrap_or_default();
-        let desc = d.lookup::<String>("description").ok().flatten().unwrap_or_default();
-        Some((id, name, desc))
-    }).collect()
+    (0..metas.n_children())
+        .filter_map(|i| {
+            let d = glib::VariantDict::new(Some(&metas.child_value(i)));
+            let id = d.lookup::<String>("id").ok().flatten()?;
+            let name = d
+                .lookup::<String>("name")
+                .ok()
+                .flatten()
+                .unwrap_or_default();
+            let desc = d
+                .lookup::<String>("description")
+                .ok()
+                .flatten()
+                .unwrap_or_default();
+            Some((id, name, desc))
+        })
+        .collect()
 }
 
 fn terms_of(query: &str) -> Vec<String> {
@@ -228,32 +339,68 @@ pub fn search_apps(_: &Context, args: &Args) -> ToolResult {
     if terms.is_empty() {
         return Err("say what to search for".into());
     }
-    let handles: Vec<_> = providers().into_iter().map(|p| {
-        let terms = terms.clone();
-        std::thread::spawn(move || (app_name(&p.desktop_id), p.desktop_id.clone(), ask_provider(&p, &terms)))
-    }).collect();
+    let handles: Vec<_> = providers()
+        .into_iter()
+        .map(|p| {
+            let terms = terms.clone();
+            std::thread::spawn(move || {
+                (
+                    app_name(&p.desktop_id),
+                    p.desktop_id.clone(),
+                    ask_provider(&p, &terms),
+                )
+            })
+        })
+        .collect();
     let mut lines = vec![];
     for h in handles {
-        let Ok((app, desktop_id, hits)) = h.join() else { continue };
+        let Ok((app, desktop_id, hits)) = h.join() else {
+            continue;
+        };
         for (id, name, desc) in hits {
-            let desc = if desc.is_empty() { String::new() } else { format!(" — {desc}") };
+            let desc = if desc.is_empty() {
+                String::new()
+            } else {
+                format!(" — {desc}")
+            };
             lines.push(format!("{app}: {name}{desc} [app {desktop_id}, id {id}]"));
         }
     }
-    Ok(if lines.is_empty() { format!("No app has results for “{query}”.") } else {
-        format!("{}\nopen_search_result opens one (with its app and id).", lines.join("\n"))
+    Ok(if lines.is_empty() {
+        format!("No app has results for “{query}”.")
+    } else {
+        format!(
+            "{}\nopen_search_result opens one (with its app and id).",
+            lines.join("\n")
+        )
     })
 }
 
 pub fn open_search_result(_: &Context, args: &Args) -> ToolResult {
     let app = arg_str(args, "app");
     let id = arg_str(args, "id");
-    let p = providers().into_iter().find(|p| p.desktop_id == app || p.desktop_id.trim_end_matches(".desktop") == app)
+    let p = providers()
+        .into_iter()
+        .find(|p| p.desktop_id == app || p.desktop_id.trim_end_matches(".desktop") == app)
         .ok_or_else(|| ToolError(format!("no app search called '{app}'")))?;
     let stamp = (glib::monotonic_time() / 1000) as u32;
-    dbus_call(false, &p.bus_name, &p.object_path, PROVIDER_IFACE, "ActivateResult",
-              Some(&(id.as_str(), terms_of(&arg_str(args, "query")), stamp).to_variant()), None, 5000)
-        .map_err(|e| ToolError(format!("{} didn't open it: {}", app_name(&p.desktop_id), e.message())))?;
+    dbus_call(
+        false,
+        &p.bus_name,
+        &p.object_path,
+        PROVIDER_IFACE,
+        "ActivateResult",
+        Some(&(id.as_str(), terms_of(&arg_str(args, "query")), stamp).to_variant()),
+        None,
+        5000,
+    )
+    .map_err(|e| {
+        ToolError(format!(
+            "{} didn't open it: {}",
+            app_name(&p.desktop_id),
+            e.message()
+        ))
+    })?;
     Ok(format!("Opened it in {}.", app_name(&p.desktop_id)))
 }
 
@@ -288,7 +435,10 @@ pub fn terminal_args(arg_types: &[(String, String)], dir: &str) -> Option<glib::
 /// A method's in-arguments (name, type) from introspection XML. gio-rs
 /// doesn't expose DBusArgInfo, and introspection XML is regular enough.
 fn method_args(xml: &str, iface: &str, method: &str) -> Option<Vec<(String, String)>> {
-    gio::DBusNodeInfo::for_xml(xml).ok()?.lookup_interface(iface)?.lookup_method(method)?;
+    gio::DBusNodeInfo::for_xml(xml)
+        .ok()?
+        .lookup_interface(iface)?
+        .lookup_method(method)?;
     let attr = |tag: &str, key: &str| {
         let i = tag.find(&format!("{key}=\""))? + key.len() + 2;
         Some(tag[i..].split('"').next()?.to_string())
@@ -296,20 +446,47 @@ fn method_args(xml: &str, iface: &str, method: &str) -> Option<Vec<(String, Stri
     let body = &xml[xml.find(&format!("<interface name=\"{iface}\""))?..];
     let body = &body[body.find(&format!("<method name=\"{method}\""))?..];
     let body = &body[..body.find("</method>")?];
-    Some(body.split("<arg").skip(1)
-        .filter(|t| attr(t, "direction").is_none_or(|d| d == "in"))
-        .filter_map(|t| Some((attr(t, "name").unwrap_or_default(), attr(t, "type")?)))
-        .collect())
+    Some(
+        body.split("<arg")
+            .skip(1)
+            .filter(|t| attr(t, "direction").is_none_or(|d| d == "in"))
+            .filter_map(|t| Some((attr(t, "name").unwrap_or_default(), attr(t, "type")?)))
+            .collect(),
+    )
 }
 
 fn launch_via_intent(dir: &Path) -> Option<String> {
     let app = default_for(TERMINAL)?;
     let id = app.id()?.trim_end_matches(".desktop").to_string();
     let path = format!("/{}", id.replace('.', "/").replace('-', "_"));
-    let xml = dbus_call(false, &id, &path, "org.freedesktop.DBus.Introspectable", "Introspect", None,
-                        Some(glib::VariantTy::new("(s)").unwrap()), 5000).ok()?.child_value(0).get::<String>()?;
-    let args = terminal_args(&method_args(&xml, TERMINAL, "LaunchCommand")?, &dir.to_string_lossy())?;
-    dbus_call(false, &id, &path, TERMINAL, "LaunchCommand", Some(&args), None, 10000).ok()?;
+    let xml = dbus_call(
+        false,
+        &id,
+        &path,
+        "org.freedesktop.DBus.Introspectable",
+        "Introspect",
+        None,
+        Some(glib::VariantTy::new("(s)").unwrap()),
+        5000,
+    )
+    .ok()?
+    .child_value(0)
+    .get::<String>()?;
+    let args = terminal_args(
+        &method_args(&xml, TERMINAL, "LaunchCommand")?,
+        &dir.to_string_lossy(),
+    )?;
+    dbus_call(
+        false,
+        &id,
+        &path,
+        TERMINAL,
+        "LaunchCommand",
+        Some(&args),
+        None,
+        10000,
+    )
+    .ok()?;
     Some(app.display_name().to_string())
 }
 
@@ -327,7 +504,14 @@ pub fn open_terminal(_: &Context, args: &Args) -> ToolResult {
     let d = dir.to_string_lossy().to_string();
     let tries: [(&str, Vec<String>); 4] = [
         ("xdg-terminal-exec", vec![format!("--dir={d}")]),
-        ("ptyxis", vec!["--new-window".into(), "--working-directory".into(), d.clone()]),
+        (
+            "ptyxis",
+            vec![
+                "--new-window".into(),
+                "--working-directory".into(),
+                d.clone(),
+            ],
+        ),
         ("kgx", vec!["--working-directory".into(), d.clone()]),
         ("gnome-terminal", vec![format!("--working-directory={d}")]),
     ];
@@ -351,23 +535,51 @@ mod more_tests {
         let ini = "[Shell Search Provider]\nDesktopId=org.gnome.Calculator.desktop\nObjectPath=/org/gnome/Calculator/SearchProvider\n\
                    BusName=org.gnome.Calculator.SearchProvider\nVersion=2\n";
         let p = parse_provider(ini).unwrap();
-        assert_eq!((p.desktop_id.as_str(), p.default_disabled), ("org.gnome.Calculator.desktop", false));
+        assert_eq!(
+            (p.desktop_id.as_str(), p.default_disabled),
+            ("org.gnome.Calculator.desktop", false)
+        );
         assert!(parse_provider(&ini.replace("Version=2", "Version=1")).is_none());
-        assert!(parse_provider("[Other]\nDesktopId=x\nBusName=y\nObjectPath=/z\nVersion=2").is_none());
-        assert!(parse_provider(&format!("{ini}DefaultDisabled=true\n")).unwrap().default_disabled);
+        assert!(
+            parse_provider("[Other]\nDesktopId=x\nBusName=y\nObjectPath=/z\nVersion=2").is_none()
+        );
+        assert!(
+            parse_provider(&format!("{ini}DefaultDisabled=true\n"))
+                .unwrap()
+                .default_disabled
+        );
     }
 
     #[test]
     fn terminal_arguments_by_name() {
-        let shape = |v: &[(&str, &str)]| v.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect::<Vec<_>>();
-        let args = terminal_args(&shape(&[("exec", "aay"), ("working_directory", "ay"), ("env", "aay"), ("options", "a{sv}"),
-                                          ("platform_data", "a{sv}")]), "/home/u/proj").unwrap();
+        let shape = |v: &[(&str, &str)]| {
+            v.iter()
+                .map(|(a, b)| (a.to_string(), b.to_string()))
+                .collect::<Vec<_>>()
+        };
+        let args = terminal_args(
+            &shape(&[
+                ("exec", "aay"),
+                ("working_directory", "ay"),
+                ("env", "aay"),
+                ("options", "a{sv}"),
+                ("platform_data", "a{sv}"),
+            ]),
+            "/home/u/proj",
+        )
+        .unwrap();
         assert_eq!(args.type_().as_str(), "(aayayaaya{sv}a{sv})");
-        assert_eq!(args.child_value(1).fixed_array::<u8>().unwrap(), b"/home/u/proj\0");
+        assert_eq!(
+            args.child_value(1).fixed_array::<u8>().unwrap(),
+            b"/home/u/proj\0"
+        );
         assert!(terminal_args(&shape(&[("x", "(ii)")]), "/").is_none());
         let xml = r#"<node><interface name="org.freedesktop.Terminal1"><method name="LaunchCommand">
             <arg type="aay" name="exec" direction="in"/><arg type="ay" name="working_directory" direction="in"/>
             </method></interface></node>"#;
-        assert_eq!(method_args(xml, TERMINAL, "LaunchCommand").unwrap(), shape(&[("exec", "aay"), ("working_directory", "ay")]));
+        assert_eq!(
+            method_args(xml, TERMINAL, "LaunchCommand").unwrap(),
+            shape(&[("exec", "aay"), ("working_directory", "ay")])
+        );
     }
 }

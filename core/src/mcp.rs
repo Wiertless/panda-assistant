@@ -43,8 +43,18 @@ pub fn config_path() -> std::path::PathBuf {
 }
 
 fn str_map(v: &Value) -> BTreeMap<String, String> {
-    v.as_object().into_iter().flatten()
-        .map(|(k, v)| (k.clone(), v.as_str().map(String::from).unwrap_or_else(|| v.to_string()))).collect()
+    v.as_object()
+        .into_iter()
+        .flatten()
+        .map(|(k, v)| {
+            (
+                k.clone(),
+                v.as_str()
+                    .map(String::from)
+                    .unwrap_or_else(|| v.to_string()),
+            )
+        })
+        .collect()
 }
 
 pub fn load_config() -> Result<Vec<ServerConfig>, String> {
@@ -52,17 +62,37 @@ pub fn load_config() -> Result<Vec<ServerConfig>, String> {
         Ok(t) => t,
         Err(_) => return Ok(vec![]),
     };
-    let raw: Value = serde_json::from_str(&text).map_err(|e| format!("{} isn't valid JSON: {e}", config_path().display()))?;
-    Ok(raw["mcpServers"].as_object().into_iter().flatten().filter(|(_, s)| s.is_object()).map(|(name, s)| ServerConfig {
-        name: name.clone(),
-        command: s["command"].as_str().unwrap_or("").into(),
-        args: s["args"].as_array().into_iter().flatten().map(|a| a.as_str().map(String::from).unwrap_or_else(|| a.to_string())).collect(),
-        env: str_map(&s["env"]),
-        url: s["url"].as_str().or(s["serverUrl"].as_str()).unwrap_or("").into(),
-        headers: str_map(&s["headers"]),
-        disabled: s["disabled"].as_bool().unwrap_or(false),
-        trust: s["trust"].as_bool().unwrap_or(false),
-    }).collect())
+    let raw: Value = serde_json::from_str(&text)
+        .map_err(|e| format!("{} isn't valid JSON: {e}", config_path().display()))?;
+    Ok(raw["mcpServers"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter(|(_, s)| s.is_object())
+        .map(|(name, s)| ServerConfig {
+            name: name.clone(),
+            command: s["command"].as_str().unwrap_or("").into(),
+            args: s["args"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|a| {
+                    a.as_str()
+                        .map(String::from)
+                        .unwrap_or_else(|| a.to_string())
+                })
+                .collect(),
+            env: str_map(&s["env"]),
+            url: s["url"]
+                .as_str()
+                .or(s["serverUrl"].as_str())
+                .unwrap_or("")
+                .into(),
+            headers: str_map(&s["headers"]),
+            disabled: s["disabled"].as_bool().unwrap_or(false),
+            trust: s["trust"].as_bool().unwrap_or(false),
+        })
+        .collect())
 }
 
 pub fn public_name(server: &str, tool: &str) -> String {
@@ -102,12 +132,32 @@ impl Stdio_ {
     fn start(cfg: &ServerConfig) -> Result<Self, String> {
         let dir = paths::state_dir();
         let _ = fs::create_dir_all(&dir);
-        let safe: String = cfg.name.chars().map(|c| if c.is_alphanumeric() || c == '.' || c == '-' { c } else { '_' }).collect();
+        let safe: String = cfg
+            .name
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c == '.' || c == '-' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
         let log_path = dir.join(format!("mcp-{safe}.log"));
-        let log = OpenOptions::new().create(true).append(true).open(&log_path).map_err(|e| e.to_string())?;
-        let mut child = Command::new(&cfg.command).args(&cfg.args).envs(&cfg.env).current_dir(paths::home())
-            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(log)
-            .spawn().map_err(|e| format!("couldn't start {}: {e}", cfg.command))?;
+        let log = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+            .map_err(|e| e.to_string())?;
+        let mut child = Command::new(&cfg.command)
+            .args(&cfg.args)
+            .envs(&cfg.env)
+            .current_dir(paths::home())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(log)
+            .spawn()
+            .map_err(|e| format!("couldn't start {}: {e}", cfg.command))?;
         let stdout = child.stdout.take().unwrap();
         let stdin = child.stdin.take().unwrap();
         let (tx, rx) = channel();
@@ -120,13 +170,20 @@ impl Stdio_ {
             }
             let _ = tx.send(None);
         });
-        Ok(Self { child, stdin, incoming: rx, log: log_path.display().to_string() })
+        Ok(Self {
+            child,
+            stdin,
+            incoming: rx,
+            log: log_path.display().to_string(),
+        })
     }
 }
 
 impl Transport for Stdio_ {
     fn send(&mut self, msg: &Value) -> Result<(), String> {
-        writeln!(self.stdin, "{msg}").and_then(|_| self.stdin.flush()).map_err(|_| "the server stopped".to_string())
+        writeln!(self.stdin, "{msg}")
+            .and_then(|_| self.stdin.flush())
+            .map_err(|_| "the server stopped".to_string())
     }
 
     fn request(&mut self, msg: &Value, timeout: Duration) -> Result<Value, String> {
@@ -134,19 +191,27 @@ impl Transport for Stdio_ {
         loop {
             match self.incoming.recv_timeout(timeout) {
                 Ok(Some(reply)) => {
-                    if reply.get("id") == msg.get("id") && (reply.get("result").is_some() || reply.get("error").is_some()) {
+                    if reply.get("id") == msg.get("id")
+                        && (reply.get("result").is_some() || reply.get("error").is_some())
+                    {
                         return Ok(reply);
                     }
                     // The server asks something: only ping is answered.
                     if let (Some(method), Some(id)) = (reply["method"].as_str(), reply.get("id")) {
-                        let answer = if method == "ping" { json!({"jsonrpc": "2.0", "id": id, "result": {}}) } else {
+                        let answer = if method == "ping" {
+                            json!({"jsonrpc": "2.0", "id": id, "result": {}})
+                        } else {
                             json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32601, "message": "Method not found"}})
                         };
                         self.send(&answer)?;
                     }
                 }
-                Ok(None) | Err(RecvTimeoutError::Disconnected) => return Err(format!("the server stopped (see {})", self.log)),
-                Err(RecvTimeoutError::Timeout) => return Err(format!("no answer within {} seconds", timeout.as_secs())),
+                Ok(None) | Err(RecvTimeoutError::Disconnected) => {
+                    return Err(format!("the server stopped (see {})", self.log));
+                }
+                Err(RecvTimeoutError::Timeout) => {
+                    return Err(format!("no answer within {} seconds", timeout.as_secs()));
+                }
             }
         }
     }
@@ -166,8 +231,14 @@ struct Http {
 }
 
 impl Http {
-    fn post(&mut self, msg: &Value, timeout: Duration) -> Result<ureq::http::Response<ureq::Body>, String> {
-        let mut req = self.agent.post(&self.url)
+    fn post(
+        &mut self,
+        msg: &Value,
+        timeout: Duration,
+    ) -> Result<ureq::http::Response<ureq::Body>, String> {
+        let mut req = self
+            .agent
+            .post(&self.url)
             .header("Content-Type", "application/json")
             .header("Accept", "application/json, text/event-stream")
             .header("MCP-Protocol-Version", PROTOCOL_VERSION);
@@ -177,12 +248,20 @@ impl Http {
         if let Some(s) = &self.session {
             req = req.header("Mcp-Session-Id", s);
         }
-        let resp = req.config().timeout_global(Some(timeout)).build().send(msg.to_string().as_bytes())
+        let resp = req
+            .config()
+            .timeout_global(Some(timeout))
+            .build()
+            .send(msg.to_string().as_bytes())
             .map_err(|e| format!("couldn't reach {}: {e}", self.url))?;
         if resp.status().as_u16() >= 400 {
             return Err(format!("HTTP {} from {}", resp.status().as_u16(), self.url));
         }
-        if let Some(s) = resp.headers().get("mcp-session-id").and_then(|v| v.to_str().ok()) {
+        if let Some(s) = resp
+            .headers()
+            .get("mcp-session-id")
+            .and_then(|v| v.to_str().ok())
+        {
             self.session = Some(s.to_string());
         }
         Ok(resp)
@@ -196,12 +275,21 @@ impl Transport for Http {
 
     fn request(&mut self, msg: &Value, timeout: Duration) -> Result<Value, String> {
         let resp = self.post(msg, timeout)?;
-        let sse = resp.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("").contains("text/event-stream");
+        let sse = resp
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .contains("text/event-stream");
         let reader = resp.into_body().into_reader();
         if !sse {
             let mut text = String::new();
-            reader.take(8 << 20).read_to_string(&mut text).map_err(|e| e.to_string())?;
-            return serde_json::from_str(&text).map_err(|_| "the server's answer wasn't JSON".to_string());
+            reader
+                .take(8 << 20)
+                .read_to_string(&mut text)
+                .map_err(|e| e.to_string())?;
+            return serde_json::from_str(&text)
+                .map_err(|_| "the server's answer wasn't JSON".to_string());
         }
         let mut data = vec![];
         for line in BufReader::new(reader).lines() {
@@ -254,7 +342,14 @@ pub struct Server {
 
 impl Server {
     fn new(cfg: ServerConfig) -> Self {
-        Self { label: cfg.name.clone(), cfg, tools: vec![], error: None, transport: None, next_id: 0 }
+        Self {
+            label: cfg.name.clone(),
+            cfg,
+            tools: vec![],
+            error: None,
+            transport: None,
+            next_id: 0,
+        }
     }
 
     pub fn running(&self) -> bool {
@@ -264,9 +359,16 @@ impl Server {
     fn rpc(&mut self, method: &str, params: Value, timeout: Duration) -> Result<Value, String> {
         self.next_id += 1;
         let msg = json!({"jsonrpc": "2.0", "id": self.next_id, "method": method, "params": params});
-        let reply = self.transport.as_mut().ok_or("not started")?.request(&msg, timeout)?;
+        let reply = self
+            .transport
+            .as_mut()
+            .ok_or("not started")?
+            .request(&msg, timeout)?;
         if let Some(err) = reply.get("error") {
-            return Err(err["message"].as_str().map(String::from).unwrap_or_else(|| err.to_string()));
+            return Err(err["message"]
+                .as_str()
+                .map(String::from)
+                .unwrap_or_else(|| err.to_string()));
         }
         Ok(reply.get("result").cloned().unwrap_or(json!({})))
     }
@@ -280,8 +382,15 @@ impl Server {
             return Err("no command or URL".into());
         }
         self.transport = Some(if !self.cfg.url.is_empty() {
-            Box::new(Http { url: self.cfg.url.clone(), headers: self.cfg.headers.clone(), session: None,
-                            agent: ureq::Agent::config_builder().http_status_as_error(false).build().into() })
+            Box::new(Http {
+                url: self.cfg.url.clone(),
+                headers: self.cfg.headers.clone(),
+                session: None,
+                agent: ureq::Agent::config_builder()
+                    .http_status_as_error(false)
+                    .build()
+                    .into(),
+            })
         } else {
             Box::new(Stdio_::start(&self.cfg)?)
         });
@@ -291,7 +400,10 @@ impl Server {
             if let Some(t) = info["serverInfo"]["title"].as_str() {
                 self.label = t.to_string();
             }
-            self.transport.as_mut().unwrap().send(&json!({"jsonrpc": "2.0", "method": "notifications/initialized"}))?;
+            self.transport
+                .as_mut()
+                .unwrap()
+                .send(&json!({"jsonrpc": "2.0", "method": "notifications/initialized"}))?;
             self.tools = self.list_tools()?;
             Ok(())
         })();
@@ -305,22 +417,44 @@ impl Server {
         let mut tools = vec![];
         let mut cursor: Option<String> = None;
         for _ in 0..10 {
-            let params = cursor.as_ref().map(|c| json!({"cursor": c})).unwrap_or(json!({}));
+            let params = cursor
+                .as_ref()
+                .map(|c| json!({"cursor": c}))
+                .unwrap_or(json!({}));
             let result = self.rpc("tools/list", params, START_TIMEOUT)?;
             for t in result["tools"].as_array().into_iter().flatten() {
-                let Some(name) = t["name"].as_str() else { continue };
-                let mut schema = t.get("inputSchema").cloned().filter(Value::is_object).unwrap_or(json!({}));
+                let Some(name) = t["name"].as_str() else {
+                    continue;
+                };
+                let mut schema = t
+                    .get("inputSchema")
+                    .cloned()
+                    .filter(Value::is_object)
+                    .unwrap_or(json!({}));
                 let obj = schema.as_object_mut().unwrap();
                 obj.remove("$schema");
                 obj.entry("type").or_insert(json!("object"));
                 obj.entry("properties").or_insert(json!({}));
-                let desc = t["description"].as_str().or(t["title"].as_str()).unwrap_or(name);
-                let desc: String = desc.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(MAX_DESCRIPTION).collect();
+                let desc = t["description"]
+                    .as_str()
+                    .or(t["title"].as_str())
+                    .unwrap_or(name);
+                let desc: String = desc
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    .chars()
+                    .take(MAX_DESCRIPTION)
+                    .collect();
                 tools.push(McpTool {
                     server: self.cfg.name.clone(),
                     name: name.into(),
                     public_name: public_name(&self.cfg.name, name),
-                    title: t["title"].as_str().or(t["annotations"]["title"].as_str()).unwrap_or(name).into(),
+                    title: t["title"]
+                        .as_str()
+                        .or(t["annotations"]["title"].as_str())
+                        .unwrap_or(name)
+                        .into(),
                     description: desc,
                     schema,
                     read_only: t["annotations"]["readOnlyHint"].as_bool().unwrap_or(false),
@@ -335,27 +469,58 @@ impl Server {
     }
 
     /// Run a tool; its text and any images (as data: URLs).
-    pub fn call(&mut self, tool: &str, args: &Map<String, Value>) -> Result<(String, Vec<String>), String> {
+    pub fn call(
+        &mut self,
+        tool: &str,
+        args: &Map<String, Value>,
+    ) -> Result<(String, Vec<String>), String> {
         if !self.running() {
             self.start()?;
         }
-        let result = self.rpc("tools/call", json!({"name": tool, "arguments": args}), CALL_TIMEOUT)?;
+        let result = self.rpc(
+            "tools/call",
+            json!({"name": tool, "arguments": args}),
+            CALL_TIMEOUT,
+        )?;
         let mut texts = vec![];
         let mut images = vec![];
         for part in result["content"].as_array().into_iter().flatten() {
             match part["type"].as_str() {
                 Some("text") => texts.push(part["text"].as_str().unwrap_or("").to_string()),
                 Some("image") if part["data"].is_string() => images.push(format!(
-                    "data:{};base64,{}", part["mimeType"].as_str().unwrap_or("image/png"), part["data"].as_str().unwrap())),
-                Some("resource") => texts.push(part["resource"]["text"].as_str().or(part["resource"]["uri"].as_str()).unwrap_or("").into()),
-                Some("resource_link") => texts.push(format!("{} {}", part["name"].as_str().unwrap_or(""), part["uri"].as_str().unwrap_or("")).trim().into()),
+                    "data:{};base64,{}",
+                    part["mimeType"].as_str().unwrap_or("image/png"),
+                    part["data"].as_str().unwrap()
+                )),
+                Some("resource") => texts.push(
+                    part["resource"]["text"]
+                        .as_str()
+                        .or(part["resource"]["uri"].as_str())
+                        .unwrap_or("")
+                        .into(),
+                ),
+                Some("resource_link") => texts.push(
+                    format!(
+                        "{} {}",
+                        part["name"].as_str().unwrap_or(""),
+                        part["uri"].as_str().unwrap_or("")
+                    )
+                    .trim()
+                    .into(),
+                ),
                 _ => {}
             }
         }
         if texts.is_empty() && !result["structuredContent"].is_null() {
             texts.push(result["structuredContent"].to_string());
         }
-        let mut text = texts.into_iter().filter(|t| !t.is_empty()).collect::<Vec<_>>().join("\n").trim().to_string();
+        let mut text = texts
+            .into_iter()
+            .filter(|t| !t.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n")
+            .trim()
+            .to_string();
         if text.is_empty() {
             text = "Done.".into();
         }
@@ -424,24 +589,44 @@ impl Hub {
     }
 
     fn enabled(&self) -> Vec<Arc<Mutex<Server>>> {
-        self.servers.lock().unwrap().values().filter(|s| !s.lock().unwrap().cfg.disabled).cloned().collect()
+        self.servers
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|s| !s.lock().unwrap().cfg.disabled)
+            .cloned()
+            .collect()
     }
 
     /// Start enabled servers that aren't running, in parallel; returns problems.
     pub fn start_all(&self) -> Vec<String> {
-        let todo: Vec<_> = self.enabled().into_iter()
-            .filter(|s| { let s = s.lock().unwrap(); !s.running() && s.error.is_none() }).collect();
-        let handles: Vec<_> = todo.into_iter().map(|s| std::thread::spawn(move || {
-            let mut srv = s.lock().unwrap();
-            match srv.start() {
-                Ok(()) => None,
-                Err(e) => {
-                    srv.error = Some(e.clone());
-                    Some(format!("{}: {e}", srv.cfg.name))
-                }
-            }
-        })).collect();
-        handles.into_iter().filter_map(|h| h.join().ok().flatten()).collect()
+        let todo: Vec<_> = self
+            .enabled()
+            .into_iter()
+            .filter(|s| {
+                let s = s.lock().unwrap();
+                !s.running() && s.error.is_none()
+            })
+            .collect();
+        let handles: Vec<_> = todo
+            .into_iter()
+            .map(|s| {
+                std::thread::spawn(move || {
+                    let mut srv = s.lock().unwrap();
+                    match srv.start() {
+                        Ok(()) => None,
+                        Err(e) => {
+                            srv.error = Some(e.clone());
+                            Some(format!("{}: {e}", srv.cfg.name))
+                        }
+                    }
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .filter_map(|h| h.join().ok().flatten())
+            .collect()
     }
 
     /// The running servers' tools as assistant tools. Tools that say they
@@ -461,17 +646,36 @@ impl Hub {
                 let name = t.name.clone();
                 let title = t.title.clone();
                 let lbl = label.clone();
-                out.push(Tool::new(&t.public_name, &format!("[{label}] {}", t.description), t.schema.clone(),
-                    if t.read_only || trust { Risk::Safe } else { Risk::Confirm },
-                    move |ctx, args| {
-                        let (text, images) = srv.lock().unwrap().call(&name, args).map_err(ToolError)?;
-                        ctx.images.lock().unwrap().extend(images);
-                        Ok(text)
-                    },
-                    move |_| format!("{lbl}: {title}"))
-                    .with_detail(|a| if a.is_empty() { String::new() } else {
-                        serde_json::to_string_pretty(a).unwrap_or_default().chars().take(600).collect()
-                    }));
+                out.push(
+                    Tool::new(
+                        &t.public_name,
+                        &format!("[{label}] {}", t.description),
+                        t.schema.clone(),
+                        if t.read_only || trust {
+                            Risk::Safe
+                        } else {
+                            Risk::Confirm
+                        },
+                        move |ctx, args| {
+                            let (text, images) =
+                                srv.lock().unwrap().call(&name, args).map_err(ToolError)?;
+                            ctx.images.lock().unwrap().extend(images);
+                            Ok(text)
+                        },
+                        move |_| format!("{lbl}: {title}"),
+                    )
+                    .with_detail(|a| {
+                        if a.is_empty() {
+                            String::new()
+                        } else {
+                            serde_json::to_string_pretty(a)
+                                .unwrap_or_default()
+                                .chars()
+                                .take(600)
+                                .collect()
+                        }
+                    }),
+                );
                 if out.len() >= MAX_TOOLS {
                     return out;
                 }
@@ -513,7 +717,15 @@ mod tests {
         assert!(load_config().unwrap().is_empty());
         fs::create_dir_all(paths::config_dir()).unwrap();
         fs::write(config_path(), "{nope").unwrap();
-        assert!(Hub::new().config_error.lock().unwrap().as_ref().unwrap().contains("isn't valid JSON"));
+        assert!(
+            Hub::new()
+                .config_error
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .contains("isn't valid JSON")
+        );
     }
 
     #[test]
@@ -522,9 +734,11 @@ mod tests {
         if crate::flm::which("python3").is_none() {
             return;
         }
-        write_config(json!({"notes": {"command": "python3", "args": [server_script()]},
+        write_config(
+            json!({"notes": {"command": "python3", "args": [server_script()]},
                             "broken": {"command": "/nonexistent/server"},
-                            "off": {"command": "python3", "args": [server_script()], "disabled": true}}));
+                            "off": {"command": "python3", "args": [server_script()], "disabled": true}}),
+        );
         let hub = Hub::new();
         let problems = hub.start_all();
         assert_eq!(problems.len(), 1, "{problems:?}");
@@ -539,9 +753,16 @@ mod tests {
         let ctx = Context::default();
         let args: Map<String, Value> = serde_json::from_value(json!({"title": "shop"})).unwrap();
         assert_eq!((tools[0].run)(&ctx, &args).unwrap(), "Note shop: buy milk");
-        assert_eq!(ctx.images.lock().unwrap().as_slice(), ["data:image/png;base64,aGk="]);
-        let missing: Map<String, Value> = serde_json::from_value(json!({"title": "missing"})).unwrap();
-        assert_eq!((tools[0].run)(&ctx, &missing).unwrap_err().0, "No such note");
+        assert_eq!(
+            ctx.images.lock().unwrap().as_slice(),
+            ["data:image/png;base64,aGk="]
+        );
+        let missing: Map<String, Value> =
+            serde_json::from_value(json!({"title": "missing"})).unwrap();
+        assert_eq!(
+            (tools[0].run)(&ctx, &missing).unwrap_err().0,
+            "No such note"
+        );
         assert_eq!((tools[1].summary)(&Map::new()), "Notes: add.note");
         hub.stop_all();
     }
@@ -580,12 +801,24 @@ impl ServerConfig {
 pub fn save_config(servers: &[ServerConfig]) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
     let path = config_path();
-    let mut raw: Value = fs::read_to_string(&path).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(json!({}));
+    let mut raw: Value = fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or(json!({}));
     if !raw.is_object() {
         raw = json!({});
     }
-    raw["mcpServers"] = Value::Object(servers.iter().map(|s| (s.name.clone(), s.to_json())).collect());
-    crate::store::write_atomic(&path, &(serde_json::to_string_pretty(&raw).unwrap_or_default() + "\n")).map_err(|e| e.to_string())?;
+    raw["mcpServers"] = Value::Object(
+        servers
+            .iter()
+            .map(|s| (s.name.clone(), s.to_json()))
+            .collect(),
+    );
+    crate::store::write_atomic(
+        &path,
+        &(serde_json::to_string_pretty(&raw).unwrap_or_default() + "\n"),
+    )
+    .map_err(|e| e.to_string())?;
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).map_err(|e| e.to_string())
 }
 
@@ -596,10 +829,19 @@ pub fn parse_server(name: &str, command_or_url: &str) -> Result<ServerConfig, St
         return Err("give the server a name and a command or URL".into());
     }
     if text.starts_with("http://") || text.starts_with("https://") {
-        return Ok(ServerConfig { name: name.into(), url: text.into(), ..Default::default() });
+        return Ok(ServerConfig {
+            name: name.into(),
+            url: text.into(),
+            ..Default::default()
+        });
     }
     let parts = shell_words(text)?;
-    Ok(ServerConfig { name: name.into(), command: parts[0].clone(), args: parts[1..].to_vec(), ..Default::default() })
+    Ok(ServerConfig {
+        name: name.into(),
+        command: parts[0].clone(),
+        args: parts[1..].to_vec(),
+        ..Default::default()
+    })
 }
 
 /// Split a command line like a shell would (quotes and backslashes), without running one.
@@ -608,12 +850,29 @@ fn shell_words(text: &str) -> Result<Vec<String>, String> {
     let mut chars = text.chars();
     while let Some(c) = chars.next() {
         match (quote, c) {
-            (None, '\'' | '"') => { quote = Some(c); has = true; }
+            (None, '\'' | '"') => {
+                quote = Some(c);
+                has = true;
+            }
             (Some(q), c) if c == q => quote = None,
             (Some('\''), c) => cur.push(c),
-            (_, '\\') => match chars.next() { Some(n) => { cur.push(n); has = true; } None => return Err("couldn't read the command: ends with \\".into()) },
-            (None, c) if c.is_whitespace() => if has { words.push(std::mem::take(&mut cur)); has = false; },
-            (_, c) => { cur.push(c); has = true; }
+            (_, '\\') => match chars.next() {
+                Some(n) => {
+                    cur.push(n);
+                    has = true;
+                }
+                None => return Err("couldn't read the command: ends with \\".into()),
+            },
+            (None, c) if c.is_whitespace() => {
+                if has {
+                    words.push(std::mem::take(&mut cur));
+                    has = false;
+                }
+            }
+            (_, c) => {
+                cur.push(c);
+                has = true;
+            }
         }
     }
     if quote.is_some() {
@@ -622,7 +881,11 @@ fn shell_words(text: &str) -> Result<Vec<String>, String> {
     if has {
         words.push(cur);
     }
-    if words.is_empty() { Err("no command given".into()) } else { Ok(words) }
+    if words.is_empty() {
+        Err("no command given".into())
+    } else {
+        Ok(words)
+    }
 }
 
 #[cfg(test)]
@@ -633,10 +896,29 @@ mod edit_tests {
     #[test]
     fn parse_and_save() {
         let _h = temp_home();
-        let s = parse_server("notes", r#"toolbox run -c zed npx -y "@scope/server x" --dir 'a b'"#).unwrap();
+        let s = parse_server(
+            "notes",
+            r#"toolbox run -c zed npx -y "@scope/server x" --dir 'a b'"#,
+        )
+        .unwrap();
         assert_eq!(s.command, "toolbox");
-        assert_eq!(s.args, ["run", "-c", "zed", "npx", "-y", "@scope/server x", "--dir", "a b"]);
-        assert_eq!(parse_server("home", "https://h.local/mcp").unwrap().url, "https://h.local/mcp");
+        assert_eq!(
+            s.args,
+            [
+                "run",
+                "-c",
+                "zed",
+                "npx",
+                "-y",
+                "@scope/server x",
+                "--dir",
+                "a b"
+            ]
+        );
+        assert_eq!(
+            parse_server("home", "https://h.local/mcp").unwrap().url,
+            "https://h.local/mcp"
+        );
         assert!(parse_server("", "x").is_err());
         assert!(parse_server("x", "a 'b").is_err());
         let mut off = parse_server("web", "http://x/mcp").unwrap();
@@ -646,6 +928,9 @@ mod edit_tests {
         assert_eq!(back.len(), 2);
         assert!(back.iter().any(|c| c.name == "web" && c.disabled));
         use std::os::unix::fs::PermissionsExt;
-        assert_eq!(fs::metadata(config_path()).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(
+            fs::metadata(config_path()).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
     }
 }

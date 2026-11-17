@@ -84,15 +84,25 @@ mod undo_tests {
         let log = Arc::new(Mutex::new(vec![]));
         for i in 0..25 {
             let l = log.clone();
-            ctx.can_undo(&format!("change {i}"), move || { l.lock().unwrap().push(i); Ok(format!("{i} back.")) });
+            ctx.can_undo(&format!("change {i}"), move || {
+                l.lock().unwrap().push(i);
+                Ok(format!("{i} back."))
+            });
         }
         let copy = ctx.clone();
-        assert_eq!(copy.undo_last().unwrap(), "Undid “change 24”: 24 back.", "clones share the stack");
+        assert_eq!(
+            copy.undo_last().unwrap(),
+            "Undid “change 24”: 24 back.",
+            "clones share the stack"
+        );
         assert_eq!(ctx.undo_last().unwrap(), "Undid “change 23”: 23 back.");
         for _ in 0..18 {
             ctx.undo_last().unwrap();
         }
-        assert!(ctx.undo_last().unwrap_err().0.contains("nothing to undo"), "only the last 20 are kept");
+        assert!(
+            ctx.undo_last().unwrap_err().0.contains("nothing to undo"),
+            "only the last 20 are kept"
+        );
     }
 }
 
@@ -109,16 +119,28 @@ const UNDO_KEEP: usize = 20;
 
 impl Context {
     /// Record how to reverse a change that just happened.
-    pub fn can_undo(&self, what: &str, run: impl Fn() -> Result<String, ToolError> + Send + Sync + 'static) {
+    pub fn can_undo(
+        &self,
+        what: &str,
+        run: impl Fn() -> Result<String, ToolError> + Send + Sync + 'static,
+    ) {
         let mut u = self.undo.lock().unwrap();
-        u.push(UndoStep { what: what.to_string(), run: Arc::new(run) });
+        u.push(UndoStep {
+            what: what.to_string(),
+            run: Arc::new(run),
+        });
         let extra = u.len().saturating_sub(UNDO_KEEP);
         u.drain(..extra);
     }
 
     /// Reverse the newest change.
     pub fn undo_last(&self) -> Result<String, ToolError> {
-        let step = self.undo.lock().unwrap().pop().ok_or("there's nothing to undo")?;
+        let step = self
+            .undo
+            .lock()
+            .unwrap()
+            .pop()
+            .ok_or("there's nothing to undo")?;
         (step.run)().map(|done| format!("Undid “{}”: {done}", step.what.trim_end_matches('.')))
     }
 }
@@ -139,11 +161,23 @@ pub struct Tool {
 }
 
 impl Tool {
-    pub fn new(name: &str, description: &str, parameters: Value, risk: Risk,
-               run: impl Fn(&Context, &Args) -> ToolResult + Send + Sync + 'static,
-               summary: impl Fn(&Args) -> String + Send + Sync + 'static) -> Self {
-        Self { name: name.into(), description: description.into(), parameters, risk, run: Arc::new(run),
-               summary: Arc::new(summary), detail: None }
+    pub fn new(
+        name: &str,
+        description: &str,
+        parameters: Value,
+        risk: Risk,
+        run: impl Fn(&Context, &Args) -> ToolResult + Send + Sync + 'static,
+        summary: impl Fn(&Args) -> String + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            description: description.into(),
+            parameters,
+            risk,
+            run: Arc::new(run),
+            summary: Arc::new(summary),
+            detail: None,
+        }
     }
 
     pub fn with_detail(mut self, detail: impl Fn(&Args) -> String + Send + Sync + 'static) -> Self {
@@ -202,11 +236,16 @@ mod tests {
 
     #[test]
     fn argument_helpers() {
-        let args: Args = serde_json::from_value(json!({"on": "yes", "pct": "42.4", "big": 500, "n": 3})).unwrap();
+        let args: Args =
+            serde_json::from_value(json!({"on": "yes", "pct": "42.4", "big": 500, "n": 3}))
+                .unwrap();
         assert!(arg_bool(&args, "on").unwrap());
         assert!(arg_bool(&args, "missing").is_err());
         assert_eq!(arg_percent(&args, "pct", 0).unwrap(), 42);
-        assert_eq!(arg_percent(&args, "big", 0).unwrap_err().0, "'big' must be from 0 to 100");
+        assert_eq!(
+            arg_percent(&args, "big", 0).unwrap_err().0,
+            "'big' must be from 0 to 100"
+        );
         assert_eq!(arg_str(&args, "n"), "3");
     }
 }

@@ -29,7 +29,10 @@ pub fn write_atomic(path: &Path, text: &str) -> std::io::Result<()> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
     }
-    let tmp = path.with_file_name(format!(".{}.tmp", path.file_name().unwrap_or_default().to_string_lossy()));
+    let tmp = path.with_file_name(format!(
+        ".{}.tmp",
+        path.file_name().unwrap_or_default().to_string_lossy()
+    ));
     fs::write(&tmp, text)?;
     fs::rename(tmp, path)
 }
@@ -39,7 +42,9 @@ fn squash(text: &str) -> String {
 }
 
 fn norm(text: &str) -> String {
-    squash(&text.to_lowercase()).trim_matches(|c| c == ' ' || c == '.' || c == '!').to_string()
+    squash(&text.to_lowercase())
+        .trim_matches(|c| c == ' ' || c == '.' || c == '!')
+        .to_string()
 }
 
 fn chars(text: &str, n: usize) -> String {
@@ -56,13 +61,21 @@ pub fn facts() -> Vec<String> {
     fs::read_to_string(memory_file())
         .unwrap_or_default()
         .lines()
-        .filter_map(|l| l.strip_prefix("- ").map(str::trim).filter(|f| !f.is_empty()).map(String::from))
+        .filter_map(|l| {
+            l.strip_prefix("- ")
+                .map(str::trim)
+                .filter(|f| !f.is_empty())
+                .map(String::from)
+        })
         .collect()
 }
 
 fn save_facts(items: &[String]) -> std::io::Result<()> {
     let body: String = items.iter().map(|f| format!("- {f}\n")).collect();
-    write_atomic(&memory_file(), &format!("# Things the assistant remembers\n\n{body}"))
+    write_atomic(
+        &memory_file(),
+        &format!("# Things the assistant remembers\n\n{body}"),
+    )
 }
 
 pub fn remember(fact: &str) -> Result<String, String> {
@@ -92,7 +105,11 @@ pub fn forget(text: &str) -> Vec<String> {
     let items = facts();
     let mut gone: Vec<String> = items.iter().filter(|f| norm(f) == key).cloned().collect();
     if gone.is_empty() {
-        gone = items.iter().filter(|f| norm(f).contains(&key)).cloned().collect();
+        gone = items
+            .iter()
+            .filter(|f| norm(f).contains(&key))
+            .cloned()
+            .collect();
     }
     if !gone.is_empty() {
         let keep: Vec<String> = items.into_iter().filter(|f| !gone.contains(f)).collect();
@@ -118,7 +135,10 @@ pub fn skills_dir() -> PathBuf {
 
 pub fn slugify(name: &str) -> String {
     static NON: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[^a-z0-9]+").unwrap());
-    let slug = NON.replace_all(&name.to_lowercase(), "-").trim_matches('-').to_string();
+    let slug = NON
+        .replace_all(&name.to_lowercase(), "-")
+        .trim_matches('-')
+        .to_string();
     chars(&slug, 40)
 }
 
@@ -153,15 +173,29 @@ fn parse_skill(path: &Path) -> Option<Skill> {
     if steps.is_empty() && !description.is_empty() {
         steps = std::mem::take(&mut description);
     }
-    Some(Skill { slug: stem, title, description, steps, path: path.to_path_buf() })
+    Some(Skill {
+        slug: stem,
+        title,
+        description,
+        steps,
+        path: path.to_path_buf(),
+    })
 }
 
 pub fn skills() -> Vec<Skill> {
     let mut paths: Vec<PathBuf> = fs::read_dir(skills_dir())
-        .map(|rd| rd.filter_map(|e| e.ok().map(|e| e.path())).filter(|p| p.extension().is_some_and(|e| e == "md")).collect())
+        .map(|rd| {
+            rd.filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|p| p.extension().is_some_and(|e| e == "md"))
+                .collect()
+        })
         .unwrap_or_default();
     paths.sort();
-    paths.iter().filter_map(|p| parse_skill(p)).filter(|s| !s.steps.is_empty()).collect()
+    paths
+        .iter()
+        .filter_map(|p| parse_skill(p))
+        .filter(|s| !s.steps.is_empty())
+        .collect()
 }
 
 pub fn find_skill(name: &str) -> Option<Skill> {
@@ -170,11 +204,21 @@ pub fn find_skill(name: &str) -> Option<Skill> {
         return None;
     }
     let all = skills();
-    if let Some(s) = all.iter().find(|s| s.slug == slug || slugify(&s.title) == slug) {
+    if let Some(s) = all
+        .iter()
+        .find(|s| s.slug == slug || slugify(&s.title) == slug)
+    {
         return Some(s.clone());
     }
-    let hits: Vec<&Skill> = all.iter().filter(|s| s.slug.contains(&slug) || slugify(&s.title).contains(&slug)).collect();
-    if hits.len() == 1 { Some(hits[0].clone()) } else { None }
+    let hits: Vec<&Skill> = all
+        .iter()
+        .filter(|s| s.slug.contains(&slug) || slugify(&s.title).contains(&slug))
+        .collect();
+    if hits.len() == 1 {
+        Some(hits[0].clone())
+    } else {
+        None
+    }
 }
 
 pub fn save_skill(title: &str, steps: &str, description: &str) -> Result<Skill, String> {
@@ -192,9 +236,20 @@ pub fn save_skill(title: &str, steps: &str, description: &str) -> Result<Skill, 
     }
     let description = squash(description);
     let path = skills_dir().join(format!("{slug}.md"));
-    let desc_block = if description.is_empty() { String::new() } else { format!("{description}\n\n") };
-    write_atomic(&path, &format!("# {title}\n\n{desc_block}{steps}\n")).map_err(|e| e.to_string())?;
-    Ok(Skill { slug, title, description, steps: steps.to_string(), path })
+    let desc_block = if description.is_empty() {
+        String::new()
+    } else {
+        format!("{description}\n\n")
+    };
+    write_atomic(&path, &format!("# {title}\n\n{desc_block}{steps}\n"))
+        .map_err(|e| e.to_string())?;
+    Ok(Skill {
+        slug,
+        title,
+        description,
+        steps: steps.to_string(),
+        path,
+    })
 }
 
 pub fn delete_skill(slug: &str) -> bool {
@@ -225,7 +280,10 @@ pub fn chats_dir() -> PathBuf {
 }
 
 fn now() -> f64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0)
 }
 
 pub fn new_chat_id() -> String {
@@ -233,7 +291,10 @@ pub fn new_chat_id() -> String {
         .and_then(|d| d.format("%Y%m%d-%H%M%S"))
         .map(|s| s.to_string())
         .unwrap_or_else(|_| "chat".into());
-    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
     format!("{stamp}-{:06}", nanos % 1_000_000)
 }
 
@@ -256,7 +317,9 @@ pub fn plain_text(content: &Value) -> String {
 }
 
 pub fn chat_title(messages: &[Value]) -> String {
-    let first = messages.iter().find(|m| m.get("role").and_then(Value::as_str) == Some("user"));
+    let first = messages
+        .iter()
+        .find(|m| m.get("role").and_then(Value::as_str) == Some("user"));
     let mut text = squash(&first.map(|m| plain_text(&m["content"])).unwrap_or_default());
     if let Some(rest) = text.strip_prefix(SKILL_PROMPT_HEAD) {
         text = format!("Skill: {}", rest.split('”').next().unwrap_or(""));
@@ -271,11 +334,24 @@ pub fn chat_title(messages: &[Value]) -> String {
 }
 
 fn valid_id(id: &str) -> bool {
-    !id.is_empty() && id.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+    !id.is_empty()
+        && id
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
 }
 
-pub fn save_chat(chat_id: &str, messages: &[Value], model: &str, summary: &str, compacted: usize) -> std::io::Result<()> {
-    if !valid_id(chat_id) || !messages.iter().any(|m| m.get("role").and_then(Value::as_str) == Some("user")) {
+pub fn save_chat(
+    chat_id: &str,
+    messages: &[Value],
+    model: &str,
+    summary: &str,
+    compacted: usize,
+) -> std::io::Result<()> {
+    if !valid_id(chat_id)
+        || !messages
+            .iter()
+            .any(|m| m.get("role").and_then(Value::as_str) == Some("user"))
+    {
         return Ok(());
     }
     let stored: Vec<Value> = messages
@@ -294,7 +370,10 @@ pub fn save_chat(chat_id: &str, messages: &[Value], model: &str, summary: &str, 
         data["summary"] = json!(summary);
         data["compacted"] = json!(compacted);
     }
-    write_atomic(&chats_dir().join(format!("{chat_id}.json")), &data.to_string())?;
+    write_atomic(
+        &chats_dir().join(format!("{chat_id}.json")),
+        &data.to_string(),
+    )?;
     for old in list_chats("").into_iter().skip(MAX_CHATS) {
         let _ = fs::remove_file(old.path);
     }
@@ -305,8 +384,13 @@ pub fn load_chat(chat_id: &str) -> Option<Value> {
     if !valid_id(chat_id) {
         return None;
     }
-    let data: Value = serde_json::from_str(&fs::read_to_string(chats_dir().join(format!("{chat_id}.json"))).ok()?).ok()?;
-    data.get("messages").is_some_and(Value::is_array).then_some(data)
+    let data: Value = serde_json::from_str(
+        &fs::read_to_string(chats_dir().join(format!("{chat_id}.json"))).ok()?,
+    )
+    .ok()?;
+    data.get("messages")
+        .is_some_and(Value::is_array)
+        .then_some(data)
 }
 
 pub fn list_chats(query: &str) -> Vec<ChatInfo> {
@@ -317,16 +401,28 @@ pub fn list_chats(query: &str) -> Vec<ChatInfo> {
         if path.extension().is_none_or(|e| e != "json") {
             continue;
         }
-        let Some(data) = fs::read_to_string(&path).ok().and_then(|s| serde_json::from_str::<Value>(&s).ok()) else {
+        let Some(data) = fs::read_to_string(&path)
+            .ok()
+            .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        else {
             continue;
         };
-        let title = data.get("title").and_then(Value::as_str).unwrap_or("Chat").to_string();
+        let title = data
+            .get("title")
+            .and_then(Value::as_str)
+            .unwrap_or("Chat")
+            .to_string();
         if !key.is_empty() {
             let text: Vec<String> = data["messages"]
                 .as_array()
                 .into_iter()
                 .flatten()
-                .filter(|m| matches!(m.get("role").and_then(Value::as_str), Some("user" | "assistant")))
+                .filter(|m| {
+                    matches!(
+                        m.get("role").and_then(Value::as_str),
+                        Some("user" | "assistant")
+                    )
+                })
                 .map(|m| plain_text(&m["content"]))
                 .collect();
             if !norm(&format!("{title} {}", text.join(" "))).contains(&key) {
@@ -334,7 +430,11 @@ pub fn list_chats(query: &str) -> Vec<ChatInfo> {
             }
         }
         out.push(ChatInfo {
-            id: path.file_stem().unwrap_or_default().to_string_lossy().into(),
+            id: path
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into(),
             title,
             updated: data.get("updated").and_then(Value::as_f64).unwrap_or(0.0),
             path,
@@ -372,7 +472,10 @@ pub(crate) mod testenv {
             std::env::set_var("XDG_CONFIG_HOME", dir.path().join("config"));
             std::env::set_var("XDG_STATE_HOME", dir.path().join("state"));
         }
-        TempHome { _dir: dir, _guard: guard }
+        TempHome {
+            _dir: dir,
+            _guard: guard,
+        }
     }
 }
 
@@ -384,11 +487,22 @@ mod tests {
     #[test]
     fn memory() {
         let _h = temp_home();
-        assert!(remember("Prefers   metric units").unwrap().starts_with("Remembered"));
-        assert_eq!(remember("prefers metric units.").unwrap(), "Already remembered.");
+        assert!(
+            remember("Prefers   metric units")
+                .unwrap()
+                .starts_with("Remembered")
+        );
+        assert_eq!(
+            remember("prefers metric units.").unwrap(),
+            "Already remembered."
+        );
         remember("Uses fish shell").unwrap();
         assert_eq!(facts(), ["Prefers metric units", "Uses fish shell"]);
-        assert!(fs::read_to_string(memory_file()).unwrap().starts_with("# Things the assistant remembers"));
+        assert!(
+            fs::read_to_string(memory_file())
+                .unwrap()
+                .starts_with("# Things the assistant remembers")
+        );
         assert_eq!(forget("fish"), ["Uses fish shell"]);
         assert!(forget("nothing like this").is_empty());
         assert!(remember(&"x".repeat(500)).is_err());
@@ -401,12 +515,24 @@ mod tests {
     #[test]
     fn skills_round_trip() {
         let _h = temp_home();
-        let s = save_skill("Morning Routine", "1. Dark mode on\n2. Volume 30%", "Start the day").unwrap();
+        let s = save_skill(
+            "Morning Routine",
+            "1. Dark mode on\n2. Volume 30%",
+            "Start the day",
+        )
+        .unwrap();
         assert_eq!(s.slug, "morning-routine");
         let found = find_skill("/morning").unwrap();
-        assert_eq!((found.title.as_str(), found.description.as_str()), ("Morning Routine", "Start the day"));
+        assert_eq!(
+            (found.title.as_str(), found.description.as_str()),
+            ("Morning Routine", "Start the day")
+        );
         assert!(skill_prompt(&found, "quietly").ends_with("Details: quietly"));
-        fs::write(skills_dir().join("backup.md"), "- copy Documents\n- eject\n").unwrap();
+        fs::write(
+            skills_dir().join("backup.md"),
+            "- copy Documents\n- eject\n",
+        )
+        .unwrap();
         fs::write(skills_dir().join("empty.md"), "# Empty\n").unwrap();
         let titles: Vec<String> = skills().into_iter().map(|s| s.title).collect();
         assert_eq!(titles, ["Backup", "Morning Routine"]);
@@ -426,8 +552,22 @@ mod tests {
             json!({"role": "assistant", "content": "A red panda."}),
         ];
         save_chat("a-1", &msgs, "m", "", 0).unwrap();
-        save_chat("b-2", &[json!({"role": "user", "content": "Weather in Kraków"})], "m", "sum", 1).unwrap();
-        save_chat("c-3", &[json!({"role": "system", "content": "x"})], "m", "", 0).unwrap();
+        save_chat(
+            "b-2",
+            &[json!({"role": "user", "content": "Weather in Kraków"})],
+            "m",
+            "sum",
+            1,
+        )
+        .unwrap();
+        save_chat(
+            "c-3",
+            &[json!({"role": "system", "content": "x"})],
+            "m",
+            "",
+            0,
+        )
+        .unwrap();
         let ids: Vec<String> = list_chats("").into_iter().map(|c| c.id).collect();
         assert_eq!(ids, ["b-2", "a-1"]);
         assert_eq!(list_chats("panda")[0].id, "a-1");
@@ -437,7 +577,12 @@ mod tests {
         assert!(load_chat("../../etc/passwd").is_none());
         delete_chat("a-1");
         assert_eq!(list_chats("").len(), 1);
-        assert_eq!(chat_title(&[json!({"role": "user", "content": "x".repeat(100)})]).chars().count(), 58);
+        assert_eq!(
+            chat_title(&[json!({"role": "user", "content": "x".repeat(100)})])
+                .chars()
+                .count(),
+            58
+        );
     }
 
     #[test]

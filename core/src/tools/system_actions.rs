@@ -18,63 +18,119 @@ pub fn image_data_url(path: &Path, max_side: i32) -> Result<String, ToolError> {
         .map_err(|e| ToolError(format!("couldn't read the image: {}", e.message())))?;
     if pixbuf.has_alpha() {
         // JPEG has no alpha: flatten onto white.
-        let flat = Pixbuf::new(gdk_pixbuf::Colorspace::Rgb, false, 8, pixbuf.width(), pixbuf.height())
-            .ok_or("out of memory")?;
+        let flat = Pixbuf::new(
+            gdk_pixbuf::Colorspace::Rgb,
+            false,
+            8,
+            pixbuf.width(),
+            pixbuf.height(),
+        )
+        .ok_or("out of memory")?;
         flat.fill(0xFFFFFFFF);
-        pixbuf.composite(&flat, 0, 0, pixbuf.width(), pixbuf.height(), 0.0, 0.0, 1.0, 1.0,
-                         gdk_pixbuf::InterpType::Bilinear, 255);
+        pixbuf.composite(
+            &flat,
+            0,
+            0,
+            pixbuf.width(),
+            pixbuf.height(),
+            0.0,
+            0.0,
+            1.0,
+            1.0,
+            gdk_pixbuf::InterpType::Bilinear,
+            255,
+        );
         pixbuf = flat;
     }
-    let bytes = pixbuf.save_to_bufferv("jpeg", &[("quality", "85")])
+    let bytes = pixbuf
+        .save_to_bufferv("jpeg", &[("quality", "85")])
         .map_err(|e| ToolError(format!("couldn't convert the image: {}", e.message())))?;
-    Ok(format!("data:image/jpeg;base64,{}", glib::base64_encode(&bytes)))
+    Ok(format!(
+        "data:image/jpeg;base64,{}",
+        glib::base64_encode(&bytes)
+    ))
 }
 
 /// A screenshot of the whole screen through the desktop portal; returns the file.
 #[allow(deprecated)] // signal_subscribe: the callback form suits a one-off wait
 pub fn take_screenshot() -> Result<PathBuf, ToolError> {
     let context = glib::MainContext::new();
-    context.with_thread_default(|| {
-        let bus = gio::bus_get_sync(gio::BusType::Session, None::<&gio::Cancellable>)
-            .map_err(|e| ToolError(e.message().to_string()))?;
-        let token = format!("assistant{}", glib::random_int());
-        let sender = bus.unique_name().map(|n| n[1..].replace('.', "_")).unwrap_or_default();
-        let handle = format!("/org/freedesktop/portal/desktop/request/{sender}/{token}");
-        let main_loop = glib::MainLoop::new(Some(&context), false);
-        type Answer = Option<(u32, Option<String>)>;
-        let result: Rc<RefCell<Answer>> = Rc::new(RefCell::new(None));
-        let (r, l) = (result.clone(), main_loop.clone());
-        let sub = bus.signal_subscribe(Some("org.freedesktop.portal.Desktop"), Some("org.freedesktop.portal.Request"),
-            Some("Response"), Some(&handle), None, gio::DBusSignalFlags::NO_MATCH_RULE, move |_, _, _, _, _, params| {
-                let code = params.child_value(0).get::<u32>().unwrap_or(2);
-                let uri = glib::VariantDict::new(Some(&params.child_value(1))).lookup_value("uri", None).and_then(|v| v.get::<String>());
-                *r.borrow_mut() = Some((code, uri));
-                l.quit();
-            });
-        let options = glib::VariantDict::new(None);
-        options.insert("handle_token", &token);
-        options.insert("interactive", false);
-        let call = bus.call_sync(Some("org.freedesktop.portal.Desktop"), "/org/freedesktop/portal/desktop",
-            "org.freedesktop.portal.Screenshot", "Screenshot", Some(&glib::Variant::tuple_from_iter(["".to_variant(), options.end()])),
-            None, gio::DBusCallFlags::NONE, 10000, None::<&gio::Cancellable>);
-        if let Err(e) = call {
+    context
+        .with_thread_default(|| {
+            let bus = gio::bus_get_sync(gio::BusType::Session, None::<&gio::Cancellable>)
+                .map_err(|e| ToolError(e.message().to_string()))?;
+            let token = format!("assistant{}", glib::random_int());
+            let sender = bus
+                .unique_name()
+                .map(|n| n[1..].replace('.', "_"))
+                .unwrap_or_default();
+            let handle = format!("/org/freedesktop/portal/desktop/request/{sender}/{token}");
+            let main_loop = glib::MainLoop::new(Some(&context), false);
+            type Answer = Option<(u32, Option<String>)>;
+            let result: Rc<RefCell<Answer>> = Rc::new(RefCell::new(None));
+            let (r, l) = (result.clone(), main_loop.clone());
+            let sub = bus.signal_subscribe(
+                Some("org.freedesktop.portal.Desktop"),
+                Some("org.freedesktop.portal.Request"),
+                Some("Response"),
+                Some(&handle),
+                None,
+                gio::DBusSignalFlags::NO_MATCH_RULE,
+                move |_, _, _, _, _, params| {
+                    let code = params.child_value(0).get::<u32>().unwrap_or(2);
+                    let uri = glib::VariantDict::new(Some(&params.child_value(1)))
+                        .lookup_value("uri", None)
+                        .and_then(|v| v.get::<String>());
+                    *r.borrow_mut() = Some((code, uri));
+                    l.quit();
+                },
+            );
+            let options = glib::VariantDict::new(None);
+            options.insert("handle_token", &token);
+            options.insert("interactive", false);
+            let call = bus.call_sync(
+                Some("org.freedesktop.portal.Desktop"),
+                "/org/freedesktop/portal/desktop",
+                "org.freedesktop.portal.Screenshot",
+                "Screenshot",
+                Some(&glib::Variant::tuple_from_iter([
+                    "".to_variant(),
+                    options.end(),
+                ])),
+                None,
+                gio::DBusCallFlags::NONE,
+                10000,
+                None::<&gio::Cancellable>,
+            );
+            if let Err(e) = call {
+                bus.signal_unsubscribe(sub);
+                return Err(ToolError::cannot(format!(
+                    "the screenshot portal isn't available: {}",
+                    e.message()
+                )));
+            }
+            let l = main_loop.clone();
+            let timeout = glib::timeout_source_new(
+                Duration::from_secs(60),
+                None,
+                glib::Priority::DEFAULT,
+                move || {
+                    l.quit();
+                    glib::ControlFlow::Break
+                },
+            );
+            timeout.attach(Some(&context));
+            main_loop.run();
+            timeout.destroy();
             bus.signal_unsubscribe(sub);
-            return Err(ToolError::cannot(format!("the screenshot portal isn't available: {}", e.message())));
-        }
-        let l = main_loop.clone();
-        let timeout = glib::timeout_source_new(Duration::from_secs(60), None, glib::Priority::DEFAULT, move || {
-            l.quit();
-            glib::ControlFlow::Break
-        });
-        timeout.attach(Some(&context));
-        main_loop.run();
-        timeout.destroy();
-        bus.signal_unsubscribe(sub);
-        match result.take() {
-            Some((0, Some(uri))) => gio::File::for_uri(&uri).path().ok_or_else(|| ToolError("the screenshot isn't a local file".into())),
-            _ => Err("the screenshot was cancelled or not allowed".into()),
-        }
-    }).map_err(|e| ToolError(e.to_string()))?
+            match result.take() {
+                Some((0, Some(uri))) => gio::File::for_uri(&uri)
+                    .path()
+                    .ok_or_else(|| ToolError("the screenshot isn't a local file".into())),
+                _ => Err("the screenshot was cancelled or not allowed".into()),
+            }
+        })
+        .map_err(|e| ToolError(e.to_string()))?
 }
 
 /// A screenshot with the assistant's window out of the way.
@@ -93,16 +149,26 @@ fn screenshot_without_window(ctx: &Context) -> Result<PathBuf, ToolError> {
 /// A screenshot kept as a file, to send, share or keep (look_at_screen's is thrown away).
 pub fn save_screenshot(ctx: &Context, _: &Args) -> ToolResult {
     let path = screenshot_without_window(ctx)?;
-    Ok(format!("Saved the screenshot as {}. To send it, pass exactly that path to send_file.", short(&path)))
+    Ok(format!(
+        "Saved the screenshot as {}. To send it, pass exactly that path to send_file.",
+        short(&path)
+    ))
 }
 
 pub fn look_at_screen(ctx: &Context, _: &Args) -> ToolResult {
     let path = screenshot_without_window(ctx)?;
     let url = image_data_url(&path, 1024);
     // The portal saved a file just for this; don't leave it behind.
-    let fresh = std::fs::metadata(&path).and_then(|m| m.modified()).ok()
-        .and_then(|t| SystemTime::now().duration_since(t).ok()).is_some_and(|age| age < Duration::from_secs(120));
-    if fresh && path.file_name().is_some_and(|n| n.to_string_lossy().to_lowercase().starts_with("screenshot")) {
+    let fresh = std::fs::metadata(&path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| SystemTime::now().duration_since(t).ok())
+        .is_some_and(|age| age < Duration::from_secs(120));
+    if fresh
+        && path
+            .file_name()
+            .is_some_and(|n| n.to_string_lossy().to_lowercase().starts_with("screenshot"))
+    {
         let _ = std::fs::remove_file(&path);
     }
     ctx.images.lock().unwrap().push(url?);
@@ -114,8 +180,14 @@ pub fn look_at_image(ctx: &Context, args: &Args) -> ToolResult {
     if !path.is_file() {
         return Err(format!("{} isn't a file", short(&path)).into());
     }
-    ctx.images.lock().unwrap().push(image_data_url(&path, 1024)?);
-    Ok(format!("Opened {}; it's attached to the next message.", path.file_name().unwrap().to_string_lossy()))
+    ctx.images
+        .lock()
+        .unwrap()
+        .push(image_data_url(&path, 1024)?);
+    Ok(format!(
+        "Opened {}; it's attached to the next message.",
+        path.file_name().unwrap().to_string_lossy()
+    ))
 }
 
 // -- commands, only inside the zed toolbox ---------------------------------------------
@@ -129,16 +201,33 @@ fn toolbox_ready() -> Result<(), ToolError> {
     if crate::flm::which("toolbox").is_none() {
         return Err(ToolError::cannot("toolbox isn't installed"));
     }
-    if output(&["podman", "container", "exists", TOOLBOX], Duration::from_secs(30), None).is_ok_and(|o| o.code == 0) {
+    if output(
+        &["podman", "container", "exists", TOOLBOX],
+        Duration::from_secs(30),
+        None,
+    )
+    .is_ok_and(|o| o.code == 0)
+    {
         return Ok(());
     }
     if !Path::new(TOOLBOX_SETUP).exists() {
-        return Err(format!("there's no '{TOOLBOX}' toolbox; create one with: toolbox create {TOOLBOX}").into());
+        return Err(format!(
+            "there's no '{TOOLBOX}' toolbox; create one with: toolbox create {TOOLBOX}"
+        )
+        .into());
     }
     let out = output(&[TOOLBOX_SETUP], Duration::from_secs(1200), None)?;
     if out.code != 0 {
         let err = format!("{}{}", out.stderr, out.stdout);
-        let tail: String = err.trim().chars().rev().take(300).collect::<Vec<_>>().into_iter().rev().collect();
+        let tail: String = err
+            .trim()
+            .chars()
+            .rev()
+            .take(300)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
         return Err(format!("couldn't set up the {TOOLBOX} toolbox: {tail}").into());
     }
     Ok(())
@@ -158,21 +247,63 @@ pub fn run_command(_: &Context, args: &Args) -> ToolResult {
         return Err(format!("{} isn't a folder", short(&folder)).into());
     }
     toolbox_ready()?;
-    let out = output(&["toolbox", "run", "--container", TOOLBOX, "bash", "-lc", &command], COMMAND_TIMEOUT, Some(&folder))
-        .map_err(|e| if e.0.contains("didn't finish") {
-            ToolError(format!("still running after {} seconds, so it was stopped", COMMAND_TIMEOUT.as_secs()))
-        } else { e })?;
-    let text = [out.stdout.trim_matches('\n'), out.stderr.trim_matches('\n')].into_iter()
-        .filter(|s| !s.trim().is_empty()).collect::<Vec<_>>().join("\n");
+    let out = output(
+        &[
+            "toolbox",
+            "run",
+            "--container",
+            TOOLBOX,
+            "bash",
+            "-lc",
+            &command,
+        ],
+        COMMAND_TIMEOUT,
+        Some(&folder),
+    )
+    .map_err(|e| {
+        if e.0.contains("didn't finish") {
+            ToolError(format!(
+                "still running after {} seconds, so it was stopped",
+                COMMAND_TIMEOUT.as_secs()
+            ))
+        } else {
+            e
+        }
+    })?;
+    let text = [out.stdout.trim_matches('\n'), out.stderr.trim_matches('\n')]
+        .into_iter()
+        .filter(|s| !s.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
     let text = text.trim();
     let n = text.chars().count();
-    let shown = if n > MAX_OUTPUT { format!("…{}", text.chars().skip(n - MAX_OUTPUT).collect::<String>()) } else { text.to_string() };
-    Ok(format!("Exit code {}.{}", out.code, if shown.is_empty() { " No output.".into() } else { format!("\n{shown}") }))
+    let shown = if n > MAX_OUTPUT {
+        format!("…{}", text.chars().skip(n - MAX_OUTPUT).collect::<String>())
+    } else {
+        text.to_string()
+    };
+    Ok(format!(
+        "Exit code {}.{}",
+        out.code,
+        if shown.is_empty() {
+            " No output.".into()
+        } else {
+            format!("\n{shown}")
+        }
+    ))
 }
 
 pub fn command_detail(args: &Args) -> String {
     let folder = arg_str(args, "folder");
-    format!("{}{}", arg_str(args, "command"), if folder.trim().is_empty() { String::new() } else { format!("\n(in {})", folder.trim()) })
+    format!(
+        "{}{}",
+        arg_str(args, "command"),
+        if folder.trim().is_empty() {
+            String::new()
+        } else {
+            format!("\n(in {})", folder.trim())
+        }
+    )
 }
 
 #[cfg(test)]
@@ -189,22 +320,36 @@ mod tests {
         std::fs::create_dir_all(&bin).unwrap();
         std::fs::create_dir_all(root.join("proj")).unwrap();
         let log = root.join("log");
-        for (name, body) in [("podman", "exit 0\n".to_string()),
-                             ("toolbox", format!("echo \"$PWD|$@\" >> {}\necho built; echo warn >&2; exit 3\n", log.display()))] {
+        for (name, body) in [
+            ("podman", "exit 0\n".to_string()),
+            (
+                "toolbox",
+                format!(
+                    "echo \"$PWD|$@\" >> {}\necho built; echo warn >&2; exit 3\n",
+                    log.display()
+                ),
+            ),
+        ] {
             let p = bin.join(name);
             std::fs::write(&p, format!("#!/bin/sh\n{body}")).unwrap();
             std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
         let old = std::env::var("PATH").unwrap_or_default();
         unsafe { std::env::set_var("PATH", format!("{}:{old}", bin.display())) };
-        let args: Args = serde_json::from_value(serde_json::json!({"command": "make && ls", "folder": "proj"})).unwrap();
+        let args: Args =
+            serde_json::from_value(serde_json::json!({"command": "make && ls", "folder": "proj"}))
+                .unwrap();
         let out = run_command(&Context::default(), &args);
         unsafe { std::env::set_var("PATH", old) };
         assert_eq!(out.unwrap(), "Exit code 3.\nbuilt\nwarn");
         let real = std::fs::canonicalize(root.join("proj")).unwrap();
-        assert_eq!(std::fs::read_to_string(&log).unwrap().trim(), format!("{}|run --container zed bash -lc make && ls", real.display()));
+        assert_eq!(
+            std::fs::read_to_string(&log).unwrap().trim(),
+            format!("{}|run --container zed bash -lc make && ls", real.display())
+        );
         assert_eq!(command_detail(&args), "make && ls\n(in proj)");
-        let bad: Args = serde_json::from_value(serde_json::json!({"command": "ls", "folder": "/etc"})).unwrap();
+        let bad: Args =
+            serde_json::from_value(serde_json::json!({"command": "ls", "folder": "/etc"})).unwrap();
         assert!(run_command(&Context::default(), &bad).is_err());
         drop(h);
     }

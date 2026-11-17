@@ -11,7 +11,9 @@ fn xdg(var: &str, fallback: &str) -> PathBuf {
 }
 
 pub fn home() -> PathBuf {
-    env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/"))
+    env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/"))
 }
 
 /// ~/.local/share/panda-assistant: memory, skills, chats.

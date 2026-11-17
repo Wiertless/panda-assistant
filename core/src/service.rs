@@ -96,21 +96,32 @@ pub struct Config {
 impl Config {
     pub fn load() -> Self {
         let raw: Value = std::fs::read_to_string(paths::config_dir().join("config.json"))
-            .ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(json!({}));
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or(json!({}));
         Self::from_json(&raw)
     }
 
     pub fn from_json(raw: &Value) -> Self {
         Self {
-            model: raw["model"].as_str().unwrap_or(flm::DEFAULT_MODEL).to_string(),
+            model: raw["model"]
+                .as_str()
+                .unwrap_or(flm::DEFAULT_MODEL)
+                .to_string(),
             model_chosen: raw["model"].as_str().is_some(),
-            ctx_len: raw["ctx_len"].as_u64().unwrap_or(flm::DEFAULT_CTX_LEN as u64) as u32,
+            ctx_len: raw["ctx_len"]
+                .as_u64()
+                .unwrap_or(flm::DEFAULT_CTX_LEN as u64) as u32,
             web_search: raw["web_search"].as_bool().unwrap_or(true),
             memory: raw["memory"].as_bool().unwrap_or(true),
             smarter_model: raw["smarter_model"].as_str().unwrap_or("auto").to_string(),
             unload_after_minutes: raw["unload_after_minutes"].as_u64().unwrap_or(0) as u32,
-            always_allow: raw["always_allow"].as_array().into_iter().flatten()
-                .filter_map(|v| v.as_str().map(String::from)).collect(),
+            always_allow: raw["always_allow"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect(),
         }
     }
 }
@@ -130,8 +141,12 @@ struct SignalCallbacks {
 impl SignalCallbacks {
     fn emit(&self, name: &str, args: Variant) {
         // Only the window following the chat hears it (answers and tool output stay private).
-        let Some(dest) = self.service.listener.lock().unwrap().clone() else { return };
-        let _ = self.conn.emit_signal(Some(&dest), OBJECT_PATH, INTERFACE, name, Some(&args));
+        let Some(dest) = self.service.listener.lock().unwrap().clone() else {
+            return;
+        };
+        let _ = self
+            .conn
+            .emit_signal(Some(&dest), OBJECT_PATH, INTERFACE, name, Some(&args));
     }
 }
 
@@ -148,12 +163,27 @@ impl Callbacks for SignalCallbacks {
     }
     fn tool_finished(&self, n: &str, r: &str, ok: bool) {
         if n != crate::tools::groups::MORE_TOOLS {
-            let summary = self.summaries.lock().unwrap().get(n).cloned().unwrap_or_else(|| n.replace('_', " "));
-            activity::record(&activity::Entry { chat_id: &self.chat_id, tool: n, summary: &summary, result: r, ok,
-                                                from: if self.background { "search" } else { "window" },
-                                                decision: self.decision.lock().unwrap().take() });
+            let summary = self
+                .summaries
+                .lock()
+                .unwrap()
+                .get(n)
+                .cloned()
+                .unwrap_or_else(|| n.replace('_', " "));
+            activity::record(&activity::Entry {
+                chat_id: &self.chat_id,
+                tool: n,
+                summary: &summary,
+                result: r,
+                ok,
+                from: if self.background { "search" } else { "window" },
+                decision: self.decision.lock().unwrap().take(),
+            });
         }
-        self.emit("ToolFinished", (self.chat_id.as_str(), n, r, ok).to_variant());
+        self.emit(
+            "ToolFinished",
+            (self.chat_id.as_str(), n, r, ok).to_variant(),
+        );
     }
     fn notice(&self, t: &str) {
         self.emit("Notice", (self.chat_id.as_str(), t).to_variant());
@@ -169,16 +199,31 @@ impl Callbacks for SignalCallbacks {
     }
     fn confirm(&self, name: &str, summary: &str, detail: &str) -> bool {
         let can_always = !tools::ALWAYS_ASK.contains(&name);
-        let (id, rx) = self.service.new_request(json!({"chat_id": self.chat_id, "name": name, "summary": summary,
-                                                       "detail": detail, "can_always": can_always}));
-        self.emit("ConfirmRequest", (self.chat_id.as_str(), id, name, summary, detail, can_always).to_variant());
+        let (id, rx) = self.service.new_request(
+            json!({"chat_id": self.chat_id, "name": name, "summary": summary,
+                                                       "detail": detail, "can_always": can_always}),
+        );
+        self.emit(
+            "ConfirmRequest",
+            (self.chat_id.as_str(), id, name, summary, detail, can_always).to_variant(),
+        );
         if self.background && !search::app_running(&self.conn) {
-            search::notify(&self.conn, "Assistant needs your OK", &format!("{summary}?"), &self.chat_id, "Review");
+            search::notify(
+                &self.conn,
+                "Assistant needs your OK",
+                &format!("{summary}?"),
+                &self.chat_id,
+                "Review",
+            );
         }
         let answer = loop {
             match rx.recv_timeout(Duration::from_millis(200)) {
                 Ok(a) => break a,
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) if !self.service.cancel.load(Ordering::SeqCst) => continue,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+                    if !self.service.cancel.load(Ordering::SeqCst) =>
+                {
+                    continue;
+                }
                 Err(_) => break "deny".into(),
             }
         };
@@ -187,7 +232,13 @@ impl Callbacks for SignalCallbacks {
             self.service.allow_always(name);
         }
         let allowed = answer == "allow" || answer == "always";
-        *self.decision.lock().unwrap() = Some(if answer == "always" && can_always { "always" } else if allowed { "allowed" } else { "declined" });
+        *self.decision.lock().unwrap() = Some(if answer == "always" && can_always {
+            "always"
+        } else if allowed {
+            "allowed"
+        } else {
+            "declined"
+        });
         allowed
     }
 }
@@ -256,9 +307,17 @@ impl Shared {
 
     /// Questions waiting for the user in this chat (a window opening it shows them).
     pub fn pending_for(&self, chat_id: &str) -> Value {
-        let list: Vec<Value> = self.pending.lock().unwrap().iter()
+        let list: Vec<Value> = self
+            .pending
+            .lock()
+            .unwrap()
+            .iter()
             .filter(|(_, (_, info))| info["chat_id"] == chat_id)
-            .map(|(id, (_, info))| { let mut i = info.clone(); i["request"] = json!(id); i })
+            .map(|(id, (_, info))| {
+                let mut i = info.clone();
+                i["request"] = json!(id);
+                i
+            })
             .collect();
         Value::Array(list)
     }
@@ -267,16 +326,25 @@ impl Shared {
         self.always_allow.lock().unwrap().insert(name.to_string());
         // Keep the window's settings file in step.
         let path = paths::config_dir().join("config.json");
-        let mut raw: Value = std::fs::read_to_string(&path).ok().and_then(|s| serde_json::from_str(&s).ok())
+        let mut raw: Value = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or(json!({}));
         let mut names: Vec<String> = self.always_allow.lock().unwrap().iter().cloned().collect();
         names.sort();
         raw["always_allow"] = json!(names);
-        let _ = store::write_atomic(&path, &serde_json::to_string_pretty(&raw).unwrap_or_default());
+        let _ = store::write_atomic(
+            &path,
+            &serde_json::to_string_pretty(&raw).unwrap_or_default(),
+        );
     }
 
     fn model_sees(&self, name: &str) -> bool {
-        self.models.lock().unwrap().iter().any(|m| m.name == name && m.can_see())
+        self.models
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|m| m.name == name && m.can_see())
     }
 
     /// A fresh agent with the current settings.
@@ -284,11 +352,15 @@ impl Shared {
         let cfg = self.config.lock().unwrap().clone();
         let models = self.models.lock().unwrap().clone();
         let hub = self.mcp.clone();
-        let mut agent = Agent::new(self.client.clone(), &cfg.model, Arc::new(move || {
-            let mut all = tools::all();
-            all.extend(hub.tools());
-            all
-        }));
+        let mut agent = Agent::new(
+            self.client.clone(),
+            &cfg.model,
+            Arc::new(move || {
+                let mut all = tools::all();
+                all.extend(hub.tools());
+                all
+            }),
+        );
         agent.ctx = self.tool_ctx.lock().unwrap().clone();
         agent.cancel = self.cancel.clone();
         agent.web_enabled = cfg.web_search;
@@ -305,7 +377,11 @@ impl Shared {
             "auto" => flm::pick_smarter_model(&models, &cfg.model, None),
             other => Some(other.to_string()),
         };
-        if let Some(m) = models.iter().find(|m| m.name == cfg.model).filter(|m| !m.labels.is_empty()) {
+        if let Some(m) = models
+            .iter()
+            .find(|m| m.name == cfg.model)
+            .filter(|m| !m.labels.is_empty())
+        {
             agent.use_tools = m.can_use_tools();
         }
         agent
@@ -315,13 +391,18 @@ impl Shared {
     /// The installed models (`flm list`), the embedding model next to the
     /// chat one, and the default model when the user hasn't chosen one.
     pub fn refresh_models(&self) {
-        let Ok(models) = self.client.list_models() else { return };
+        let Ok(models) = self.client.list_models() else {
+            return;
+        };
         let installed: Vec<Model> = models.into_iter().filter(|m| m.installed).collect();
         // The embedding model, when installed, runs next to the chat model for routing.
         if installed.iter().any(|m| m.name == flm::EMBED_MODEL) {
             *self.client.embed_model.lock().unwrap() = Some(flm::EMBED_MODEL.into());
             self.embedder.lock().unwrap().get_or_insert_with(|| {
-                Arc::new(tools::groups::Embedder::new(self.client.clone(), flm::EMBED_MODEL))
+                Arc::new(tools::groups::Embedder::new(
+                    self.client.clone(),
+                    flm::EMBED_MODEL,
+                ))
             });
         }
         // No choice yet: the best preferred model that's installed.
@@ -340,21 +421,29 @@ impl Shared {
             self.refresh_models();
         }
         let current = self.chat_id.lock().unwrap().clone();
-        if !chat_id.is_empty() && chat_id == current
-            && let Some(a) = self.agent.lock().unwrap().take() {
-                return (current, a);
-            }
+        if !chat_id.is_empty()
+            && chat_id == current
+            && let Some(a) = self.agent.lock().unwrap().take()
+        {
+            return (current, a);
+        }
         let mut agent = self.make_agent();
         if !chat_id.is_empty()
-            && let Some(data) = store::load_chat(chat_id) {
-                agent.messages = data["messages"].as_array().cloned().unwrap_or_default();
-                agent.summary = data["summary"].as_str().unwrap_or("").to_string();
-                agent.compacted = (data["compacted"].as_u64().unwrap_or(0) as usize).min(agent.messages.len());
-                return (chat_id.to_string(), agent);
-            }
+            && let Some(data) = store::load_chat(chat_id)
+        {
+            agent.messages = data["messages"].as_array().cloned().unwrap_or_default();
+            agent.summary = data["summary"].as_str().unwrap_or("").to_string();
+            agent.compacted =
+                (data["compacted"].as_u64().unwrap_or(0) as usize).min(agent.messages.len());
+            return (chat_id.to_string(), agent);
+        }
         // A new chat; a client may choose its id (so it can route the signals).
-        let id = if !chat_id.is_empty() && chat_id.len() <= 64
-            && chat_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        let id = if !chat_id.is_empty()
+            && chat_id.len() <= 64
+            && chat_id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
             chat_id.to_string()
         } else {
             store::new_chat_id()
@@ -364,7 +453,14 @@ impl Shared {
 
     fn big_model_loaded(&self) -> bool {
         let model = self.config.lock().unwrap().model.clone();
-        self.client.owns_server() && self.client.last_model.lock().unwrap().as_deref().is_some_and(|m| m != model)
+        self.client.owns_server()
+            && self
+                .client
+                .last_model
+                .lock()
+                .unwrap()
+                .as_deref()
+                .is_some_and(|m| m != model)
     }
 }
 
@@ -385,8 +481,10 @@ impl Service {
         let shared = Shared::new(client);
         let emit = |conn: &gio::DBusConnection, name: &'static str, args: Option<Variant>| {
             let (c, l) = (conn.clone(), shared.listener.clone());
-            move || if let Some(dest) = l.lock().unwrap().clone() {
-                let _ = c.emit_signal(Some(&dest), OBJECT_PATH, INTERFACE, name, args.as_ref());
+            move || {
+                if let Some(dest) = l.lock().unwrap().clone() {
+                    let _ = c.emit_signal(Some(&dest), OBJECT_PATH, INTERFACE, name, args.as_ref());
+                }
             }
         };
         {
@@ -394,7 +492,13 @@ impl Service {
             let (c, l) = (conn.clone(), shared.listener.clone());
             ctx.copy_to_clipboard = Some(Arc::new(move |text: &str| {
                 if let Some(dest) = l.lock().unwrap().clone() {
-                    let _ = c.emit_signal(Some(&dest), OBJECT_PATH, INTERFACE, "Clipboard", Some(&(text,).to_variant()));
+                    let _ = c.emit_signal(
+                        Some(&dest),
+                        OBJECT_PATH,
+                        INTERFACE,
+                        "Clipboard",
+                        Some(&(text,).to_variant()),
+                    );
                 } else {
                     search::set_clipboard(&c, text); // no window: GNOME Shell (the clipboard extension) sets it
                 }
@@ -402,8 +506,15 @@ impl Service {
             ctx.hide_window = Some(Arc::new(emit(&conn, "StepAside", None)));
             ctx.show_window = Some(Arc::new(emit(&conn, "StepBack", None)));
         }
-        Arc::new(Self { shared, conn, idle: Mutex::new(None), last_activity: Mutex::new(std::time::Instant::now()),
-                        loading: AtomicBool::new(false), last_turn: Mutex::new(None), reminder_timer: Mutex::new(None) })
+        Arc::new(Self {
+            shared,
+            conn,
+            idle: Mutex::new(None),
+            last_activity: Mutex::new(std::time::Instant::now()),
+            loading: AtomicBool::new(false),
+            last_turn: Mutex::new(None),
+            reminder_timer: Mutex::new(None),
+        })
     }
 
     /// Fire what's due and wake up for the next one. At most a minute
@@ -417,7 +528,9 @@ impl Service {
             search::notify_reminder(&self.conn, &r);
             self.touch();
         }
-        let Some(next) = crate::reminders::pending().first().map(|r| r.due) else { return };
+        let Some(next) = crate::reminders::pending().first().map(|r| r.due) else {
+            return;
+        };
         let wait = (next - crate::reminders::now()).clamp(1, 60) as u64;
         let me = self.clone();
         let id = glib::timeout_add_local_once(Duration::from_secs(wait), move || {
@@ -432,16 +545,32 @@ impl Service {
         let weak = Arc::downgrade(self);
         self.shared.tool_ctx.lock().unwrap().reminders_changed = Some(Arc::new(move || {
             let w = weak.clone();
-            glib::MainContext::default().invoke(move || if let Some(s) = w.upgrade() { s.schedule_reminders() });
+            glib::MainContext::default().invoke(move || {
+                if let Some(s) = w.upgrade() {
+                    s.schedule_reminders()
+                }
+            });
         }));
         self.schedule_reminders();
     }
 
     /// Whether a bus name belongs to Assistant's own window (its executable).
     fn is_window(&self, sender: &str) -> bool {
-        let pid = self.conn.call_sync(Some("org.freedesktop.DBus"), "/org/freedesktop/DBus", "org.freedesktop.DBus",
-            "GetConnectionUnixProcessID", Some(&(sender,).to_variant()), Some(glib::VariantTy::new("(u)").unwrap()),
-            gio::DBusCallFlags::NONE, 1000, None::<&gio::Cancellable>).ok().and_then(|v| v.child_value(0).get::<u32>());
+        let pid = self
+            .conn
+            .call_sync(
+                Some("org.freedesktop.DBus"),
+                "/org/freedesktop/DBus",
+                "org.freedesktop.DBus",
+                "GetConnectionUnixProcessID",
+                Some(&(sender,).to_variant()),
+                Some(glib::VariantTy::new("(u)").unwrap()),
+                gio::DBusCallFlags::NONE,
+                1000,
+                None::<&gio::Cancellable>,
+            )
+            .ok()
+            .and_then(|v| v.child_value(0).get::<u32>());
         pid.and_then(|p| std::fs::read_link(format!("/proc/{p}/exe")).ok())
             .is_some_and(|exe| exe.file_name().is_some_and(|n| n == "panda-assistant"))
     }
@@ -453,8 +582,13 @@ impl Service {
     fn set_state(&self, state: &str) {
         *self.shared.state.lock().unwrap() = state.to_string();
         let model = self.shared.config.lock().unwrap().model.clone();
-        let _ = self.conn.emit_signal(None, OBJECT_PATH, INTERFACE, "StateChanged",
-                                      Some(&(model.as_str(), state).to_variant()));
+        let _ = self.conn.emit_signal(
+            None,
+            OBJECT_PATH,
+            INTERFACE,
+            "StateChanged",
+            Some(&(model.as_str(), state).to_variant()),
+        );
     }
 
     /// Load the default model ahead of a question (e.g. while it's typed).
@@ -469,7 +603,11 @@ impl Service {
             if *me.shared.state.lock().unwrap() != "Loaded" {
                 me.set_state("Loading…");
             }
-            let ok = me.shared.client.ensure_server(&cfg.model, Some(cfg.ctx_len), Duration::from_secs(300)).is_ok();
+            let ok = me
+                .shared
+                .client
+                .ensure_server(&cfg.model, Some(cfg.ctx_len), Duration::from_secs(300))
+                .is_ok();
             me.set_state(if ok { "Loaded" } else { "Not loaded" });
             me.loading.store(false, Ordering::SeqCst);
             let me2 = me.clone();
@@ -494,7 +632,9 @@ impl Service {
 
     /// True when the service has nothing loaded and nothing to do for a while.
     fn should_exit(&self) -> bool {
-        !self.shared.busy.load(Ordering::SeqCst) && !self.loading.load(Ordering::SeqCst) && !self.shared.client.owns_server()
+        !self.shared.busy.load(Ordering::SeqCst)
+            && !self.loading.load(Ordering::SeqCst)
+            && !self.shared.client.owns_server()
             && self.last_activity.lock().unwrap().elapsed() > EXIT_WHEN_IDLE
             && crate::reminders::pending().is_empty()
     }
@@ -517,32 +657,65 @@ impl Service {
     pub fn ask_in_background(self: &Arc<Self>, text: &str) {
         if self.shared.busy.load(Ordering::SeqCst) {
             let id = self.shared.chat_id.lock().unwrap().clone();
-            search::notify(&self.conn, "Assistant is busy", "Still working on the last question.", &id, "Open Chat");
+            search::notify(
+                &self.conn,
+                "Assistant is busy",
+                "Still working on the last question.",
+                &id,
+                "Open Chat",
+            );
             return;
         }
-        let fresh = self.last_turn.lock().unwrap().is_some_and(|t| t.elapsed() < STALE_CHAT);
+        let fresh = self
+            .last_turn
+            .lock()
+            .unwrap()
+            .is_some_and(|t| t.elapsed() < STALE_CHAT);
         let current = self.shared.chat_id.lock().unwrap().clone();
-        let chat_id = if fresh && !current.is_empty() { current } else { store::new_chat_id() };
+        let chat_id = if fresh && !current.is_empty() {
+            current
+        } else {
+            store::new_chat_id()
+        };
         // "/name details" runs a saved skill, as in the window.
         let prompt = match text.strip_prefix('/') {
             Some(rest) => {
                 let (name, details) = rest.split_once(' ').unwrap_or((rest, ""));
-                store::find_skill(name).map(|s| store::skill_prompt(&s, details)).unwrap_or_else(|| text.to_string())
+                store::find_skill(name)
+                    .map(|s| store::skill_prompt(&s, details))
+                    .unwrap_or_else(|| text.to_string())
             }
             None => text.to_string(),
         };
         search::notify(&self.conn, "Asking Assistant…", text, &chat_id, "Open Chat");
         if let Err(e) = self.start_turn(&chat_id, &prompt, vec![], true) {
-            search::notify(&self.conn, "Assistant couldn't answer", &e, &chat_id, "Open Chat");
+            search::notify(
+                &self.conn,
+                "Assistant couldn't answer",
+                &e,
+                &chat_id,
+                "Open Chat",
+            );
         }
     }
 
     /// Start a turn on a worker thread; returns its chat id at once.
-    pub fn ask(self: &Arc<Self>, chat_id: &str, text: &str, images: Vec<String>) -> Result<String, String> {
+    pub fn ask(
+        self: &Arc<Self>,
+        chat_id: &str,
+        text: &str,
+        images: Vec<String>,
+    ) -> Result<String, String> {
         self.start_turn(chat_id, text, images, false)
     }
 
-    fn start_turn(self: &Arc<Self>, chat_id: &str, text: &str, images: Vec<String>, background: bool) -> Result<String, String> {
+    fn start_turn(
+        self: &Arc<Self>,
+        chat_id: &str,
+        text: &str,
+        images: Vec<String>,
+        background: bool,
+    ) -> Result<String, String> {
         if self.shared.busy.swap(true, Ordering::SeqCst) {
             return Err("busy with another question".into());
         }
@@ -557,32 +730,48 @@ impl Service {
         std::thread::spawn(move || {
             let shared = me.shared.clone();
             let cfg = shared.config.lock().unwrap().clone();
-            let cb = SignalCallbacks { conn: me.conn.clone(), chat_id: id.clone(), service: shared.clone(), background,
-                                       summaries: Mutex::default(), decision: Mutex::default() };
+            let cb = SignalCallbacks {
+                conn: me.conn.clone(),
+                chat_id: id.clone(),
+                service: shared.clone(),
+                background,
+                summaries: Mutex::default(),
+                decision: Mutex::default(),
+            };
             if *shared.state.lock().unwrap() != "Loaded" {
                 me.set_state("Loading…");
             }
             let before = (agent.messages.len(), agent.summary.clone(), agent.compacted);
-            let attempt = |agent: &mut Agent| shared.client.ensure_server(&agent.model, Some(cfg.ctx_len), Duration::from_secs(300))
-                .and_then(|_| {
-                    me.set_state("Loaded");
-                    if agent.use_tools {
-                        for problem in shared.mcp.start_all() {
-                            cb.notice(&format!("Couldn't connect {problem}"));
+            let attempt = |agent: &mut Agent| {
+                shared
+                    .client
+                    .ensure_server(&agent.model, Some(cfg.ctx_len), Duration::from_secs(300))
+                    .and_then(|_| {
+                        me.set_state("Loaded");
+                        if agent.use_tools {
+                            for problem in shared.mcp.start_all() {
+                                cb.notice(&format!("Couldn't connect {problem}"));
+                            }
                         }
-                    }
-                    agent.ask(&text, &cb, &images)
-                });
+                        agent.ask(&text, &cb, &images)
+                    })
+            };
             let mut result = attempt(&mut agent);
             // FastFlowLM itself broke (not the request): stop every flm serve, start it
             // again and ask once more, from where the turn began.
-            if let Err(e) = &result && flm::server_trouble(e) && !shared.cancel.load(Ordering::SeqCst) {
+            if let Err(e) = &result
+                && flm::server_trouble(e)
+                && !shared.cancel.load(Ordering::SeqCst)
+            {
                 cb.retract();
                 cb.notice("FastFlowLM stopped working, so it's being restarted…");
                 me.set_state("Loading…");
                 agent.messages.truncate(before.0);
                 (agent.summary, agent.compacted) = (before.1.clone(), before.2);
-                result = shared.client.restart_server(&agent.model, Some(cfg.ctx_len)).and_then(|_| attempt(&mut agent));
+                result = shared
+                    .client
+                    .restart_server(&agent.model, Some(cfg.ctx_len))
+                    .and_then(|_| attempt(&mut agent));
             }
             let result = result.map_err(|mut e| {
                 if flm::server_trouble(&e) {
@@ -594,18 +783,41 @@ impl Service {
             if !error.is_empty() && !shared.client.is_up() {
                 me.set_state("Not loaded");
             }
-            let _ = store::save_chat(&id, &agent.messages, &agent.model, &agent.summary, agent.compacted);
-            let answer = agent.messages.last().filter(|m| m["role"] == "assistant")
-                .and_then(|m| m["content"].as_str()).unwrap_or("").to_string();
+            let _ = store::save_chat(
+                &id,
+                &agent.messages,
+                &agent.model,
+                &agent.summary,
+                agent.compacted,
+            );
+            let answer = agent
+                .messages
+                .last()
+                .filter(|m| m["role"] == "assistant")
+                .and_then(|m| m["content"].as_str())
+                .unwrap_or("")
+                .to_string();
             *shared.agent.lock().unwrap() = Some(agent);
             shared.busy.store(false, Ordering::SeqCst);
             *me.last_turn.lock().unwrap() = Some(std::time::Instant::now());
             me.touch();
             if background && !search::app_running(&me.conn) {
                 if !error.is_empty() {
-                    search::notify(&me.conn, "Assistant couldn't answer", &error, &id, "Open Chat");
+                    search::notify(
+                        &me.conn,
+                        "Assistant couldn't answer",
+                        &error,
+                        &id,
+                        "Open Chat",
+                    );
                 } else if !answer.trim().is_empty() {
-                    search::notify(&me.conn, "Assistant", &search::plain(&answer, 400), &id, "Open Chat");
+                    search::notify(
+                        &me.conn,
+                        "Assistant",
+                        &search::plain(&answer, 400),
+                        &id,
+                        "Open Chat",
+                    );
                 }
             }
             cb.emit("Finished", (id.as_str(), error.as_str()).to_variant());
@@ -709,7 +921,11 @@ impl Service {
                 me.set_state("Loading…");
                 me.shared.client.stop_server();
                 let cfg = me.shared.config.lock().unwrap().clone();
-                let ok = me.shared.client.ensure_server(&cfg.model, Some(cfg.ctx_len), Duration::from_secs(300)).is_ok();
+                let ok = me
+                    .shared
+                    .client
+                    .ensure_server(&cfg.model, Some(cfg.ctx_len), Duration::from_secs(300))
+                    .is_ok();
                 me.set_state(if ok { "Loaded" } else { "Not loaded" });
                 let me2 = me.clone();
                 glib::MainContext::default().invoke(move || me2.schedule_idle());
@@ -719,28 +935,52 @@ impl Service {
         }
     }
 
-    fn handle(self: &Arc<Self>, method: &str, params: &Variant, invocation: gio::DBusMethodInvocation) {
+    fn handle(
+        self: &Arc<Self>,
+        method: &str,
+        params: &Variant,
+        invocation: gio::DBusMethodInvocation,
+    ) {
         self.touch();
         let reply = |v: Option<Variant>| invocation.clone().return_value(v.as_ref());
         let sender = invocation.sender().map(|s| s.to_string());
         let from_window = sender.as_deref().is_some_and(|s| self.is_window(s));
         match method {
             "Ask" => {
-                let (chat_id, text, images): (String, String, Vec<String>) = params.get().unwrap_or_default();
+                let (chat_id, text, images): (String, String, Vec<String>) =
+                    params.get().unwrap_or_default();
                 // Remember who asked: reading "the window" skips the asking window.
                 if let Some(sender) = invocation.sender() {
-                    let pid = self.conn.call_sync(Some("org.freedesktop.DBus"), "/org/freedesktop/DBus", "org.freedesktop.DBus",
-                        "GetConnectionUnixProcessID", Some(&(sender.as_str(),).to_variant()),
-                        Some(glib::VariantTy::new("(u)").unwrap()), gio::DBusCallFlags::NONE, 1000, None::<&gio::Cancellable>)
-                        .ok().and_then(|v| v.child_value(0).get::<u32>()).unwrap_or(0);
-                    self.shared.tool_ctx.lock().unwrap().client_pid.store(pid, Ordering::SeqCst);
+                    let pid = self
+                        .conn
+                        .call_sync(
+                            Some("org.freedesktop.DBus"),
+                            "/org/freedesktop/DBus",
+                            "org.freedesktop.DBus",
+                            "GetConnectionUnixProcessID",
+                            Some(&(sender.as_str(),).to_variant()),
+                            Some(glib::VariantTy::new("(u)").unwrap()),
+                            gio::DBusCallFlags::NONE,
+                            1000,
+                            None::<&gio::Cancellable>,
+                        )
+                        .ok()
+                        .and_then(|v| v.child_value(0).get::<u32>())
+                        .unwrap_or(0);
+                    self.shared
+                        .tool_ctx
+                        .lock()
+                        .unwrap()
+                        .client_pid
+                        .store(pid, Ordering::SeqCst);
                 }
                 if from_window {
                     *self.shared.listener.lock().unwrap() = sender.clone();
                 }
                 match self.ask(&chat_id, &text, images) {
                     Ok(id) => reply(Some((id,).to_variant())),
-                    Err(e) => invocation.return_dbus_error("io.github.wiertless.PandaAssistant.Error.Busy", &e),
+                    Err(e) => invocation
+                        .return_dbus_error("io.github.wiertless.PandaAssistant.Error.Busy", &e),
                 }
             }
             "Stop" => {
@@ -751,7 +991,10 @@ impl Service {
                 // Only Assistant's own window answers an Allow card: another program on the bus
                 // could otherwise ask for a command and approve it itself.
                 if !from_window {
-                    return invocation.return_dbus_error("org.freedesktop.DBus.Error.AccessDenied", "only the Assistant window can confirm");
+                    return invocation.return_dbus_error(
+                        "org.freedesktop.DBus.Error.AccessDenied",
+                        "only the Assistant window can confirm",
+                    );
                 }
                 let (id, answer): (u32, String) = params.get().unwrap_or_default();
                 self.shared.answer(id, &answer);
@@ -764,13 +1007,22 @@ impl Service {
                 glib::MainContext::default().spawn_local(async move {
                     let list = gio::spawn_blocking(move || {
                         if shared.models.lock().unwrap().is_empty()
-                            && let Ok(models) = shared.client.list_models() {
-                                *shared.models.lock().unwrap() = models.into_iter().filter(|m| m.installed).collect();
-                            }
-                        let models: Vec<Value> = shared.models.lock().unwrap().iter()
-                            .map(|m| json!({"name": m.name, "labels": m.labels})).collect();
+                            && let Ok(models) = shared.client.list_models()
+                        {
+                            *shared.models.lock().unwrap() =
+                                models.into_iter().filter(|m| m.installed).collect();
+                        }
+                        let models: Vec<Value> = shared
+                            .models
+                            .lock()
+                            .unwrap()
+                            .iter()
+                            .map(|m| json!({"name": m.name, "labels": m.labels}))
+                            .collect();
                         Value::Array(models).to_string()
-                    }).await.unwrap_or_else(|_| "[]".into());
+                    })
+                    .await
+                    .unwrap_or_else(|_| "[]".into());
                     invocation.return_value(Some(&(list,).to_variant()));
                 });
             }
@@ -784,7 +1036,9 @@ impl Service {
                 if from_window {
                     *self.shared.listener.lock().unwrap() = sender.clone(); // it follows this turn now
                 }
-                reply(Some((self.shared.pending_for(&chat_id).to_string(),).to_variant()))
+                reply(Some(
+                    (self.shared.pending_for(&chat_id).to_string(),).to_variant(),
+                ))
             }
             "Reload" => {
                 self.reload();
@@ -824,9 +1078,11 @@ impl Service {
         let me = self.clone();
         self.conn
             .register_object(OBJECT_PATH, &iface)
-            .method_call(move |_conn, _sender, _path, _iface, method, params, invocation| {
-                me.handle(method, &params, invocation);
-            })
+            .method_call(
+                move |_conn, _sender, _path, _iface, method, params, invocation| {
+                    me.handle(method, &params, invocation);
+                },
+            )
             .build()
     }
 }
@@ -881,8 +1137,17 @@ pub fn run() -> ControlFlow {
 /// Ask the bus for a name without queueing: 1 means we have it.
 fn request_name(conn: &gio::DBusConnection, name: &str) -> Option<u32> {
     const DO_NOT_QUEUE: u32 = 4;
-    conn.call_sync(Some("org.freedesktop.DBus"), "/org/freedesktop/DBus", "org.freedesktop.DBus", "RequestName",
-                   Some(&(name, DO_NOT_QUEUE).to_variant()), Some(glib::VariantTy::new("(u)").unwrap()),
-                   gio::DBusCallFlags::NONE, 5000, None::<&gio::Cancellable>)
-        .ok().and_then(|v| v.child_value(0).get::<u32>())
+    conn.call_sync(
+        Some("org.freedesktop.DBus"),
+        "/org/freedesktop/DBus",
+        "org.freedesktop.DBus",
+        "RequestName",
+        Some(&(name, DO_NOT_QUEUE).to_variant()),
+        Some(glib::VariantTy::new("(u)").unwrap()),
+        gio::DBusCallFlags::NONE,
+        5000,
+        None::<&gio::Cancellable>,
+    )
+    .ok()
+    .and_then(|v| v.child_value(0).get::<u32>())
 }

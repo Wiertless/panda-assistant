@@ -13,16 +13,30 @@ use assistant_core::{activity, mcp, store};
 use crate::config;
 use crate::window::Window;
 
-const CTX_CHOICES: [(i64, &str); 4] = [(4096, "4K tokens"), (8192, "8K tokens"), (16384, "16K tokens"), (32768, "32K tokens")];
-const IDLE_CHOICES: [(i64, &str); 5] = [(1, "After 1 Minute"), (5, "After 5 Minutes"), (15, "After 15 Minutes"),
-                                        (30, "After 30 Minutes"), (0, "Never")];
+const CTX_CHOICES: [(i64, &str); 4] = [
+    (4096, "4K tokens"),
+    (8192, "8K tokens"),
+    (16384, "16K tokens"),
+    (32768, "32K tokens"),
+];
+const IDLE_CHOICES: [(i64, &str); 5] = [
+    (1, "After 1 Minute"),
+    (5, "After 5 Minutes"),
+    (15, "After 15 Minutes"),
+    (30, "After 30 Minutes"),
+    (0, "Never"),
+];
 
 fn esc(s: &str) -> String {
     glib::markup_escape_text(s).to_string()
 }
 
 fn flat_button(icon: &str, tip: &str) -> gtk::Button {
-    let b = gtk::Button::builder().icon_name(icon).tooltip_text(tip).valign(gtk::Align::Center).build();
+    let b = gtk::Button::builder()
+        .icon_name(icon)
+        .tooltip_text(tip)
+        .valign(gtk::Align::Center)
+        .build();
     b.add_css_class("flat");
     b
 }
@@ -35,7 +49,10 @@ struct Rows {
 
 impl Rows {
     fn new(group: adw::PreferencesGroup) -> Rc<Self> {
-        Rc::new(Self { group, rows: RefCell::default() })
+        Rc::new(Self {
+            group,
+            rows: RefCell::default(),
+        })
     }
     fn clear(&self) {
         for r in self.rows.borrow_mut().drain(..) {
@@ -59,28 +76,44 @@ pub fn show_preferences(win: &Rc<Window>) {
 }
 
 fn general_page(win: &Rc<Window>) -> adw::PreferencesPage {
-    let page = adw::PreferencesPage::builder().title("General").icon_name("preferences-system-symbolic").build();
+    let page = adw::PreferencesPage::builder()
+        .title("General")
+        .icon_name("preferences-system-symbolic")
+        .build();
 
     let abilities = adw::PreferencesGroup::builder().title("Abilities").build();
-    let web = adw::SwitchRow::builder().title("Search the Web").active(win.st.borrow().web_enabled)
-        .subtitle("Look things up with DuckDuckGo and read web pages").build();
+    let web = adw::SwitchRow::builder()
+        .title("Search the Web")
+        .active(win.st.borrow().web_enabled)
+        .subtitle("Look things up with DuckDuckGo and read web pages")
+        .build();
     let w = win.weak();
-    web.connect_active_notify(move |row| if let Some(w) = w.upgrade() {
-        w.st.borrow_mut().web_enabled = row.is_active();
-        config::update(&[("web_search", json!(row.is_active()))]);
-        w.core.reload();
+    web.connect_active_notify(move |row| {
+        if let Some(w) = w.upgrade() {
+            w.st.borrow_mut().web_enabled = row.is_active();
+            config::update(&[("web_search", json!(row.is_active()))]);
+            w.core.reload();
+        }
     });
     abilities.add(&web);
     page.add(&abilities);
 
-    let allowed = Rows::new(adw::PreferencesGroup::builder().title("Allowed Without Asking")
-        .description("Actions you chose “Always Allow” for").build());
+    let allowed = Rows::new(
+        adw::PreferencesGroup::builder()
+            .title("Allowed Without Asking")
+            .description("Actions you chose “Always Allow” for")
+            .build(),
+    );
     page.add(&allowed.group);
     fn fill_allowed(allowed: &Rc<Rows>, win: &Rc<Window>) {
         allowed.clear();
         // The service writes Always Allow choices to the shared settings file.
-        let names: Vec<String> = config::load()["always_allow"].as_array().into_iter().flatten()
-            .filter_map(|v| v.as_str().map(String::from)).collect();
+        let names: Vec<String> = config::load()["always_allow"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect();
         for name in &names {
             let title = match name.split_once("__") {
                 Some((server, tool)) => format!("{server}: {tool}"),
@@ -90,14 +123,24 @@ fn general_page(win: &Rc<Window>) -> adw::PreferencesPage {
                 }
             };
             let row = adw::ActionRow::builder().title(esc(&title)).build();
-            let ask = gtk::Button::builder().label("Ask Again").valign(gtk::Align::Center).build();
+            let ask = gtk::Button::builder()
+                .label("Ask Again")
+                .valign(gtk::Align::Center)
+                .build();
             let (a, w, n) = (allowed.clone(), win.weak(), name.clone());
-            ask.connect_clicked(move |_| if let Some(w) = w.upgrade() {
-                let rest: Vec<Value> = config::load()["always_allow"].as_array().into_iter().flatten()
-                    .filter(|v| v.as_str() != Some(&n)).cloned().collect();
-                config::update(&[("always_allow", Value::Array(rest))]);
-                w.core.reload();
-                fill_allowed(&a, &w);
+            ask.connect_clicked(move |_| {
+                if let Some(w) = w.upgrade() {
+                    let rest: Vec<Value> = config::load()["always_allow"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter(|v| v.as_str() != Some(&n))
+                        .cloned()
+                        .collect();
+                    config::update(&[("always_allow", Value::Array(rest))]);
+                    w.core.reload();
+                    fill_allowed(&a, &w);
+                }
             });
             row.add_suffix(&ask);
             allowed.add(&row);
@@ -112,24 +155,40 @@ time, so the hand-off takes a moment. A minute after it's done, the bigger model
         .build();
     let (models, current, choice) = {
         let st = win.st.borrow();
-        (st.models.clone(), st.model.clone(), st.smarter_choice.clone())
+        (
+            st.models.clone(),
+            st.model.clone(),
+            st.smarter_choice.clone(),
+        )
     };
-    let candidates: Vec<String> = models.iter()
-        .filter(|m| m.installed && m.can_use_tools() && !m.single_turn() && m.name != current).map(|m| m.name.clone()).collect();
+    let candidates: Vec<String> = models
+        .iter()
+        .filter(|m| m.installed && m.can_use_tools() && !m.single_turn() && m.name != current)
+        .map(|m| m.name.clone())
+        .collect();
     let auto = pick_smarter_model(&models, &current, None);
     let mut values = vec!["auto".to_string(), "off".to_string()];
     values.extend(candidates.iter().cloned());
-    let mut labels = vec![auto.map(|a| format!("Automatic ({a})")).unwrap_or("Automatic (none available)".into()), "Off".into()];
+    let mut labels = vec![
+        auto.map(|a| format!("Automatic ({a})"))
+            .unwrap_or("Automatic (none available)".into()),
+        "Off".into(),
+    ];
     labels.extend(candidates);
     let label_refs: Vec<&str> = labels.iter().map(String::as_str).collect();
-    let smart_row = adw::ComboRow::builder().title("Hand Hard Requests To").model(&gtk::StringList::new(&label_refs)).build();
+    let smart_row = adw::ComboRow::builder()
+        .title("Hand Hard Requests To")
+        .model(&gtk::StringList::new(&label_refs))
+        .build();
     smart_row.set_selected(values.iter().position(|v| *v == choice).unwrap_or(0) as u32);
     let w = win.weak();
-    smart_row.connect_selected_notify(move |row| if let Some(w) = w.upgrade() {
-        let v = values[row.selected() as usize].clone();
-        w.st.borrow_mut().smarter_choice = v.clone();
-        config::update(&[("smarter_model", json!(v))]);
-        w.core.reload();
+    smart_row.connect_selected_notify(move |row| {
+        if let Some(w) = w.upgrade() {
+            let v = values[row.selected() as usize].clone();
+            w.st.borrow_mut().smarter_choice = v.clone();
+            config::update(&[("smarter_model", json!(v))]);
+            w.core.reload();
+        }
     });
     smart.add(&smart_row);
     page.add(&smart);
@@ -138,28 +197,43 @@ time, so the hand-off takes a moment. A minute after it's done, the bigger model
         .description("The default model stays loaded so answers start quickly; set a timer to unload it when idle. Bigger models never stay.")
         .build();
     let ctx_labels: Vec<&str> = CTX_CHOICES.iter().map(|(_, l)| *l).collect();
-    let ctx_row = adw::ComboRow::builder().title("Context Length").subtitle("Longer conversations need more memory")
-        .model(&gtk::StringList::new(&ctx_labels)).build();
+    let ctx_row = adw::ComboRow::builder()
+        .title("Context Length")
+        .subtitle("Longer conversations need more memory")
+        .model(&gtk::StringList::new(&ctx_labels))
+        .build();
     let ctx = win.st.borrow().ctx_len;
     ctx_row.set_selected(CTX_CHOICES.iter().position(|(v, _)| *v == ctx).unwrap_or(1) as u32);
     let w = win.weak();
-    ctx_row.connect_selected_notify(move |row| if let Some(w) = w.upgrade() {
-        let v = CTX_CHOICES[row.selected() as usize].0;
-        w.st.borrow_mut().ctx_len = v;
-        config::update(&[("ctx_len", json!(v))]);
-        w.core.reload(); // the service restarts FastFlowLM with the new length on next use
+    ctx_row.connect_selected_notify(move |row| {
+        if let Some(w) = w.upgrade() {
+            let v = CTX_CHOICES[row.selected() as usize].0;
+            w.st.borrow_mut().ctx_len = v;
+            config::update(&[("ctx_len", json!(v))]);
+            w.core.reload(); // the service restarts FastFlowLM with the new length on next use
+        }
     });
     let idle_labels: Vec<&str> = IDLE_CHOICES.iter().map(|(_, l)| *l).collect();
-    let idle_row = adw::ComboRow::builder().title("Unload Model").subtitle("Frees memory when the assistant isn't used")
-        .model(&gtk::StringList::new(&idle_labels)).build();
+    let idle_row = adw::ComboRow::builder()
+        .title("Unload Model")
+        .subtitle("Frees memory when the assistant isn't used")
+        .model(&gtk::StringList::new(&idle_labels))
+        .build();
     let idle = win.st.borrow().unload_after;
-    idle_row.set_selected(IDLE_CHOICES.iter().position(|(v, _)| *v == idle).unwrap_or(IDLE_CHOICES.len() - 1) as u32);
+    idle_row.set_selected(
+        IDLE_CHOICES
+            .iter()
+            .position(|(v, _)| *v == idle)
+            .unwrap_or(IDLE_CHOICES.len() - 1) as u32,
+    );
     let w = win.weak();
-    idle_row.connect_selected_notify(move |row| if let Some(w) = w.upgrade() {
-        let v = IDLE_CHOICES[row.selected() as usize].0;
-        w.st.borrow_mut().unload_after = v;
-        config::update(&[("unload_after_minutes", json!(v))]);
-        w.core.reload();
+    idle_row.connect_selected_notify(move |row| {
+        if let Some(w) = w.upgrade() {
+            let v = IDLE_CHOICES[row.selected() as usize].0;
+            w.st.borrow_mut().unload_after = v;
+            config::update(&[("unload_after_minutes", json!(v))]);
+            w.core.reload();
+        }
     });
     memory.add(&ctx_row);
     memory.add(&idle_row);
@@ -168,15 +242,23 @@ time, so the hand-off takes a moment. A minute after it's done, the bigger model
 }
 
 fn memory_page(win: &Rc<Window>) -> adw::PreferencesPage {
-    let page = adw::PreferencesPage::builder().title("Memory").icon_name("starred-symbolic").build();
+    let page = adw::PreferencesPage::builder()
+        .title("Memory")
+        .icon_name("starred-symbolic")
+        .build();
     let top = adw::PreferencesGroup::builder()
         .description("The assistant remembers what you ask it to, in every new chat. It's kept on this computer only.").build();
-    let switch = adw::SwitchRow::builder().title("Remember Things").active(win.st.borrow().memory_enabled).build();
+    let switch = adw::SwitchRow::builder()
+        .title("Remember Things")
+        .active(win.st.borrow().memory_enabled)
+        .build();
     let w = win.weak();
-    switch.connect_active_notify(move |row| if let Some(w) = w.upgrade() {
-        w.st.borrow_mut().memory_enabled = row.is_active();
-        config::update(&[("memory", json!(row.is_active()))]);
-        w.core.reload();
+    switch.connect_active_notify(move |row| {
+        if let Some(w) = w.upgrade() {
+            w.st.borrow_mut().memory_enabled = row.is_active();
+            config::update(&[("memory", json!(row.is_active()))]);
+            w.core.reload();
+        }
     });
     top.add(&switch);
     page.add(&top);
@@ -184,24 +266,34 @@ fn memory_page(win: &Rc<Window>) -> adw::PreferencesPage {
     page.add(&facts.group);
     fn fill(facts: &Rc<Rows>, win: &Rc<Window>) {
         facts.clear();
-        let add = adw::EntryRow::builder().title("Add Something to Remember").show_apply_button(true).build();
+        let add = adw::EntryRow::builder()
+            .title("Add Something to Remember")
+            .show_apply_button(true)
+            .build();
         let (f, w) = (facts.clone(), win.weak());
-        add.connect_apply(move |row| if let Some(w) = w.upgrade() {
-            if let Err(e) = store::remember(&row.text()) {
-                w.toast(&(e[..1].to_uppercase() + &e[1..]));
+        add.connect_apply(move |row| {
+            if let Some(w) = w.upgrade() {
+                if let Err(e) = store::remember(&row.text()) {
+                    w.toast(&(e[..1].to_uppercase() + &e[1..]));
+                }
+                w.core.reload();
+                fill(&f, &w);
             }
-            w.core.reload();
-            fill(&f, &w);
         });
         facts.add(&add);
         for fact in store::facts() {
-            let row = adw::ActionRow::builder().title(esc(&fact)).title_lines(0).build();
+            let row = adw::ActionRow::builder()
+                .title(esc(&fact))
+                .title_lines(0)
+                .build();
             let delete = flat_button("user-trash-symbolic", "Forget");
             let (f, w) = (facts.clone(), win.weak());
-            delete.connect_clicked(move |_| if let Some(w) = w.upgrade() {
-                store::forget(&fact);
-                w.core.reload();
-                fill(&f, &w);
+            delete.connect_clicked(move |_| {
+                if let Some(w) = w.upgrade() {
+                    store::forget(&fact);
+                    w.core.reload();
+                    fill(&f, &w);
+                }
             });
             row.add_suffix(&delete);
             facts.add(&row);
@@ -213,10 +305,20 @@ fn memory_page(win: &Rc<Window>) -> adw::PreferencesPage {
 
 /// Everything the assistant did, newest first.
 fn activity_page() -> adw::PreferencesPage {
-    let page = adw::PreferencesPage::builder().title("Activity").icon_name("document-open-recent-symbolic").build();
-    let rows = Rows::new(adw::PreferencesGroup::builder().title("What the Assistant Did")
-        .description("Every action, newest first. Kept on this computer only (the last 500).").build());
-    let clear = gtk::Button::builder().label("Clear").valign(gtk::Align::Center).build();
+    let page = adw::PreferencesPage::builder()
+        .title("Activity")
+        .icon_name("document-open-recent-symbolic")
+        .build();
+    let rows = Rows::new(
+        adw::PreferencesGroup::builder()
+            .title("What the Assistant Did")
+            .description("Every action, newest first. Kept on this computer only (the last 500).")
+            .build(),
+    );
+    let clear = gtk::Button::builder()
+        .label("Clear")
+        .valign(gtk::Align::Center)
+        .build();
     clear.add_css_class("flat");
     rows.group.set_header_suffix(Some(&clear));
     page.add(&rows.group);
@@ -224,11 +326,19 @@ fn activity_page() -> adw::PreferencesPage {
         rows.clear();
         let entries = activity::recent(200);
         if entries.is_empty() {
-            rows.add(&adw::ActionRow::builder().title("Nothing yet").subtitle("Actions show up here as they happen").build());
+            rows.add(
+                &adw::ActionRow::builder()
+                    .title("Nothing yet")
+                    .subtitle("Actions show up here as they happen")
+                    .build(),
+            );
         }
         for e in entries {
-            let when = glib::DateTime::from_unix_local(e["time"].as_i64().unwrap_or(0)).ok()
-                .and_then(|t| t.format("%e %b, %H:%M").ok()).map(|s| s.trim().to_string()).unwrap_or_default();
+            let when = glib::DateTime::from_unix_local(e["time"].as_i64().unwrap_or(0))
+                .ok()
+                .and_then(|t| t.format("%e %b, %H:%M").ok())
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default();
             let mut sub = vec![when];
             match e["decision"].as_str() {
                 Some("declined") => sub.push("you cancelled it".into()),
@@ -240,10 +350,17 @@ fn activity_page() -> adw::PreferencesPage {
                 sub.push("from search".into());
             }
             let result = e["result"].as_str().unwrap_or("");
-            let row = adw::ActionRow::builder().title(esc(e["summary"].as_str().unwrap_or(""))).subtitle(esc(&sub.join(" · ")))
-                .tooltip_text(result).build();
+            let row = adw::ActionRow::builder()
+                .title(esc(e["summary"].as_str().unwrap_or("")))
+                .subtitle(esc(&sub.join(" · ")))
+                .tooltip_text(result)
+                .build();
             let ok = e["ok"].as_bool().unwrap_or(false);
-            let icon = gtk::Image::from_icon_name(if ok { "object-select-symbolic" } else { "dialog-warning-symbolic" });
+            let icon = gtk::Image::from_icon_name(if ok {
+                "object-select-symbolic"
+            } else {
+                "dialog-warning-symbolic"
+            });
             if !ok {
                 icon.add_css_class("warning");
             }
@@ -261,16 +378,25 @@ fn activity_page() -> adw::PreferencesPage {
 }
 
 fn skills_page(win: &Rc<Window>) -> adw::PreferencesPage {
-    let page = adw::PreferencesPage::builder().title("Skills").icon_name("view-list-bullet-symbolic").build();
+    let page = adw::PreferencesPage::builder()
+        .title("Skills")
+        .icon_name("view-list-bullet-symbolic")
+        .build();
     let group = adw::PreferencesGroup::builder().title("Skills")
         .description("Saved workflows. Ask “save that as a skill”, or add Markdown files to the skills folder. Run one by typing / and its name.")
         .build();
     let folder = flat_button("folder-open-symbolic", "Open Skills Folder");
     let w = win.weak();
-    folder.connect_clicked(move |_| if let Some(w) = w.upgrade() {
-        let dir = store::skills_dir();
-        let _ = std::fs::create_dir_all(&dir);
-        gtk::FileLauncher::new(Some(&gio::File::for_path(dir))).launch(Some(&w.win), None::<&gio::Cancellable>, |_| {});
+    folder.connect_clicked(move |_| {
+        if let Some(w) = w.upgrade() {
+            let dir = store::skills_dir();
+            let _ = std::fs::create_dir_all(&dir);
+            gtk::FileLauncher::new(Some(&gio::File::for_path(dir))).launch(
+                Some(&w.win),
+                None::<&gio::Cancellable>,
+                |_| {},
+            );
+        }
     });
     group.set_header_suffix(Some(&folder));
     page.add(&group);
@@ -279,18 +405,33 @@ fn skills_page(win: &Rc<Window>) -> adw::PreferencesPage {
         rows.clear();
         let skills = store::skills();
         if skills.is_empty() {
-            rows.add(&adw::ActionRow::builder().title("No skills yet")
-                .subtitle("Try: “Save a skill called morning: turn on dark mode, set volume to 30%”").build());
+            rows.add(
+                &adw::ActionRow::builder()
+                    .title("No skills yet")
+                    .subtitle(
+                        "Try: “Save a skill called morning: turn on dark mode, set volume to 30%”",
+                    )
+                    .build(),
+            );
         }
         for skill in skills {
-            let sub = if skill.description.is_empty() { format!("/{}", skill.slug) } else { format!("/{} · {}", skill.slug, skill.description) };
-            let row = adw::ActionRow::builder().title(esc(&skill.title)).subtitle(esc(&sub)).build();
+            let sub = if skill.description.is_empty() {
+                format!("/{}", skill.slug)
+            } else {
+                format!("/{} · {}", skill.slug, skill.description)
+            };
+            let row = adw::ActionRow::builder()
+                .title(esc(&skill.title))
+                .subtitle(esc(&sub))
+                .build();
             let delete = flat_button("user-trash-symbolic", "Delete Skill");
             let (r, w, slug) = (rows.clone(), win.weak(), skill.slug.clone());
-            delete.connect_clicked(move |_| if let Some(w) = w.upgrade() {
-                store::delete_skill(&slug);
-                w.core.reload();
-                fill(&r, &w);
+            delete.connect_clicked(move |_| {
+                if let Some(w) = w.upgrade() {
+                    store::delete_skill(&slug);
+                    w.core.reload();
+                    fill(&r, &w);
+                }
             });
             row.add_suffix(&delete);
             rows.add(&row);
@@ -301,7 +442,10 @@ fn skills_page(win: &Rc<Window>) -> adw::PreferencesPage {
 }
 
 fn connections_page(win: &Rc<Window>) -> adw::PreferencesPage {
-    let page = adw::PreferencesPage::builder().title("Connections").icon_name("network-server-symbolic").build();
+    let page = adw::PreferencesPage::builder()
+        .title("Connections")
+        .icon_name("network-server-symbolic")
+        .build();
     let group = adw::PreferencesGroup::builder().title("Apps and Services")
         .description(format!("The assistant can use tools that other apps and services offer through the Model Context \
 Protocol (MCP). Tools that change things ask first. Each one uses some of the model's memory, so at most {}.", mcp::MAX_TOOLS))
@@ -324,7 +468,15 @@ Protocol (MCP). Tools that change things ask first. Each one uses some of the mo
         }
         if s["running"] == true {
             let n = s["tools"].as_u64().unwrap_or(0);
-            return format!("{n} tool{}{}", if n == 1 { "" } else { "s" }, if s["trust"] == true { " · trusted" } else { "" });
+            return format!(
+                "{n} tool{}{}",
+                if n == 1 { "" } else { "s" },
+                if s["trust"] == true {
+                    " · trusted"
+                } else {
+                    ""
+                }
+            );
         }
         "Connects when you send a message".into()
     }
@@ -336,32 +488,63 @@ Protocol (MCP). Tools that change things ask first. Each one uses some of the mo
     }
     fn fill(rows: &Rc<Rows>, win: &Rc<Window>) {
         rows.clear();
-        let info = win.core.connections().unwrap_or_else(|e| json!({"servers": [], "config_error": e}));
+        let info = win
+            .core
+            .connections()
+            .unwrap_or_else(|e| json!({"servers": [], "config_error": e}));
         if let Some(e) = info["config_error"].as_str() {
-            rows.add(&adw::ActionRow::builder().title("The configuration file has a mistake").subtitle(esc(e)).build());
+            rows.add(
+                &adw::ActionRow::builder()
+                    .title("The configuration file has a mistake")
+                    .subtitle(esc(e))
+                    .build(),
+            );
         } else if info["servers"].as_array().is_none_or(|a| a.is_empty()) {
-            rows.add(&adw::ActionRow::builder().title("No servers yet").subtitle("Add one with the + button").build());
+            rows.add(
+                &adw::ActionRow::builder()
+                    .title("No servers yet")
+                    .subtitle("Add one with the + button")
+                    .build(),
+            );
         }
         for s in info["servers"].as_array().into_iter().flatten() {
             let name = s["name"].as_str().unwrap_or("").to_string();
-            let row = adw::ActionRow::builder().title(esc(&name))
-                .subtitle(esc(&format!("{}\n{}", status(s), s["target"].as_str().unwrap_or("")))).subtitle_lines(3).build();
-            let switch = gtk::Switch::builder().active(s["disabled"] != true).valign(gtk::Align::Center).build();
+            let row = adw::ActionRow::builder()
+                .title(esc(&name))
+                .subtitle(esc(&format!(
+                    "{}\n{}",
+                    status(s),
+                    s["target"].as_str().unwrap_or("")
+                )))
+                .subtitle_lines(3)
+                .build();
+            let switch = gtk::Switch::builder()
+                .active(s["disabled"] != true)
+                .valign(gtk::Align::Center)
+                .build();
             let (r, w, n) = (rows.clone(), win.weak(), name.clone());
-            switch.connect_active_notify(move |sw| if let Some(w) = w.upgrade() {
-                let mut configs = mcp::load_config().unwrap_or_default();
-                for c in configs.iter_mut().filter(|c| c.name == n) {
-                    c.disabled = !sw.is_active();
+            switch.connect_active_notify(move |sw| {
+                if let Some(w) = w.upgrade() {
+                    let mut configs = mcp::load_config().unwrap_or_default();
+                    for c in configs.iter_mut().filter(|c| c.name == n) {
+                        c.disabled = !sw.is_active();
+                    }
+                    let _ = mcp::save_config(&configs);
+                    changed(&r, &w);
                 }
-                let _ = mcp::save_config(&configs);
-                changed(&r, &w);
             });
             let delete = flat_button("user-trash-symbolic", "Remove Server");
             let (r, w, n) = (rows.clone(), win.weak(), name);
-            delete.connect_clicked(move |_| if let Some(w) = w.upgrade() {
-                let configs: Vec<_> = mcp::load_config().unwrap_or_default().into_iter().filter(|c| c.name != n).collect();
-                let _ = mcp::save_config(&configs);
-                changed(&r, &w);
+            delete.connect_clicked(move |_| {
+                if let Some(w) = w.upgrade() {
+                    let configs: Vec<_> = mcp::load_config()
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter(|c| c.name != n)
+                        .collect();
+                    let _ = mcp::save_config(&configs);
+                    changed(&r, &w);
+                }
             });
             row.add_suffix(&switch);
             row.add_suffix(&delete);
@@ -369,12 +552,18 @@ Protocol (MCP). Tools that change things ask first. Each one uses some of the mo
         }
     }
     let w = win.weak();
-    edit.connect_clicked(move |_| if let Some(w) = w.upgrade() {
-        let path = mcp::config_path();
-        if !path.exists() {
-            let _ = mcp::save_config(&[]);
+    edit.connect_clicked(move |_| {
+        if let Some(w) = w.upgrade() {
+            let path = mcp::config_path();
+            if !path.exists() {
+                let _ = mcp::save_config(&[]);
+            }
+            gtk::FileLauncher::new(Some(&gio::File::for_path(path))).launch(
+                Some(&w.win),
+                None::<&gio::Cancellable>,
+                |_| {},
+            );
         }
-        gtk::FileLauncher::new(Some(&gio::File::for_path(path))).launch(Some(&w.win), None::<&gio::Cancellable>, |_| {});
     });
     let (r, w, p) = (rows.clone(), win.weak(), page.clone());
     add.connect_clicked(move |_| {
@@ -416,10 +605,19 @@ Protocol (MCP). Tools that change things ask first. Each one uses some of the mo
 }
 
 const SHORTCUTS: [(&str, &str); 13] = [
-    ("New Chat", "<Ctrl>n"), ("Focus Message Field", "<Ctrl>l"), ("Search Chats", "<Ctrl>f"),
-    ("Attach Image", "<Ctrl><Shift>a"), ("Bigger Text", "<Ctrl>plus"), ("Smaller Text", "<Ctrl>minus"),
-    ("Normal Text Size", "<Ctrl>0"), ("Stop Answer", "Escape"), ("Preferences", "<Ctrl>comma"),
-    ("Keyboard Shortcuts", "<Ctrl>question"), ("Close Window", "<Ctrl>w"), ("Quit", "<Ctrl>q"), ("", ""),
+    ("New Chat", "<Ctrl>n"),
+    ("Focus Message Field", "<Ctrl>l"),
+    ("Search Chats", "<Ctrl>f"),
+    ("Attach Image", "<Ctrl><Shift>a"),
+    ("Bigger Text", "<Ctrl>plus"),
+    ("Smaller Text", "<Ctrl>minus"),
+    ("Normal Text Size", "<Ctrl>0"),
+    ("Stop Answer", "Escape"),
+    ("Preferences", "<Ctrl>comma"),
+    ("Keyboard Shortcuts", "<Ctrl>question"),
+    ("Close Window", "<Ctrl>w"),
+    ("Quit", "<Ctrl>q"),
+    ("", ""),
 ];
 
 #[cfg(feature = "adw-1-8")]
@@ -438,11 +636,19 @@ pub fn show_shortcuts(win: &Rc<Window>) {
 pub fn show_shortcuts(win: &Rc<Window>) {
     let group = gtk::ShortcutsGroup::builder().title("General").build();
     for (label, accel) in SHORTCUTS.iter().filter(|(l, _)| !l.is_empty()) {
-        group.add_shortcut(&gtk::ShortcutsShortcut::builder().title(*label).accelerator(*accel).build());
+        group.add_shortcut(
+            &gtk::ShortcutsShortcut::builder()
+                .title(*label)
+                .accelerator(*accel)
+                .build(),
+        );
     }
     let section = gtk::ShortcutsSection::builder().visible(true).build();
     section.add_group(&group);
-    let shortcuts = gtk::ShortcutsWindow::builder().transient_for(&win.win).modal(true).build();
+    let shortcuts = gtk::ShortcutsWindow::builder()
+        .transient_for(&win.win)
+        .modal(true)
+        .build();
     shortcuts.add_section(&section);
     shortcuts.present();
 }

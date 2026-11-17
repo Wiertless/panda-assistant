@@ -21,6 +21,16 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.19.0" date="2026-11-17">
+      <description>
+        <ul>
+          <li>Plays songs, albums and artists from your music library ("play Bohemian Rhapsody", "put on some Queen") instead of searching the web</li>
+          <li>Faster: models no longer think before each tool call</li>
+          <li>Stops at once when something can't work (no music player running, a missing app) instead of retrying</li>
+          <li>Works with older FastFlowLM versions, and picks an installed model as the default</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.18.0" date="2026-11-15">
       <description>
         <ul>

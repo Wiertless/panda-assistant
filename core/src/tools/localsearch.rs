@@ -14,10 +14,15 @@ use super::files::{hidden, home_path, short};
 use crate::tool::{Args, Context, ToolError, ToolResult, arg_str};
 
 const LIBRARIES: [&str; 2] = ["libtinysparql-3.0.so.0", "libtracker-sparql-3.0.so.0"];
-const INDEXER_BUSES: [&str; 2] = ["org.freedesktop.LocalSearch3", "org.freedesktop.Tracker3.Miner.Files"];
+const INDEXER_BUSES: [&str; 2] = [
+    "org.freedesktop.LocalSearch3",
+    "org.freedesktop.Tracker3.Miner.Files",
+];
 const MAX_HITS: usize = 10;
 const MAX_TEXT: usize = 3000;
-const FTS_SKIP: [&str; 12] = ["and", "or", "not", "near", "the", "a", "an", "of", "in", "file", "files", "about"];
+const FTS_SKIP: [&str; 12] = [
+    "and", "or", "not", "near", "the", "a", "an", "of", "in", "file", "files", "about",
+];
 
 const CONTENT_QUERY: &str = r#"
 SELECT DISTINCT ?url ?title fts:snippet(?ie, "", "", "…", 14) WHERE {
@@ -41,8 +46,18 @@ type GError = glib::ffi::GError;
 /// The few TinySPARQL functions used here.
 pub struct Sparql {
     _lib: libloading::Library,
-    bus_new: unsafe extern "C" fn(*const c_char, *const c_char, *mut c_void, *mut *mut GError) -> *mut c_void,
-    query_statement: unsafe extern "C" fn(*mut c_void, *const c_char, *mut c_void, *mut *mut GError) -> *mut c_void,
+    bus_new: unsafe extern "C" fn(
+        *const c_char,
+        *const c_char,
+        *mut c_void,
+        *mut *mut GError,
+    ) -> *mut c_void,
+    query_statement: unsafe extern "C" fn(
+        *mut c_void,
+        *const c_char,
+        *mut c_void,
+        *mut *mut GError,
+    ) -> *mut c_void,
     bind_string: unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char),
     execute: unsafe extern "C" fn(*mut c_void, *mut c_void, *mut *mut GError) -> *mut c_void,
     cursor_next: unsafe extern "C" fn(*mut c_void, *mut c_void, *mut *mut GError) -> c_int,
@@ -50,7 +65,13 @@ pub struct Sparql {
     n_columns: unsafe extern "C" fn(*mut c_void) -> c_int,
     cursor_close: unsafe extern "C" fn(*mut c_void),
     /// For tests: an in-memory database with GNOME's (Nepomuk) schema.
-    pub new_local: unsafe extern "C" fn(c_int, *mut c_void, *mut c_void, *mut c_void, *mut *mut GError) -> *mut c_void,
+    pub new_local: unsafe extern "C" fn(
+        c_int,
+        *mut c_void,
+        *mut c_void,
+        *mut c_void,
+        *mut *mut GError,
+    ) -> *mut c_void,
     pub nepomuk: unsafe extern "C" fn() -> *mut c_void,
     pub update: unsafe extern "C" fn(*mut c_void, *const c_char, *mut c_void, *mut *mut GError),
 }
@@ -61,7 +82,9 @@ fn take_error(err: *mut GError) -> String {
     }
     // SAFETY: a GError set by the library; we own it and free it here.
     unsafe {
-        let msg = CStr::from_ptr((*err).message).to_string_lossy().into_owned();
+        let msg = CStr::from_ptr((*err).message)
+            .to_string_lossy()
+            .into_owned();
         glib::ffi::g_error_free(err);
         msg
     }
@@ -72,8 +95,14 @@ pub fn sparql() -> Result<&'static Sparql, ToolError> {
     LIB.get_or_init(|| {
         // SAFETY: loading a system library and looking up functions by their documented C signatures.
         unsafe {
-            let lib = LIBRARIES.iter().find_map(|n| libloading::Library::new(n).ok())?;
-            macro_rules! sym { ($n:expr) => { *lib.get($n).ok()? } }
+            let lib = LIBRARIES
+                .iter()
+                .find_map(|n| libloading::Library::new(n).ok())?;
+            macro_rules! sym {
+                ($n:expr) => {
+                    *lib.get($n).ok()?
+                };
+            }
             Some(Sparql {
                 bus_new: sym!(b"tracker_sparql_connection_bus_new\0"),
                 query_statement: sym!(b"tracker_sparql_connection_query_statement\0"),
@@ -89,7 +118,9 @@ pub fn sparql() -> Result<&'static Sparql, ToolError> {
                 _lib: lib,
             })
         }
-    }).as_ref().ok_or_else(|| ToolError::cannot("GNOME's file index (LocalSearch) isn't installed"))
+    })
+    .as_ref()
+    .ok_or_else(|| ToolError::cannot("GNOME's file index (LocalSearch) isn't installed"))
 }
 
 /// A connection to the indexer (or, in tests, any connection).
@@ -103,7 +134,12 @@ impl Drop for Conn {
 }
 
 impl Sparql {
-    pub fn query(&self, conn: &Conn, sparql: &str, binds: &[(&str, &str)]) -> Result<Vec<Vec<String>>, ToolError> {
+    pub fn query(
+        &self,
+        conn: &Conn,
+        sparql: &str,
+        binds: &[(&str, &str)],
+    ) -> Result<Vec<Vec<String>>, ToolError> {
         let q = CString::new(sparql).unwrap();
         let mut err = std::ptr::null_mut();
         // SAFETY: valid connection and C strings; every object we get is unreffed below.
@@ -113,7 +149,10 @@ impl Sparql {
                 return Err(format!("the file index couldn't search: {}", take_error(err)).into());
             }
             for (k, v) in binds {
-                let (k, v) = (CString::new(*k).unwrap(), CString::new(*v).unwrap_or_default());
+                let (k, v) = (
+                    CString::new(*k).unwrap(),
+                    CString::new(*v).unwrap_or_default(),
+                );
                 (self.bind_string)(stmt, k.as_ptr(), v.as_ptr());
             }
             let cursor = (self.execute)(stmt, std::ptr::null_mut(), &mut err);
@@ -124,10 +163,18 @@ impl Sparql {
             let cols = (self.n_columns)(cursor);
             let mut rows = vec![];
             while (self.cursor_next)(cursor, std::ptr::null_mut(), &mut err) != 0 {
-                rows.push((0..cols).map(|i| {
-                    let p = (self.get_string)(cursor, i, std::ptr::null_mut());
-                    if p.is_null() { String::new() } else { CStr::from_ptr(p).to_string_lossy().into_owned() }
-                }).collect());
+                rows.push(
+                    (0..cols)
+                        .map(|i| {
+                            let p = (self.get_string)(cursor, i, std::ptr::null_mut());
+                            if p.is_null() {
+                                String::new()
+                            } else {
+                                CStr::from_ptr(p).to_string_lossy().into_owned()
+                            }
+                        })
+                        .collect(),
+                );
             }
             (self.cursor_close)(cursor);
             glib::gobject_ffi::g_object_unref(cursor as *mut _);
@@ -143,7 +190,14 @@ impl Sparql {
             let name = CString::new(bus).unwrap();
             let mut err = std::ptr::null_mut();
             // SAFETY: a bus name and NULL path/connection (defaults), as documented.
-            let conn = unsafe { (self.bus_new)(name.as_ptr(), std::ptr::null(), std::ptr::null_mut(), &mut err) };
+            let conn = unsafe {
+                (self.bus_new)(
+                    name.as_ptr(),
+                    std::ptr::null(),
+                    std::ptr::null_mut(),
+                    &mut err,
+                )
+            };
             if conn.is_null() {
                 take_error(err);
                 continue;
@@ -153,23 +207,34 @@ impl Sparql {
                 return Ok(conn);
             }
         }
-        Err(ToolError::cannot("GNOME's file index (LocalSearch) isn't running"))
+        Err(ToolError::cannot(
+            "GNOME's file index (LocalSearch) isn't running",
+        ))
     }
 }
 
 /// User words -> an FTS5 match: every word, as a prefix; no operators.
 pub fn fts_terms(text: &str) -> Result<String, ToolError> {
     let lower = text.to_lowercase();
-    let words: Vec<&str> = lower.split(|c: char| !c.is_alphanumeric() && c != '_')
-        .filter(|w| w.chars().count() > 1 && !FTS_SKIP.contains(w)).take(8).collect();
+    let words: Vec<&str> = lower
+        .split(|c: char| !c.is_alphanumeric() && c != '_')
+        .filter(|w| w.chars().count() > 1 && !FTS_SKIP.contains(w))
+        .take(8)
+        .collect();
     if words.is_empty() {
         return Err("say what to look for".into());
     }
-    Ok(words.iter().map(|w| format!("{w}*")).collect::<Vec<_>>().join(" "))
+    Ok(words
+        .iter()
+        .map(|w| format!("{w}*"))
+        .collect::<Vec<_>>()
+        .join(" "))
 }
 
 fn url_to_path(url: &str) -> Option<PathBuf> {
-    gio::File::for_uri(url).path().filter(|_| url.starts_with("file://"))
+    gio::File::for_uri(url)
+        .path()
+        .filter(|_| url.starts_with("file://"))
 }
 
 /// Search with an open connection (split out so tests can use a local database).
@@ -178,31 +243,46 @@ pub fn search_with(s: &Sparql, conn: &Conn, query: &str) -> ToolResult {
     let mut lines = vec![];
     for row in s.query(conn, CONTENT_QUERY, &[("q", &fts_terms(query)?)])? {
         let (url, title, snippet) = (&row[0], &row[1], &row[2]);
-        let Some(path) = url_to_path(url) else { continue };
+        let Some(path) = url_to_path(url) else {
+            continue;
+        };
         if !path.starts_with(&home) || hidden(&path, &home) {
             continue; // stay inside the home folder, away from hidden files
         }
         let snippet = snippet.split_whitespace().collect::<Vec<_>>().join(" ");
-        let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
         let mut line = short(&path);
         if !title.is_empty() && *title != name {
             line.push_str(&format!(" — {title}"));
         }
         if !snippet.is_empty() {
-            line.push_str(&format!("\n  “{}”", snippet.chars().take(200).collect::<String>()));
+            line.push_str(&format!(
+                "\n  “{}”",
+                snippet.chars().take(200).collect::<String>()
+            ));
         }
         lines.push(line);
         if lines.len() >= MAX_HITS {
             break;
         }
     }
-    Ok(if lines.is_empty() { format!("No files mention “{query}” (only indexed folders are searched).") } else { lines.join("\n") })
+    Ok(if lines.is_empty() {
+        format!("No files mention “{query}” (only indexed folders are searched).")
+    } else {
+        lines.join("\n")
+    })
 }
 
 pub fn indexed_text_with(s: &Sparql, conn: &Conn, path: &Path) -> String {
     let uri = gio::File::for_path(path).uri();
-    s.query(conn, TEXT_QUERY, &[("url", uri.as_str())]).ok()
-        .and_then(|rows| rows.into_iter().next()).and_then(|r| r.into_iter().next()).unwrap_or_default()
+    s.query(conn, TEXT_QUERY, &[("url", uri.as_str())])
+        .ok()
+        .and_then(|rows| rows.into_iter().next())
+        .and_then(|r| r.into_iter().next())
+        .unwrap_or_default()
 }
 
 pub fn search_file_contents(_: &Context, args: &Args) -> ToolResult {
@@ -217,21 +297,45 @@ pub fn document_text(path: &Path, pages: u32) -> Result<String, ToolError> {
         return Err(format!("{} isn't a file", short(path)).into());
     }
     let plain = path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
-        ["txt", "md", "markdown", "csv", "log", "org", "rst", "json", "toml", "yaml", "yml", "ini", "html", "htm"]
-            .contains(&e.to_lowercase().as_str())
+        [
+            "txt", "md", "markdown", "csv", "log", "org", "rst", "json", "toml", "yaml", "yml",
+            "ini", "html", "htm",
+        ]
+        .contains(&e.to_lowercase().as_str())
     });
     if plain {
         let bytes = std::fs::read(path).map_err(|e| ToolError(e.to_string()))?;
         return Ok(String::from_utf8_lossy(&bytes[..bytes.len().min(2_000_000)]).to_string());
     }
-    let mut text = sparql().ok().and_then(|s| Some(indexed_text_with(s, &s.connect().ok()?, path))).unwrap_or_default();
-    if text.trim().is_empty() && path.extension().is_some_and(|e| e.eq_ignore_ascii_case("pdf"))
-        && let Ok(out) = super::run::output(&["pdftotext", "-layout", "-l", &pages.to_string(), &path.to_string_lossy(), "-"],
-                                            std::time::Duration::from_secs(40), None) {
-            text = out.stdout;
-        }
+    let mut text = sparql()
+        .ok()
+        .and_then(|s| Some(indexed_text_with(s, &s.connect().ok()?, path)))
+        .unwrap_or_default();
+    if text.trim().is_empty()
+        && path
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("pdf"))
+        && let Ok(out) = super::run::output(
+            &[
+                "pdftotext",
+                "-layout",
+                "-l",
+                &pages.to_string(),
+                &path.to_string_lossy(),
+                "-",
+            ],
+            std::time::Duration::from_secs(40),
+            None,
+        )
+    {
+        text = out.stdout;
+    }
     if text.trim().is_empty() {
-        return Err(format!("no text is available for {} (it may not be indexed yet)", short(path)).into());
+        return Err(format!(
+            "no text is available for {} (it may not be indexed yet)",
+            short(path)
+        )
+        .into());
     }
     Ok(text)
 }
@@ -248,7 +352,11 @@ pub fn read_document(_: &Context, args: &Args) -> ToolResult {
         }
     }
     let text = lines.join("\n");
-    let body = if text.chars().count() > MAX_TEXT { format!("{}\n[…]", text.chars().take(MAX_TEXT).collect::<String>()) } else { text };
+    let body = if text.chars().count() > MAX_TEXT {
+        format!("{}\n[…]", text.chars().take(MAX_TEXT).collect::<String>())
+    } else {
+        text
+    };
     Ok(format!("{}:\n{body}", short(&path)))
 }
 
@@ -259,7 +367,10 @@ mod tests {
 
     #[test]
     fn fts_terms_are_plain_prefixes() {
-        assert_eq!(fts_terms("the file about lease \"Marek\" OR* x").unwrap(), "lease* marek*");
+        assert_eq!(
+            fts_terms("the file about lease \"Marek\" OR* x").unwrap(),
+            "lease* marek*"
+        );
         assert!(fts_terms("?!").is_err());
     }
 
@@ -270,10 +381,27 @@ mod tests {
         let home = std::fs::canonicalize(crate::paths::home()).unwrap();
         let mut err = std::ptr::null_mut();
         // FTS stemmer + unaccent flags; in-memory store; Nepomuk ontology.
-        let conn = Conn(unsafe { (s.new_local)(1 << 1 | 1 << 2, std::ptr::null_mut(), (s.nepomuk)(), std::ptr::null_mut(), &mut err) });
+        let conn = Conn(unsafe {
+            (s.new_local)(
+                1 << 1 | 1 << 2,
+                std::ptr::null_mut(),
+                (s.nepomuk)(),
+                std::ptr::null_mut(),
+                &mut err,
+            )
+        });
         assert!(!conn.0.is_null(), "{}", take_error(err));
-        for (i, (rel, title, text)) in [("Dokumenty/lease.pdf", "Lease agreement", "Lease agreement with Marek Nowak. Rent is 2000 zloty."),
-                                        (".ssh/notes.txt", "", "lease secret")].iter().enumerate() {
+        for (i, (rel, title, text)) in [
+            (
+                "Dokumenty/lease.pdf",
+                "Lease agreement",
+                "Lease agreement with Marek Nowak. Rent is 2000 zloty.",
+            ),
+            (".ssh/notes.txt", "", "lease secret"),
+        ]
+        .iter()
+        .enumerate()
+        {
             let url = gio::File::for_path(home.join(rel)).uri();
             let q = CString::new(format!(r#"INSERT DATA {{ <{url}> a nfo:FileDataObject ; nie:url "{url}" .
                 <urn:ie:{i}> a nfo:Document ; nie:isStoredAs <{url}> ; nie:title "{title}" ; nie:plainTextContent "{text}" . }}"#)).unwrap();
@@ -283,14 +411,28 @@ mod tests {
                 // Some older libtracker-sparql builds can't write to an in-memory
                 // store with newer SQLite ("ambiguous column name: ROWID"). That's
                 // the test fixture failing, not the queries under test.
-                eprintln!("skipping: this TinySPARQL can't build the test index: {}", take_error(err));
+                eprintln!(
+                    "skipping: this TinySPARQL can't build the test index: {}",
+                    take_error(err)
+                );
                 return;
             }
         }
         let out = search_with(s, &conn, "rent marek").unwrap();
-        assert!(out.starts_with("~/Dokumenty/lease.pdf — Lease agreement\n  “Lease agreement with Marek"), "{out}");
+        assert!(
+            out.starts_with(
+                "~/Dokumenty/lease.pdf — Lease agreement\n  “Lease agreement with Marek"
+            ),
+            "{out}"
+        );
         assert!(!search_with(s, &conn, "leas").unwrap().contains(".ssh"));
-        assert!(search_with(s, &conn, "zzz").unwrap().starts_with("No files mention"));
-        assert!(indexed_text_with(s, &conn, &home.join("Dokumenty/lease.pdf")).contains("Rent is 2000"));
+        assert!(
+            search_with(s, &conn, "zzz")
+                .unwrap()
+                .starts_with("No files mention")
+        );
+        assert!(
+            indexed_text_with(s, &conn, &home.join("Dokumenty/lease.pdf")).contains("Rent is 2000")
+        );
     }
 }

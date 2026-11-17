@@ -61,7 +61,9 @@ fn window(app: &adw::Application, slot: &Slot) -> Rc<Window> {
     let w = Window::new(app);
     add_window_actions(&w);
     let s = slot.clone();
-    w.win.connect_destroy(move |_| { s.borrow_mut().take(); });
+    w.win.connect_destroy(move |_| {
+        s.borrow_mut().take();
+    });
     *slot.borrow_mut() = Some(w.clone());
     w
 }
@@ -76,23 +78,35 @@ fn present(app: &adw::Application, slot: &Slot) -> Rc<Window> {
 fn add_window_actions(w: &Rc<Window>) {
     let delete = gio::SimpleAction::new("delete-chat", Some(glib::VariantTy::STRING));
     let weak = w.weak();
-    delete.connect_activate(move |_, v| if let (Some(w), Some(id)) = (weak.upgrade(), v.and_then(|v| v.get::<String>())) {
-        w.delete_chat(&id);
+    delete.connect_activate(move |_, v| {
+        if let (Some(w), Some(id)) = (weak.upgrade(), v.and_then(|v| v.get::<String>())) {
+            w.delete_chat(&id);
+        }
     });
     w.win.add_action(&delete);
     let remove = gio::SimpleAction::new("remove-attachment", Some(glib::VariantTy::UINT32));
     let weak = w.weak();
-    remove.connect_activate(move |_, v| if let (Some(w), Some(i)) = (weak.upgrade(), v.and_then(|v| v.get::<u32>())) {
-        w.remove_attachment(i as usize);
+    remove.connect_activate(move |_, v| {
+        if let (Some(w), Some(i)) = (weak.upgrade(), v.and_then(|v| v.get::<u32>())) {
+            w.remove_attachment(i as usize);
+        }
     });
     w.win.add_action(&remove);
 }
 
 fn show_about(app: &adw::Application, slot: &Slot) {
-    let about = adw::AboutDialog::builder().application_name(APP_NAME).application_icon(APP_ID).version(VERSION)
-        .developer_name("Wiertless").website(REPO_URL).issue_url(format!("{REPO_URL}/issues"))
+    let about = adw::AboutDialog::builder()
+        .application_name(APP_NAME)
+        .application_icon(APP_ID)
+        .version(VERSION)
+        .developer_name("Wiertless")
+        .website(REPO_URL)
+        .issue_url(format!("{REPO_URL}/issues"))
         .license_type(gtk::License::MitX11)
-        .comments("A local assistant that runs on your NPU with FastFlowLM and can act on your desktop.").build();
+        .comments(
+            "A local assistant that runs on your NPU with FastFlowLM and can act on your desktop.",
+        )
+        .build();
     let parent = slot.borrow().as_ref().map(|w| w.win.clone());
     about.present(parent.as_ref());
     let _ = app;
@@ -103,23 +117,66 @@ fn main() -> glib::ExitCode {
         println!("{APP_NAME} {VERSION}");
         return glib::ExitCode::SUCCESS;
     }
-    let app = adw::Application::builder().application_id(APP_ID).flags(gio::ApplicationFlags::HANDLES_COMMAND_LINE).build();
-    app.add_main_option("ask", b'\0'.into(), glib::OptionFlags::NONE, glib::OptionArg::String, "Ask a question", Some("TEXT"));
-    app.add_main_option("open-chat", b'\0'.into(), glib::OptionFlags::NONE, glib::OptionArg::String, "Open a saved chat", Some("ID"));
-    app.add_main_option("new-chat", b'\0'.into(), glib::OptionFlags::NONE, glib::OptionArg::None, "Start a new chat", None);
-    app.add_main_option("unload", b'\0'.into(), glib::OptionFlags::NONE, glib::OptionArg::None, "Unload the model", None);
-    app.add_main_option("version", b'\0'.into(), glib::OptionFlags::NONE, glib::OptionArg::None, "Show the version", None);
+    let app = adw::Application::builder()
+        .application_id(APP_ID)
+        .flags(gio::ApplicationFlags::HANDLES_COMMAND_LINE)
+        .build();
+    app.add_main_option(
+        "ask",
+        b'\0'.into(),
+        glib::OptionFlags::NONE,
+        glib::OptionArg::String,
+        "Ask a question",
+        Some("TEXT"),
+    );
+    app.add_main_option(
+        "open-chat",
+        b'\0'.into(),
+        glib::OptionFlags::NONE,
+        glib::OptionArg::String,
+        "Open a saved chat",
+        Some("ID"),
+    );
+    app.add_main_option(
+        "new-chat",
+        b'\0'.into(),
+        glib::OptionFlags::NONE,
+        glib::OptionArg::None,
+        "Start a new chat",
+        None,
+    );
+    app.add_main_option(
+        "unload",
+        b'\0'.into(),
+        glib::OptionFlags::NONE,
+        glib::OptionArg::None,
+        "Unload the model",
+        None,
+    );
+    app.add_main_option(
+        "version",
+        b'\0'.into(),
+        glib::OptionFlags::NONE,
+        glib::OptionArg::None,
+        "Show the version",
+        None,
+    );
     let slot: Slot = Rc::default();
 
     let s = slot.clone();
     app.connect_startup(move |app| {
         let css = gtk::CssProvider::new();
         css.load_from_string(CSS);
-        gtk::style_context_add_provider_for_display(&gdk::Display::default().unwrap(), &css, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
+        gtk::style_context_add_provider_for_display(
+            &gdk::Display::default().unwrap(),
+            &css,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
         // Running from a checkout: find the icon next to the sources.
         let dev_icons = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../data");
         if dev_icons.join(format!("{APP_ID}.svg")).exists() {
-            gtk::IconTheme::for_display(&gdk::Display::default().unwrap()).add_search_path(dev_icons);
+            gtk::IconTheme::for_display(&gdk::Display::default().unwrap())
+                .add_search_path(dev_icons);
         }
         let simple: [(&str, Box<dyn Fn()>); 6] = {
             let (a1, s1) = (app.clone(), s.clone());
@@ -131,15 +188,30 @@ fn main() -> glib::ExitCode {
             [
                 ("quit", Box::new(move || a1.quit())),
                 ("about", Box::new(move || show_about(&a2, &s1))),
-                ("activate", Box::new(move || { present(&a3, &s2); })),
+                (
+                    "activate",
+                    Box::new(move || {
+                        present(&a3, &s2);
+                    }),
+                ),
                 // Right-click actions of the app icon (see the desktop file).
                 ("new-chat", Box::new(move || present(&a4, &s3).new_chat())),
-                ("look-at-screen", Box::new(move || present(&a5, &s4).ask("What's on my screen?"))),
-                ("unload-model", Box::new(move || if let Some(w) = s6.borrow().as_ref() { w.unload(true) } else {
-                    // No window: ask the service directly.
-                    let _ = s5;
-                    crate::core::Core::new().unload();
-                })),
+                (
+                    "look-at-screen",
+                    Box::new(move || present(&a5, &s4).ask("What's on my screen?")),
+                ),
+                (
+                    "unload-model",
+                    Box::new(move || {
+                        if let Some(w) = s6.borrow().as_ref() {
+                            w.unload(true)
+                        } else {
+                            // No window: ask the service directly.
+                            let _ = s5;
+                            crate::core::Core::new().unload();
+                        }
+                    }),
+                ),
             ]
         };
         for (name, f) in simple {
@@ -150,31 +222,47 @@ fn main() -> glib::ExitCode {
         // From GNOME search (via assistantd) and from notifications.
         let (a, s2) = (app.clone(), s.clone());
         let ask = gio::SimpleAction::new("ask", Some(glib::VariantTy::STRING));
-        ask.connect_activate(move |_, v| if let Some(text) = v.and_then(|v| v.get::<String>()) {
-            present(&a, &s2).ask_from_shell(&text);
+        ask.connect_activate(move |_, v| {
+            if let Some(text) = v.and_then(|v| v.get::<String>()) {
+                present(&a, &s2).ask_from_shell(&text);
+            }
         });
         app.add_action(&ask);
         let (a, s2) = (app.clone(), s.clone());
         // A reminder notification's buttons: handled without opening a window.
-        for (name, method) in [("snooze-reminder", "SnoozeReminder"), ("done-reminder", "DismissReminder")] {
+        for (name, method) in [
+            ("snooze-reminder", "SnoozeReminder"),
+            ("done-reminder", "DismissReminder"),
+        ] {
             let action = gio::SimpleAction::new(name, Some(glib::VariantTy::STRING));
             let a = app.clone();
-            action.connect_activate(move |_, v| if let Some(id) = v.and_then(|v| v.get::<String>()) {
-                let guard = a.hold(); // stay up until the service answered
-                crate::core::Core::reminder(method, &id, move || drop(guard));
+            action.connect_activate(move |_, v| {
+                if let Some(id) = v.and_then(|v| v.get::<String>()) {
+                    let guard = a.hold(); // stay up until the service answered
+                    crate::core::Core::reminder(method, &id, move || drop(guard));
+                }
             });
             app.add_action(&action);
         }
         let open = gio::SimpleAction::new("open-chat", Some(glib::VariantTy::STRING));
-        open.connect_activate(move |_, v| if let Some(id) = v.and_then(|v| v.get::<String>()) {
-            present(&a, &s2).open_chat(&id);
+        open.connect_activate(move |_, v| {
+            if let Some(id) = v.and_then(|v| v.get::<String>()) {
+                present(&a, &s2).open_chat(&id);
+            }
         });
         app.add_action(&open);
         for (action, accels) in [
-            ("app.quit", &["<Ctrl>q"][..]), ("window.close", &["<Ctrl>w"]), ("win.new-chat", &["<Ctrl>n"]),
-            ("win.focus-entry", &["<Ctrl>l"]), ("win.stop", &["Escape"]), ("win.show-help-overlay", &["<Ctrl>question"]),
-            ("win.preferences", &["<Ctrl>comma"]), ("win.zoom-in", &["<Ctrl>plus", "<Ctrl>equal"]),
-            ("win.zoom-out", &["<Ctrl>minus"]), ("win.zoom-reset", &["<Ctrl>0"]), ("win.search-chats", &["<Ctrl>f"]),
+            ("app.quit", &["<Ctrl>q"][..]),
+            ("window.close", &["<Ctrl>w"]),
+            ("win.new-chat", &["<Ctrl>n"]),
+            ("win.focus-entry", &["<Ctrl>l"]),
+            ("win.stop", &["Escape"]),
+            ("win.show-help-overlay", &["<Ctrl>question"]),
+            ("win.preferences", &["<Ctrl>comma"]),
+            ("win.zoom-in", &["<Ctrl>plus", "<Ctrl>equal"]),
+            ("win.zoom-out", &["<Ctrl>minus"]),
+            ("win.zoom-reset", &["<Ctrl>0"]),
+            ("win.search-chats", &["<Ctrl>f"]),
             ("win.attach", &["<Ctrl><Shift>a"]),
         ] {
             app.set_accels_for_action(action, accels);
@@ -182,7 +270,9 @@ fn main() -> glib::ExitCode {
     });
 
     let s = slot.clone();
-    app.connect_activate(move |app| { present(app, &s); });
+    app.connect_activate(move |app| {
+        present(app, &s);
+    });
 
     let s = slot.clone();
     app.connect_command_line(move |app, cmd| {
@@ -204,6 +294,12 @@ fn main() -> glib::ExitCode {
 
     // Stop a turn this window started; the service keeps or frees the model per its settings.
     let s = slot.clone();
-    app.connect_shutdown(move |_| if let Some(w) = s.borrow().as_ref() && w.st.borrow().busy { w.stop() });
+    app.connect_shutdown(move |_| {
+        if let Some(w) = s.borrow().as_ref()
+            && w.st.borrow().busy
+        {
+            w.stop()
+        }
+    });
     app.run()
 }

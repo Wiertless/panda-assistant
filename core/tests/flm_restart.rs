@@ -18,8 +18,13 @@ fn a_stray_flm_serve_is_stopped() {
     let flm = dir.path().join("flm");
     std::fs::copy("/bin/sh", &flm).unwrap();
     std::fs::write(dir.path().join("serve"), "sleep 300\n").unwrap();
-    let mut child = Command::new(&flm).arg("serve").current_dir(dir.path())
-        .stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
+    let mut child = Command::new(&flm)
+        .arg("serve")
+        .current_dir(dir.path())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
     std::thread::sleep(Duration::from_millis(300));
     // FLM's default port, which the stand-in "serves" on; nothing listens there here.
     let client = FlmClient::new("http://127.0.0.1:52625");

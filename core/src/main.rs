@@ -7,7 +7,8 @@ fn main() {
     }
     let args: Vec<String> = std::env::args().collect();
     // At login (autostart): run only when reminders are waiting; otherwise D-Bus starts it when needed.
-    if args.iter().any(|a| a == "--if-reminders") && assistant_core::reminders::pending().is_empty() {
+    if args.iter().any(|a| a == "--if-reminders") && assistant_core::reminders::pending().is_empty()
+    {
         return;
     }
     if args.iter().any(|a| a == "--eval") {

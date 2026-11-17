@@ -9,7 +9,10 @@ fn path() -> std::path::PathBuf {
 }
 
 pub fn load() -> Value {
-    std::fs::read_to_string(path()).ok().and_then(|s| serde_json::from_str(&s).ok()).filter(Value::is_object)
+    std::fs::read_to_string(path())
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .filter(Value::is_object)
         .unwrap_or_else(|| json!({}))
 }
 
@@ -19,7 +22,10 @@ pub fn update(changes: &[(&str, Value)]) {
     for (k, v) in changes {
         cfg[*k] = v.clone();
     }
-    let _ = store::write_atomic(&path(), &serde_json::to_string_pretty(&cfg).unwrap_or_default());
+    let _ = store::write_atomic(
+        &path(),
+        &serde_json::to_string_pretty(&cfg).unwrap_or_default(),
+    );
 }
 
 pub fn str_or(cfg: &Value, key: &str, default: &str) -> String {
