@@ -744,14 +744,18 @@ impl Agent {
                 None => self.tool_schemas(),
             };
             let required = self.required_rounds && forced.is_none() && schemas.is_some();
-            let reply_round =
-                !required && self.reply_tool && round == 0 && forced.is_none() && schemas.is_some();
+            // Reply is offered in every round with the same wording, so the tool list (rendered
+            // into the start of the prompt) doesn't change between rounds and the server reuses
+            // the prompt it already read: measured 0.6 s to the first token instead of 3.5-6 s.
+            // A call is required only on the first round.
+            let offer_reply = self.reply_tool && forced.is_none() && schemas.is_some();
+            let reply_round = !required && offer_reply && round == 0;
             if let Some(s) = schemas.as_mut() {
                 if required {
                     s.push(final_reply_schema());
                     s.push(ask_user_schema());
-                } else if reply_round {
-                    s.push(reply_schema());
+                } else if offer_reply {
+                    s.push(final_reply_schema());
                 }
             }
             self.round_no = round;

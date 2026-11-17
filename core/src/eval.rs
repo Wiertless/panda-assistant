@@ -153,6 +153,8 @@ pub struct Outcome {
     /// Model requests, and the prompt tokens they sent (cached ones included).
     pub requests: usize,
     pub prompt_tokens: u64,
+    /// Of those, the tokens the server reused from its prompt cache.
+    pub cached_tokens: u64,
 }
 
 fn text_of(v: &Value) -> String {
@@ -399,6 +401,7 @@ pub fn run(
         seconds,
         requests: agent.stats.len(),
         prompt_tokens: agent.stats.iter().map(|r| r.usage.prompt_tokens).sum(),
+        cached_tokens: agent.stats.iter().map(|r| r.usage.cached_tokens).sum(),
     }
 }
 
@@ -569,11 +572,14 @@ pub fn main(args: &[String]) -> i32 {
         runs_all.iter().map(|o| o.requests).sum::<usize>() as f64 / runs_all.len().max(1) as f64;
     let prompt =
         runs_all.iter().map(|o| o.prompt_tokens).sum::<u64>() as f64 / runs_all.len().max(1) as f64;
+    let cached = runs_all.iter().map(|o| o.cached_tokens).sum::<u64>() as f64
+        / runs_all.iter().map(|o| o.prompt_tokens).sum::<u64>().max(1) as f64;
     println!(
         "{model}: {passed}/{total} passed ({:.0}%), {:.1}s per request on average, {requests:.1} model calls and \
-{prompt:.0} prompt tokens per request",
+{prompt:.0} prompt tokens per request, {:.0}% of them from the server's cache",
         100.0 * passed as f64 / total.max(1) as f64,
-        secs / rows.len().max(1) as f64
+        secs / rows.len().max(1) as f64,
+        100.0 * cached
     );
     // Per capability: where it's weak, not just how much.
     let mut by_tag: std::collections::BTreeMap<String, (usize, usize)> = Default::default();
@@ -608,7 +614,7 @@ pub fn main(args: &[String]) -> i32 {
     if let Some(path) = opt("--json") {
         let report = json!({"model": model, "variant": variant_name, "passed": passed, "total": total, "repeat": repeat,
             "clusters_passed": clusters_ok, "clusters": clusters.len(), "unrouted": unrouted,
-            "seconds": secs, "model_calls": requests, "prompt_tokens": prompt, "capabilities": by_tag.iter().map(|(t, (ok, n))| (t.clone(), json!({"passed": ok, "total": n})))
+            "seconds": secs, "model_calls": requests, "prompt_tokens": prompt, "cached_share": cached, "capabilities": by_tag.iter().map(|(t, (ok, n))| (t.clone(), json!({"passed": ok, "total": n})))
                 .collect::<serde_json::Map<_, _>>(),
             "scenarios": rows.iter().map(|(name, ok, secs, runs, _)| {
                 let shown = runs.iter().find(|o| !o.passed).unwrap_or(&runs[0]);
