@@ -21,6 +21,14 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.26.0" date="2026-11-18">
+      <description>
+        <ul>
+          <li>One search across your calendar, mail, files and contacts for questions like "when's my flight?"</li>
+          <li>Mail search matches Polish word endings</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.25.0" date="2026-11-18">
       <description>
         <ul>
