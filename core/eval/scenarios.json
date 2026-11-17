@@ -1270,5 +1270,32 @@
    "zbadaj, który czytnik e-booków jest najlepszy do PDF-ów",
    "look into which e-reader handles PDFs best"
   ]
+ },
+ {
+  "name": "search everything",
+  "prompt": "when is my flight to Lisbon?",
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "stubs": {
+   "search_everything": "## Mail\n[me@x.pl:41] TAP Air Portugal — Your booking TP1245 (Mon, 9 Nov 2026)\n  Warsaw WAW → Lisbon LIS, Fri 4 Dec 2026, departs 06:40.",
+   "search_mail": "[me@x.pl:41] TAP Air Portugal — Your booking TP1245 (Mon, 9 Nov 2026)\n  Warsaw WAW → Lisbon LIS, Fri 4 Dec 2026, departs 06:40."
+  },
+  "expect": [
+   {
+    "tool": "search_everything|search_mail|get_events",
+    "args": {}
+   }
+  ],
+  "answer": [
+   "4 dec|4 grud|december 4|06:40|6:40"
+  ],
+  "forbid": [
+   "web_search"
+  ],
+  "paraphrases": [
+   "kiedy mam lot do Lizbony?"
+  ]
  }
 ]

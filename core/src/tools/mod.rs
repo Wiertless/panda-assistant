@@ -15,6 +15,7 @@ pub mod compact;
 pub mod connect;
 pub mod docs;
 pub mod edit;
+pub mod everything;
 pub mod extract;
 pub mod files;
 pub mod groups;
@@ -102,6 +103,7 @@ pub fn reads_untrusted(tool: &str) -> bool {
             | "research"
             | "search_mail"
             | "read_mail"
+            | "search_everything"
             | "read_document"
             | "ask_document"
             | "read_file"
@@ -399,6 +401,12 @@ Returns titles, links and short snippets. Not for the user's own files, settings
         Tool::new("read_web_page", "Read the text of a web page, e.g. a search result, to answer from it.",
                   obj(json!({"url": {"type": "string"}}), &["url"]), Safe, web::read_web_page,
                   text("url", |u| format!("Read {}", or(u, "a page")))),
+        Tool::new("search_everything", "Search all of the user's own things at once: calendar, mail, file names, \
+what's inside documents, and contacts. Use it when the answer is somewhere in their stuff but you can't tell where \
+(\"when's my flight?\", \"what did the landlord say about the deposit?\", \"find anything about the conference\"). \
+query: the key words, not a whole sentence.",
+                  obj(json!({"query": {"type": "string", "description": "e.g. flight Lisbon, deposit, conference"}}), &["query"]),
+                  Safe, everything::search_everything, text("query", |q| format!("Search your things for “{q}”"))),
         Tool::new("search_mail", "Search the user's mail (every account in Online Accounts, whatever mail app they \
 use) for words: a sender, a subject, a topic. Returns the newest matches with sender, subject, date and the start of \
 the text. Empty query: the newest mail.",
@@ -628,7 +636,7 @@ mod tests {
     #[test]
     fn same_tools_and_risks_as_the_python_app() {
         let names: Vec<String> = all().into_iter().map(|t| t.name).collect();
-        assert_eq!(names.len(), 74, "{names:?}");
+        assert_eq!(names.len(), 75, "{names:?}");
         let risky: Vec<String> = all()
             .into_iter()
             .filter(|t| t.risk == Risk::Confirm)

@@ -291,6 +291,25 @@ fn shell_events(since: i64, until: i64) -> Result<Vec<Event>, ToolError> {
         .map_err(|e| ToolError(e.to_string()))?
 }
 
+/// Events from 30 days ago to a year ahead whose title has these words.
+pub fn find_events(_: &Context, args: &Args) -> ToolResult {
+    let words: Vec<String> = arg_str(args, "query")
+        .to_lowercase()
+        .split_whitespace()
+        .filter(|w| w.chars().count() > 2)
+        .map(String::from)
+        .collect();
+    let today = Day::today();
+    let events = shell_events(today.plus(-30).start(), today.plus(365).start())?
+        .into_iter()
+        .filter(|e| {
+            let s = e.summary.to_lowercase();
+            words.iter().any(|w| s.contains(w.as_str()))
+        })
+        .collect();
+    Ok(format_events(events, "matching"))
+}
+
 pub fn get_events(_: &Context, args: &Args) -> ToolResult {
     let (first, days, label) = time_range(&arg_str(args, "when"), Day::today())?;
     let events = shell_events(first.start(), first.plus(days).start())?;

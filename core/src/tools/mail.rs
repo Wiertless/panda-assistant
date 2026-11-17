@@ -475,6 +475,26 @@ fn one_line(s: &str, max: usize) -> String {
     }
 }
 
+/// IMAP TEXT terms, one per word, all required, cut to a stem so Polish endings
+/// match ("algebra" finds "algebry"): TEXT matches substrings.
+fn text_search(query: &str) -> String {
+    query
+        .split_whitespace()
+        .map(|w| {
+            let n = w.chars().count();
+            let keep = if n > 6 {
+                n - 2
+            } else if n > 4 {
+                n - 1
+            } else {
+                n
+            };
+            format!("TEXT {}", quote(&w.chars().take(keep).collect::<String>()))
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 pub fn search_mail(_: &Context, args: &Args) -> ToolResult {
     // Only words go into the IMAP command: no quotes, backslashes or line breaks.
     let query: String = arg_str(args, "query")
@@ -493,7 +513,7 @@ pub fn search_mail(_: &Context, args: &Args) -> ToolResult {
             } else if a.host.ends_with("gmail.com") {
                 format!("UID SEARCH X-GM-RAW {}", quote(query))
             } else {
-                format!("UID SEARCH TEXT {}", quote(query))
+                format!("UID SEARCH {}", text_search(query))
             };
             let uids: Vec<u32> = imap
                 .cmd(&search)?
@@ -599,6 +619,15 @@ mod tests {
         assert_eq!(m.from, "Ola Kowalska <ola@x.pl>");
         assert_eq!(m.subject, "Umowa najmu łódź");
         assert_eq!(m.text.trim(), "Czynsz 3 200 zł,\r\n do piątku.");
+    }
+
+    #[test]
+    fn search_terms_are_stems() {
+        assert_eq!(
+            text_search("algebra Pogorzały"),
+            r#"TEXT "algeb" TEXT "Pogorza""#
+        );
+        assert_eq!(text_search("umowa"), r#"TEXT "umow""#);
     }
 
     #[test]
