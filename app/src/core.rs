@@ -29,6 +29,8 @@ pub trait Turn {
     fn on_retract(&self);
     fn on_confirm(&self, request: u32, name: &str, summary: &str, detail: &str, can_always: bool);
     fn on_finished(&self, error: &str);
+    /// How long the answer took and how many tokens it used (JSON from the service).
+    fn on_stats(&self, _json: &str) {}
 }
 
 #[derive(Default)]
@@ -347,6 +349,7 @@ impl Core {
                 &s(4),
                 params.child_value(5).get::<bool>().unwrap_or(false),
             ),
+            "Stats" => turn.on_stats(&s(1)),
             "Finished" => {
                 self.turns.borrow_mut().remove(&chat);
                 turn.on_finished(&s(1));

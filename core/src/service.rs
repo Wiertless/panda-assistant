@@ -73,6 +73,7 @@ pub const INTROSPECTION: &str = r#"
     <signal name="Retract"><arg type="s" name="chat_id"/></signal>
     <signal name="ConfirmRequest"><arg type="s" name="chat_id"/><arg type="u" name="request"/><arg type="s" name="name"/><arg type="s" name="summary"/><arg type="s" name="detail"/><arg type="b" name="can_always"/></signal>
     <signal name="Finished"><arg type="s" name="chat_id"/><arg type="s" name="error"/></signal>
+    <signal name="Stats"><arg type="s" name="chat_id"/><arg type="s" name="json"/></signal>
     <signal name="StateChanged"><arg type="s" name="model"/><arg type="s" name="state"/></signal>
     <signal name="Clipboard"><arg type="s" name="text"/></signal>
     <signal name="StepAside"/>
@@ -747,6 +748,8 @@ impl Service {
                 me.set_state("Loading…");
             }
             let before = (agent.messages.len(), agent.summary.clone(), agent.compacted);
+            let first_round = agent.stats.len();
+            let started = std::time::Instant::now();
             let attempt = |agent: &mut Agent| {
                 shared
                     .client
@@ -802,6 +805,7 @@ impl Service {
                 .and_then(|m| m["content"].as_str())
                 .unwrap_or("")
                 .to_string();
+            let agent_stats = agent.stats.clone();
             *shared.agent.lock().unwrap() = Some(agent);
             shared.busy.store(false, Ordering::SeqCst);
             *me.last_turn.lock().unwrap() = Some(std::time::Instant::now());
@@ -824,6 +828,28 @@ impl Service {
                         "Open Chat",
                     );
                 }
+            }
+            // Speed of this answer, for the line under it: all its model calls together.
+            let rounds = &agent_stats[first_round.min(agent_stats.len())..];
+            let gen_ms: u64 = rounds
+                .iter()
+                .map(|r| r.total_ms.saturating_sub(r.first_ms))
+                .sum();
+            let tokens: u64 = rounds.iter().map(|r| r.usage.completion_tokens).sum();
+            let stats = json!({
+                "seconds": started.elapsed().as_secs_f64(),
+                "think_seconds": rounds.iter().map(|r| r.think_ms).sum::<u64>() as f64 / 1000.0,
+                "tokens": tokens,
+                "prompt_tokens": rounds.iter().map(|r| r.usage.prompt_tokens).sum::<u64>(),
+                "cached_tokens": rounds.iter().map(|r| r.usage.cached_tokens).sum::<u64>(),
+                "tokens_per_second": if gen_ms > 0 { tokens as f64 * 1000.0 / gen_ms as f64 } else { 0.0 },
+                "calls": rounds.len(),
+            });
+            if !rounds.is_empty() {
+                cb.emit(
+                    "Stats",
+                    (id.as_str(), stats.to_string().as_str()).to_variant(),
+                );
             }
             cb.emit("Finished", (id.as_str(), error.as_str()).to_variant());
             let me2 = me.clone();

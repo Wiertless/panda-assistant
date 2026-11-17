@@ -86,6 +86,7 @@ struct Inner {
     text: String,
     answer: String,
     failure: String,
+    stats: Option<serde_json::Value>,
 }
 
 pub struct Reply {
@@ -150,6 +151,7 @@ impl Reply {
                 text: String::new(),
                 answer: String::new(),
                 failure: String::new(),
+                stats: None,
             }),
         })
     }
@@ -228,6 +230,12 @@ impl Reply {
         let Some(win) = self.win.upgrade() else {
             return;
         };
+        if let Some(line) = self.inner.borrow().stats.as_ref().and_then(stats_line) {
+            let l = gtk::Label::builder().label(line).xalign(0.0).build();
+            l.add_css_class("dim-label");
+            l.add_css_class("caption");
+            self.bx.append(&l);
+        }
         if !answer.is_empty() {
             let copy = gtk::Button::builder()
                 .icon_name("edit-copy-symbolic")
@@ -380,7 +388,34 @@ pub fn notify_app(app: &adw::Application, title: &str, body: &str, chat_id: &str
     app.send_notification(Some("panda"), &note);
 }
 
+/// "Thought for 4.2 s · 312 tokens · 9.8 s, 21 t/s", as the Preferences switches say.
+fn stats_line(s: &serde_json::Value) -> Option<String> {
+    let cfg = crate::config::load();
+    let on = |k: &str, d: bool| crate::config::bool_or(&cfg, k, d);
+    let f = |k: &str| s[k].as_f64().unwrap_or(0.0);
+    let mut parts = vec![];
+    if on("stats_thinking", true) && f("think_seconds") >= 0.1 {
+        parts.push(format!("Thought for {:.1} s", f("think_seconds")));
+    }
+    if on("stats_tokens", false) && f("tokens") > 0.0 {
+        parts.push(format!("{} tokens", f("tokens") as u64));
+    }
+    if on("stats_speed", true) && f("seconds") > 0.0 {
+        let rate = f("tokens_per_second");
+        parts.push(if rate > 0.0 {
+            format!("{:.1} s, {:.0} t/s", f("seconds"), rate)
+        } else {
+            format!("{:.1} s", f("seconds"))
+        });
+    }
+    (!parts.is_empty()).then(|| parts.join(" · "))
+}
+
 impl Turn for Reply {
+    fn on_stats(&self, json: &str) {
+        self.inner.borrow_mut().stats = serde_json::from_str(json).ok();
+    }
+
     fn on_text(&self, s: &str) {
         self.spin_label.set_label("Writing…");
         let mut i = self.inner.borrow_mut();

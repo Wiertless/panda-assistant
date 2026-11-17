@@ -1249,6 +1249,8 @@ impl Agent {
         };
         let started = std::time::Instant::now();
         let mut first: Option<std::time::Duration> = None;
+        // Thinking: from the first reasoning token to the first token after it.
+        let mut thinking: (Option<std::time::Duration>, Option<std::time::Duration>) = (None, None);
         let stream = self
             .client
             .chat_stream(&self.model, &conversation, schemas, &opts)?;
@@ -1261,6 +1263,16 @@ impl Agent {
             let ev = ev?;
             if first.is_none() && !matches!(ev, StreamEvent::Done { .. }) {
                 first = Some(started.elapsed());
+            }
+            match ev {
+                StreamEvent::Reasoning(_) if thinking.0.is_none() => {
+                    thinking.0 = Some(started.elapsed())
+                }
+                StreamEvent::Reasoning(_) => {}
+                _ if thinking.0.is_some() && thinking.1.is_none() => {
+                    thinking.1 = Some(started.elapsed())
+                }
+                _ => {}
             }
             match ev {
                 StreamEvent::Text(t) => {
@@ -1280,6 +1292,9 @@ impl Agent {
                         required: force,
                         usage: usage.unwrap_or_default(),
                         first_ms: first.unwrap_or(started.elapsed()).as_millis() as u64,
+                        think_ms: thinking.0.map_or(0, |a| {
+                            (thinking.1.unwrap_or(started.elapsed()) - a).as_millis() as u64
+                        }),
                         total_ms: started.elapsed().as_millis() as u64,
                         calls: tool_calls.iter().map(|c| c.name.clone()).collect(),
                     });
@@ -1460,6 +1475,8 @@ pub struct RoundStat {
     /// Time to the first streamed token (≈ prompt reading), and to the end.
     pub first_ms: u64,
     pub total_ms: u64,
+    /// Time spent writing reasoning before the answer or the call.
+    pub think_ms: u64,
     pub calls: Vec<String>,
 }
 

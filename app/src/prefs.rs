@@ -98,6 +98,41 @@ fn general_page(win: &Rc<Window>) -> adw::PreferencesPage {
     abilities.add(&web);
     page.add(&abilities);
 
+    let details = adw::PreferencesGroup::builder()
+        .title("Answer Details")
+        .description("A line under each answer")
+        .build();
+    let cfg = config::load();
+    for (key, title, subtitle, default) in [
+        (
+            "stats_thinking",
+            "Thinking Time",
+            "How long the model thought before answering",
+            true,
+        ),
+        (
+            "stats_tokens",
+            "Tokens",
+            "How many tokens the answer took",
+            false,
+        ),
+        (
+            "stats_speed",
+            "Speed",
+            "How long the answer took, and tokens per second",
+            true,
+        ),
+    ] {
+        let row = adw::SwitchRow::builder()
+            .title(title)
+            .subtitle(subtitle)
+            .active(config::bool_or(&cfg, key, default))
+            .build();
+        row.connect_active_notify(move |row| config::update(&[(key, json!(row.is_active()))]));
+        details.add(&row);
+    }
+    page.add(&details);
+
     let allowed = Rows::new(
         adw::PreferencesGroup::builder()
             .title("Allowed Without Asking")
