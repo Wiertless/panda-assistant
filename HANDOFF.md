@@ -36,15 +36,22 @@ Released so far: Assistant **0.23.0** (pinned in silverpanda). `main` has more o
 
 ## Done since
 
-- 0.24.0: in-depth research with PDF/MD/TXT export (`core/src/tools/research.rs`, pangocairo), reply offered every round (prompt cache: 0.6 s to first token).
+- 0.24: in-depth research with PDF/MD/TXT export, reply offered every round (prompt cache: 0.6 s to first token), pop-up (`--popup`, Super+Space via silverpanda dconf), file tools, all file types readable.
+- 0.25.0: mail search/read over IMAP via GNOME Online Accounts (any mail app). Pinned in silverpanda (PR 41).
+- `assistantd --tool NAME JSON` runs one tool, for live tests. Live testing: download the GitHub release, `pkill -x assistantd`, run the release's `core-bin/assistantd`, call it over D-Bus (`gdbus call ... Core1.Ask`).
+- Rust on the laptop: the `panda-dev` toolbox; call `/usr/bin/cargo-fmt` and `/usr/bin/cargo-clippy clippy` directly (~/.cargo/bin has broken rustup shims). `gh` is in that toolbox. Build on GitHub, not locally, when possible.
+
+## Eval verdicts (Gemma 4 E2B, CPU, 119 prompts)
+
+baseline 105-107, no-embed 104, required 101 (+35% tokens), compact 83, compact-required 81.
+So: keep narrow tools + routing + embeddings; **don't** switch to the compact set or required rounds.
 
 ## Next, in order
 
-1. **Pop-up** on a global shortcut (Super+Space): a small floating box at the top of the screen, Esc closes; the full window stays for long chats. It attaches the current context automatically: focused app + window title, selected text (clipboard extension), last copied text, a screenshot when asked about the screen.
-2. **Personal search** across files (LocalSearch + embeddings), calendar, contacts and **mail** (IMAP via GNOME Online Accounts; local stores as fallback).
+1. ~~**Pop-up**~~ (done in 0.24) on a global shortcut (Super+Space): a small floating box at the top of the screen, Esc closes; the full window stays for long chats. It attaches the current context automatically: focused app + window title, selected text (clipboard extension), last copied text, a screenshot when asked about the screen.
+2. ~~Mail~~ (done in 0.25); still to do: one **personal search** across files (LocalSearch + embeddings), calendar, contacts and **mail** (IMAP via GNOME Online Accounts; local stores as fallback).
 3. **The rest of the redesign** (decided earlier with a review agent):
-   - one fixed toolbox (probably the compact set) sent identically every time, so FLM's prefix cache reuses the prompt;
-   - `required_rounds` (exactly one tool call per round, reply/ask_user always offered) — already in the code behind a flag, waiting on the eval;
+   - ~~compact toolbox~~ and ~~required rounds~~: refuted by the eval (see above);
    - a learned proposer: k-nearest-neighbour over EmbeddingGemma vectors of example requests → force the likely tool with `tool_choice` naming it;
    - typed workflows behind the tools (finish the job in Rust, error kinds Done/NeedChoice/Fixable/Fatal);
    - delete keyword routing, more_tools, nudge/force heuristics once the above beats them in the eval.
