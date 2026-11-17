@@ -1081,9 +1081,9 @@ impl Window {
         self.model_menu.remove_all();
         for m in &models {
             let label = if m.can_use_tools() || m.labels.is_empty() {
-                m.name.clone()
+                m.display_name()
             } else {
-                format!("{} (chat only)", m.name)
+                format!("{} (chat only)", m.display_name())
             };
             let item = gio::MenuItem::new(Some(&label), None);
             item.set_action_and_target_value(Some("win.model"), Some(&m.name.to_variant()));

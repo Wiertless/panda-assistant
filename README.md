@@ -89,6 +89,12 @@ Panda is a [Model Context Protocol](https://modelcontextprotocol.io) client, so 
 
 Panda lists the models FastFlowLM has downloaded (`flm list`). Only models labelled **tool-calling** can take actions; others are marked "chat only". Flash models are single-turn and can't use tools. Until you pick one, it uses the first of `qwen3.5:4b`, `gemma4-it:e4b`, `gemma4-it:e2b` and `qwen3.5:2b` that's installed (Qwen 3.5 4B scores best in the eval and keeps up with Gemma 4 E2B on the NPU); your choice is saved in `~/.config/panda-assistant/config.json`.
 
+## Lemonade Server
+
+When [Lemonade Server](https://lemonade-server.ai) is installed (its `lemond` user service; SilverPanda includes it), Panda uses it instead of starting `flm serve` itself. Lemonade runs FastFlowLM on the NPU and llama.cpp on the graphics chip. Panda starts the service when it needs a model and stops it again when it unloads, if it started it. Models keep their FLM names; models Lemonade runs on the graphics chip (downloaded GGUF chat models, `lemonade pull Qwen3.5-9B-GGUF`) are listed as "… (graphics chip)". If Lemonade won't start, Panda falls back to FastFlowLM directly. `PANDA_BACKEND=flm` or `=lemonade` forces one.
+
+A graphics-chip model runs next to the NPU model instead of replacing it, so a hand-off doesn't reload the small model. It isn't faster: the Radeon 840M reads a 9B model's 6 GB of weights at about the speed of the NPU, prefills prompts more slowly, and draws far more power. So nothing picks one automatically; choose one in **Preferences → Smarter Model** for heavy jobs. It's unloaded a minute after use, keeping the NPU model loaded.
+
 ## Smarter model
 
 The fast model can hand a request it can't do well to a bigger local model by calling `ask_smarter_model`. The bigger model gets the conversation and the same desktop actions, and its reply is the answer, so there's no second model swap. FLM keeps one model loaded, so a hand-off takes a few seconds while it loads.

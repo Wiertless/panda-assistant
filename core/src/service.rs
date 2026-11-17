@@ -915,6 +915,19 @@ impl Service {
             return;
         }
         if self.shared.big_model_loaded() {
+            let big = self.shared.client.last_model.lock().unwrap().clone();
+            // On the graphics chip next to the default model (Lemonade): free just that one.
+            if let Some(big) = big.filter(|m| self.shared.client.keeps_both(m)) {
+                let me = self.clone();
+                std::thread::spawn(move || {
+                    me.shared.client.unload_model(&big);
+                    let model = me.shared.config.lock().unwrap().model.clone();
+                    *me.shared.client.last_model.lock().unwrap() = Some(model);
+                    let me2 = me.clone();
+                    glib::MainContext::default().invoke(move || me2.schedule_idle());
+                });
+                return;
+            }
             // Restart with just the default model: frees the bigger one and its context.
             let me = self.clone();
             std::thread::spawn(move || {

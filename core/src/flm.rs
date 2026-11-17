@@ -2,8 +2,14 @@
 //!
 //! FLM serves an OpenAI-compatible API on 127.0.0.1:52625. It keeps one model
 //! loaded and swaps to whichever model a request names.
+//!
+//! When Lemonade Server is installed (its `lemond` user service), the same
+//! client talks to it instead: Lemonade runs FLM on the NPU and llama.cpp on
+//! the graphics chip, so a bigger model can run there next to the small one
+//! instead of replacing it. Models keep FLM's names ("gemma4-it:e2b"); the
+//! graphics-chip ones are "gpu:<Lemonade's name>".
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
@@ -15,6 +21,76 @@ use regex::Regex;
 use serde_json::{Map, Value, json};
 
 pub const DEFAULT_URL: &str = "http://127.0.0.1:52625";
+pub const LEMONADE_URL: &str = "http://127.0.0.1:13305";
+const LEMOND_UNIT: &str = "lemond.service";
+/// Models Lemonade runs with llama.cpp on the graphics chip: "gpu:Qwen3.5-9B-GGUF".
+pub const GPU_PREFIX: &str = "gpu:";
+
+/// What serves the models.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Backend {
+    /// `flm serve`, which this service starts and stops.
+    Flm,
+    /// Lemonade Server (FLM on the NPU, llama.cpp on the graphics chip).
+    Lemonade,
+}
+
+/// Lemonade's name for an FLM model: "gemma4-it:e2b" -> "gemma4-it-e2b-FLM".
+pub fn lemonade_flm_name(tag: &str) -> String {
+    format!("{}-FLM", tag.replace(':', "-"))
+}
+
+/// Our model list from Lemonade's /v1/models: FLM models by their FLM tag,
+/// downloaded llama.cpp chat models as "gpu:<name>". Also returns Lemonade's
+/// name for each.
+pub fn parse_lemonade_models(
+    v: &Value,
+    flm_labels: &BTreeMap<String, Vec<String>>,
+) -> Vec<(Model, String)> {
+    let mut out = Vec::new();
+    for m in v["data"].as_array().into_iter().flatten() {
+        let id = m["id"].as_str().unwrap_or_default();
+        let downloaded = m["downloaded"].as_bool().unwrap_or(false);
+        let labels: Vec<String> = m["labels"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|l| l.as_str().map(String::from))
+            .collect();
+        let main = m["checkpoints"]["main"]
+            .as_str()
+            .or(m["checkpoint"].as_str())
+            .unwrap_or_default();
+        match m["recipe"].as_str().unwrap_or_default() {
+            "flm" if !main.is_empty() => out.push((
+                Model {
+                    name: main.to_string(),
+                    installed: downloaded,
+                    labels: flm_labels.get(main).cloned().unwrap_or(labels),
+                },
+                id.to_string(),
+            )),
+            // Chat models only, and only downloaded ones: the catalog is long.
+            "llamacpp"
+                if downloaded
+                    && !labels.iter().any(|l| {
+                        ["embeddings", "embedding", "reranking"].contains(&l.as_str())
+                    }) =>
+            {
+                out.push((
+                    Model {
+                        name: format!("{GPU_PREFIX}{id}"),
+                        installed: true,
+                        labels,
+                    },
+                    id.to_string(),
+                ))
+            }
+            _ => {}
+        }
+    }
+    out
+}
 pub const DEFAULT_CTX_LEN: u32 = 8192;
 /// Qwen 3.5/3.6 keep earlier prompts in a host-memory prefix cache (FLM's
 /// default limit is 4 GiB); the assistant's prompts are short.
@@ -65,7 +141,7 @@ pub fn default_model(installed: &[Model]) -> String {
         .or_else(|| {
             installed
                 .iter()
-                .find(|m| m.installed && m.can_use_tools() && !m.single_turn())
+                .find(|m| m.installed && m.can_use_tools() && !m.single_turn() && !m.on_gpu())
                 .map(|m| m.name.clone())
         })
         .unwrap_or_else(|| "gemma4-it:e2b".into())
@@ -164,10 +240,30 @@ impl Model {
     pub fn can_see(&self) -> bool {
         self.has("vision")
     }
+    /// The name to show: "Qwen3.5-9B-GGUF (graphics chip)" for a llama.cpp one.
+    pub fn display_name(&self) -> String {
+        match self.name.strip_prefix(GPU_PREFIX) {
+            Some(id) => format!("{id} (graphics chip)"),
+            None => self.name.clone(),
+        }
+    }
+    /// Runs on the graphics chip (through Lemonade), not the NPU.
+    pub fn on_gpu(&self) -> bool {
+        self.name.starts_with(GPU_PREFIX)
+    }
     /// Rough parameter count in billions from the tag ("e4b" -> 4, "35b-a3b" -> 35).
     pub fn size_b(&self) -> f64 {
         static SIZE: LazyLock<Regex> =
             LazyLock::new(|| Regex::new(r"^e?(\d+(?:\.\d+)?)([bm])").unwrap());
+        // "gpu:Gemma-4-26B-A4B-it-GGUF" -> 26, "gpu:Gemma-4-E2B-it-GGUF" -> 2.
+        static GPU_SIZE: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"(?i)(?:^|[-_.])e?(\d+(?:\.\d+)?)b(?:[-_.]|$)").unwrap());
+        if let Some(id) = self.name.strip_prefix(GPU_PREFIX) {
+            return GPU_SIZE
+                .captures(id)
+                .and_then(|c| c[1].parse().ok())
+                .unwrap_or(0.0);
+        }
         let tag = self.name.split_once(':').map(|(_, t)| t).unwrap_or("");
         match SIZE.captures(tag) {
             Some(c) => {
@@ -204,6 +300,8 @@ pub fn pick_smarter_model(models: &[Model], current: &str, ram_gib: Option<f64>)
     models
         .iter()
         .filter(|m| m.installed && m.can_use_tools() && !m.single_turn() && m.name != current)
+        // The graphics chip only when chosen: it's heavier on the laptop.
+        .filter(|m| !m.on_gpu())
         .filter(|m| m.size_b() <= limit && cur.is_none_or(|c| m.size_b() > c.size_b()))
         .max_by(|a, b| a.size_b().total_cmp(&b.size_b()))
         .map(|m| m.name.clone())
@@ -214,7 +312,8 @@ pub fn pick_vision_model(models: &[Model], current: &str, ram_gib: Option<f64>) 
     let limit = ram_limit(ram_gib);
     models
         .iter()
-        .filter(|m| m.installed && m.can_see() && m.name != current && m.size_b() <= limit)
+        .filter(|m| m.installed && m.can_see() && !m.on_gpu())
+        .filter(|m| m.name != current && m.size_b() <= limit)
         .min_by(|a, b| {
             (!a.can_use_tools(), a.single_turn())
                 .cmp(&(!b.can_use_tools(), b.single_turn()))
@@ -505,7 +604,15 @@ struct Server {
 }
 
 pub struct FlmClient {
-    pub base_url: String,
+    base_url: Mutex<String>,
+    backend: Mutex<Backend>,
+    /// Lemonade's names for our models.
+    wire_names: Mutex<HashMap<String, String>>,
+    /// This service started Lemonade, so it stops it again when idle.
+    started_lemond: std::sync::atomic::AtomicBool,
+    /// Models this service had Lemonade load, and their context length.
+    loaded: Mutex<BTreeSet<String>>,
+    ctx_len: Mutex<Option<u32>>,
     agent: ureq::Agent,
     server: Mutex<Option<Server>>,
     /// The model FLM most likely has loaded (it swaps per request).
@@ -528,7 +635,12 @@ impl FlmClient {
             .timeout_connect(Some(Duration::from_secs(5)))
             .build();
         Self {
-            base_url: base_url.trim_end_matches('/').to_string(),
+            base_url: Mutex::new(base_url.trim_end_matches('/').to_string()),
+            backend: Mutex::new(Backend::Flm),
+            wire_names: Mutex::new(HashMap::new()),
+            started_lemond: std::sync::atomic::AtomicBool::new(false),
+            loaded: Mutex::new(BTreeSet::new()),
+            ctx_len: Mutex::new(None),
             agent: config.into(),
             server: Mutex::new(None),
             last_model: Mutex::new(None),
@@ -539,16 +651,59 @@ impl FlmClient {
         }
     }
 
+    /// A client for Lemonade Server at this address.
+    pub fn lemonade(base_url: &str) -> Self {
+        let c = Self::new(base_url);
+        *c.backend.lock().unwrap() = Backend::Lemonade;
+        c
+    }
+
+    /// FLM directly, unless Lemonade is installed (or PANDA_BACKEND says).
+    /// PANDA_FLM_URL points at an FLM (or any OpenAI-compatible) server.
     pub fn from_env() -> Self {
-        Self::new(&std::env::var("PANDA_FLM_URL").unwrap_or_else(|_| DEFAULT_URL.into()))
+        if let Ok(url) = std::env::var("PANDA_FLM_URL") {
+            return Self::new(&url);
+        }
+        let lemonade_url =
+            std::env::var("PANDA_LEMONADE_URL").unwrap_or_else(|_| LEMONADE_URL.into());
+        match std::env::var("PANDA_BACKEND").as_deref() {
+            Ok("flm") => Self::new(DEFAULT_URL),
+            Ok("lemonade") => Self::lemonade(&lemonade_url),
+            _ if lemonade_installed() => Self::lemonade(&lemonade_url),
+            _ => Self::new(DEFAULT_URL),
+        }
+    }
+
+    pub fn url(&self) -> String {
+        self.base_url.lock().unwrap().clone()
+    }
+
+    pub fn backend(&self) -> Backend {
+        *self.backend.lock().unwrap()
+    }
+
+    fn lemonade_mode(&self) -> bool {
+        self.backend() == Backend::Lemonade
+    }
+
+    /// Lemonade wouldn't start: talk to FLM directly from now on.
+    fn fall_back_to_flm(&self) {
+        *self.backend.lock().unwrap() = Backend::Flm;
+        *self.base_url.lock().unwrap() = DEFAULT_URL.into();
+        self.loaded.lock().unwrap().clear();
     }
 
     /// True once anything answers HTTP on the port (older FLM releases answer
     /// /api/version with an error status even when ready).
     pub fn is_up(&self) -> bool {
-        ["/api/version", "/v1/models"].iter().any(|p| {
+        let paths: &[&str] = if self.lemonade_mode() {
+            &["/live"]
+        } else {
+            &["/api/version", "/v1/models"]
+        };
+        paths.iter().any(|p| {
             self.agent
-                .get(&format!("{}{}", self.base_url, p))
+                .get(&format!("{}{}", self.url(), p))
                 .config()
                 .timeout_global(Some(Duration::from_secs(2)))
                 .build()
@@ -558,6 +713,9 @@ impl FlmClient {
     }
 
     pub fn owns_server(&self) -> bool {
+        if self.lemonade_mode() {
+            return !self.loaded.lock().unwrap().is_empty();
+        }
         let mut guard = self.server.lock().unwrap();
         match guard.as_mut() {
             Some(s) => matches!(s.child.try_wait(), Ok(None)),
@@ -594,6 +752,18 @@ impl FlmClient {
         ctx_len: Option<u32>,
         wait: Duration,
     ) -> Result<bool, FlmError> {
+        if self.lemonade_mode() {
+            match self.lemonade_load(model, ctx_len, wait) {
+                Err(e) if !self.is_up() && !model.starts_with(GPU_PREFIX) => {
+                    eprintln!(
+                        "assistantd: Lemonade isn't running ({}); using FastFlowLM directly",
+                        e.message
+                    );
+                    self.fall_back_to_flm();
+                }
+                other => return other,
+            }
+        }
         match self.start_server(
             model,
             ctx_len,
@@ -695,6 +865,25 @@ impl FlmClient {
     /// Stop the server only if this service started it. True if one was stopped.
     pub fn stop_server(&self) -> bool {
         *self.last_model.lock().unwrap() = None;
+        if self.lemonade_mode() {
+            let models: Vec<String> = std::mem::take(&mut *self.loaded.lock().unwrap())
+                .into_iter()
+                .collect();
+            for m in &models {
+                let _ = self.lemonade_post(
+                    "/v1/unload",
+                    &json!({"model_name": self.wire_name(m)}),
+                    Duration::from_secs(30),
+                );
+            }
+            let started = self
+                .started_lemond
+                .swap(false, std::sync::atomic::Ordering::SeqCst);
+            if started {
+                systemctl_user("stop");
+            }
+            return started || !models.is_empty();
+        }
         let Some(mut s) = self.server.lock().unwrap().take() else {
             return false;
         };
@@ -711,9 +900,23 @@ impl FlmClient {
     /// us) or started by hand keeps the NPU and the port. TERM first, KILL
     /// after 5 s, then wait for the port to close. Returns how many it stopped.
     pub fn stop_all_servers(&self) -> usize {
+        if self.lemonade_mode() {
+            let mine = self.stop_server();
+            let ran = self.is_up();
+            if ran {
+                systemctl_user("stop");
+            }
+            // Its FLM children go with it; any left keep the NPU.
+            let pids = flm_serve_pids(None);
+            for pid in &pids {
+                // SAFETY: plain kill(2) on a pid we just read as this user's flm serve.
+                unsafe { libc_kill(*pid, 9) };
+            }
+            return usize::from(mine || ran) + pids.len();
+        }
         let mine = self.stop_server();
         let port = self
-            .base_url
+            .url()
             .rsplit(':')
             .next()
             .and_then(|p| p.trim_end_matches('/').parse::<u16>().ok());
@@ -747,7 +950,30 @@ impl FlmClient {
     /// The end of FLM's log, and a hint when it points at the NPU driver
     /// (a restart of FLM can't fix that; reloading the driver or a reboot can).
     pub fn diagnose(&self) -> String {
-        let tail = log_tail(&Self::log_path(), 6);
+        let tail = if self.lemonade_mode() {
+            Command::new("journalctl")
+                .args([
+                    "--user",
+                    "-u",
+                    LEMOND_UNIT,
+                    "-n",
+                    "8",
+                    "-o",
+                    "cat",
+                    "--no-pager",
+                ])
+                .stdin(Stdio::null())
+                .output()
+                .map(|o| {
+                    format!(
+                        "\n\nLemonade's log:\n{}",
+                        String::from_utf8_lossy(&o.stdout).trim_end()
+                    )
+                })
+                .unwrap_or_default()
+        } else {
+            log_tail(&Self::log_path(), 6)
+        };
         if npu_driver_trouble(&tail) {
             format!(
                 "{tail}\n\nThe NPU driver looks stuck, which restarting FastFlowLM can't fix. Reboot, or reload it: \
@@ -759,6 +985,12 @@ sudo modprobe -r amdxdna && sudo modprobe amdxdna"
     }
 
     pub fn list_models(&self) -> Result<Vec<Model>, FlmError> {
+        if self.lemonade_mode() {
+            match self.lemonade_models() {
+                Ok(m) => return Ok(m),
+                Err(e) => eprintln!("assistantd: Lemonade's model list: {}", e.message),
+            }
+        }
         let flm =
             which("flm").ok_or_else(|| FlmError::new("FastFlowLM (flm) is not installed."))?;
         let out = Command::new(flm)
@@ -837,8 +1069,22 @@ sudo modprobe -r amdxdna && sudo modprobe amdxdna"
         tools: Option<&[Value]>,
         opts: &ChatOptions,
     ) -> Result<ChatStream, FlmError> {
+        let wire = if self.lemonade_mode() {
+            // Load it with our context length (Lemonade's automatic one can be huge).
+            if !self.loaded.lock().unwrap().contains(model) {
+                let ctx = *self.ctx_len.lock().unwrap();
+                self.lemonade_load(
+                    model,
+                    ctx.or(Some(DEFAULT_CTX_LEN)),
+                    Duration::from_secs(300),
+                )?;
+            }
+            self.wire_name(model)
+        } else {
+            model.to_string()
+        };
         *self.last_model.lock().unwrap() = Some(model.to_string());
-        let mut body = json!({"model": model, "messages": messages, "stream": true});
+        let mut body = json!({"model": wire, "messages": messages, "stream": true});
         if let Some(t) = tools.filter(|t| !t.is_empty()) {
             body["tools"] = Value::Array(t.to_vec());
         }
@@ -857,10 +1103,14 @@ sudo modprobe -r amdxdna && sudo modprobe amdxdna"
         }
         if let Some(t) = opts.think.filter(|_| self.supports("think")) {
             body["think"] = json!(t);
+            // llama.cpp's name for it.
+            if model.starts_with(GPU_PREFIX) {
+                body["chat_template_kwargs"] = json!({"enable_thinking": t});
+            }
         }
         let resp = self
             .agent
-            .post(&format!("{}/v1/chat/completions", self.base_url))
+            .post(&format!("{}/v1/chat/completions", self.url()))
             .header("Authorization", "Bearer flm")
             .header("Content-Type", "application/json")
             .config()
@@ -868,7 +1118,10 @@ sudo modprobe -r amdxdna && sudo modprobe amdxdna"
             .build()
             .send(&serde_json::to_vec(&body).unwrap_or_default()[..])
             .map_err(|e| {
-                FlmError::new(format!("Can't reach FastFlowLM at {}: {e}", self.base_url))
+                FlmError::new(format!(
+                    "Can't reach the model server at {}: {e}",
+                    self.url()
+                ))
             })?;
         let status = resp.status().as_u16();
         let reader = resp.into_body().into_reader();
@@ -893,10 +1146,10 @@ impl FlmClient {
         inputs: &[String],
         task: &str,
     ) -> Result<Vec<Vec<f32>>, FlmError> {
-        let body = json!({"model": model, "input": inputs, "task": task});
+        let body = json!({"model": self.wire_name(model), "input": inputs, "task": task});
         let resp = self
             .agent
-            .post(&format!("{}/v1/embeddings", self.base_url))
+            .post(&format!("{}/v1/embeddings", self.url()))
             .header("Authorization", "Bearer flm")
             .header("Content-Type", "application/json")
             .config()
@@ -937,6 +1190,228 @@ impl FlmClient {
         }
         Ok(vecs)
     }
+}
+
+/// Lemonade Server.
+impl FlmClient {
+    /// Lemonade's name for one of our models.
+    fn wire_name(&self, model: &str) -> String {
+        if !self.lemonade_mode() {
+            return model.to_string();
+        }
+        if let Some(n) = self.wire_names.lock().unwrap().get(model) {
+            return n.clone();
+        }
+        match model.strip_prefix(GPU_PREFIX) {
+            Some(id) => id.to_string(),
+            None => lemonade_flm_name(model),
+        }
+    }
+
+    fn lemonade_post(&self, path: &str, body: &Value, wait: Duration) -> Result<Value, FlmError> {
+        let resp = self
+            .agent
+            .post(&format!("{}{path}", self.url()))
+            .header("Content-Type", "application/json")
+            .config()
+            .timeout_global(Some(wait.max(Duration::from_secs(5))))
+            .build()
+            .send(&serde_json::to_vec(body).unwrap_or_default()[..])
+            .map_err(|e| FlmError::new(format!("Can't reach Lemonade at {}: {e}", self.url())))?;
+        let status = resp.status().as_u16();
+        let mut text = String::new();
+        let _ = resp
+            .into_body()
+            .into_reader()
+            .take(1 << 20)
+            .read_to_string(&mut text);
+        let v: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+        if status >= 400 {
+            let detail = v["error"]["message"]
+                .as_str()
+                .or(v["error"].as_str())
+                .map(String::from)
+                .unwrap_or_else(|| text.chars().take(300).collect());
+            return Err(FlmError {
+                message: format!("Lemonade returned {status}: {detail}"),
+                status: Some(status),
+            });
+        }
+        Ok(v)
+    }
+
+    /// Start Lemonade's user service unless it runs. True if this call started it.
+    fn start_lemond(&self, wait: Duration) -> Result<bool, FlmError> {
+        if self.is_up() {
+            return Ok(false);
+        }
+        let out = Command::new("systemctl")
+            .args(["--user", "start", LEMOND_UNIT])
+            .stdin(Stdio::null())
+            .output()
+            .map_err(|e| FlmError::new(format!("Couldn't start Lemonade: {e}")))?;
+        if !out.status.success() {
+            return Err(FlmError::new(format!(
+                "Lemonade didn't start: {}{}",
+                String::from_utf8_lossy(&out.stderr).trim(),
+                self.diagnose()
+            )));
+        }
+        self.started_lemond
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let deadline = Instant::now() + wait.min(Duration::from_secs(90));
+        while Instant::now() < deadline {
+            if self.is_up() {
+                return Ok(true);
+            }
+            std::thread::sleep(Duration::from_millis(250));
+        }
+        Err(FlmError::new(format!(
+            "Lemonade didn't answer after starting.{}",
+            self.diagnose()
+        )))
+    }
+
+    /// Have Lemonade load this model (and the embedding model) with our
+    /// context length. True if this call started Lemonade.
+    fn lemonade_load(
+        &self,
+        model: &str,
+        ctx_len: Option<u32>,
+        wait: Duration,
+    ) -> Result<bool, FlmError> {
+        let started = self.start_lemond(wait)?;
+        if self.wire_names.lock().unwrap().is_empty() {
+            let _ = self.lemonade_models();
+        }
+        let gpu = model.starts_with(GPU_PREFIX);
+        // One model on the graphics chip at a time: free the other first, so
+        // making room doesn't push the NPU model out.
+        if gpu {
+            let others: Vec<String> = self
+                .loaded
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|m| m.starts_with(GPU_PREFIX) && *m != model)
+                .cloned()
+                .collect();
+            for m in others {
+                self.unload_model(&m);
+            }
+        }
+        let mut body = json!({"model_name": self.wire_name(model)});
+        if let Some(c) = ctx_len {
+            body["ctx_size"] = json!(c);
+        }
+        self.lemonade_post("/v1/load", &body, wait)?;
+        let embed = self.embed_model.lock().unwrap().clone();
+        {
+            let mut loaded = self.loaded.lock().unwrap();
+            // Lemonade keeps one FLM chat model on the NPU: loading this one dropped the other.
+            if !gpu {
+                loaded.retain(|m| m.starts_with(GPU_PREFIX) || Some(m) == embed.as_ref());
+            }
+            loaded.insert(model.to_string());
+        }
+        if !gpu {
+            *self.ctx_len.lock().unwrap() = ctx_len;
+        }
+        *self.last_model.lock().unwrap() = Some(model.to_string());
+        if let Some(e) = embed.filter(|e| !self.loaded.lock().unwrap().contains(e))
+            && self
+                .lemonade_post(
+                    "/v1/load",
+                    &json!({"model_name": self.wire_name(&e)}),
+                    Duration::from_secs(120),
+                )
+                .is_ok()
+        {
+            self.loaded.lock().unwrap().insert(e);
+        }
+        Ok(started)
+    }
+
+    /// Free one model Lemonade loaded for us, keeping the others.
+    pub fn unload_model(&self, model: &str) {
+        if !self.lemonade_mode() {
+            return;
+        }
+        if self.loaded.lock().unwrap().remove(model) {
+            let _ = self.lemonade_post(
+                "/v1/unload",
+                &json!({"model_name": self.wire_name(model)}),
+                Duration::from_secs(30),
+            );
+        }
+    }
+
+    /// Whether this backend can keep a second model loaded next to the default
+    /// one (Lemonade, with the second on the graphics chip).
+    pub fn keeps_both(&self, model: &str) -> bool {
+        self.lemonade_mode() && model.starts_with(GPU_PREFIX)
+    }
+
+    fn lemonade_models(&self) -> Result<Vec<Model>, FlmError> {
+        self.start_lemond(Duration::from_secs(60))?;
+        let resp = self
+            .agent
+            .get(&format!("{}/v1/models?show_all=true", self.url()))
+            .config()
+            .timeout_global(Some(Duration::from_secs(20)))
+            .build()
+            .call()
+            .map_err(|e| FlmError::new(format!("Can't reach Lemonade: {e}")))?;
+        let mut text = String::new();
+        let _ = resp
+            .into_body()
+            .into_reader()
+            .take(16 << 20)
+            .read_to_string(&mut text);
+        let v: Value = serde_json::from_str(&text)
+            .map_err(|e| FlmError::new(format!("Lemonade's model list: {e}")))?;
+        let list = parse_lemonade_models(&v, &model_labels());
+        if list.is_empty() {
+            return Err(FlmError::new("Lemonade lists no models"));
+        }
+        let mut names = self.wire_names.lock().unwrap();
+        for (m, id) in &list {
+            names.insert(m.name.clone(), id.clone());
+        }
+        Ok(list.into_iter().map(|(m, _)| m).collect())
+    }
+}
+
+/// Lemonade's user service is installed and its server runs on this system.
+pub fn lemonade_installed() -> bool {
+    let config = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| crate::paths::home().join(".config"));
+    let unit = [
+        PathBuf::from("/usr/lib/systemd/user"),
+        PathBuf::from("/etc/systemd/user"),
+        config.join("systemd/user"),
+    ]
+    .iter()
+    .any(|d| d.join(LEMOND_UNIT).exists());
+    unit && which("lemond").is_some_and(|p| {
+        Command::new(p)
+            .arg("--version")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
+    })
+}
+
+fn systemctl_user(action: &str) {
+    let _ = Command::new("systemctl")
+        .args(["--user", action, LEMOND_UNIT])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
 }
 
 impl Drop for FlmClient {
@@ -1076,6 +1551,119 @@ fn new_session(cmd: &mut Command) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lemonade_models_by_flm_tag_and_gpu_name() {
+        let v = json!({"data": [
+            {"id": "gemma4-it-e2b-FLM", "recipe": "flm", "downloaded": true,
+             "checkpoint": "gemma4-it:e2b", "labels": ["chat"]},
+            {"id": "qwen3.5-9b-FLM", "recipe": "flm", "downloaded": false,
+             "checkpoints": {"main": "qwen3.5:9b"}, "labels": ["chat", "tool-calling"]},
+            {"id": "Qwen3.5-9B-GGUF", "recipe": "llamacpp", "downloaded": true,
+             "labels": ["chat", "vision", "tool-calling"]},
+            {"id": "Gemma-4-31B-it-GGUF", "recipe": "llamacpp", "downloaded": false,
+             "labels": ["chat", "tool-calling"]},
+            {"id": "nomic-embed-text-v1-GGUF", "recipe": "llamacpp", "downloaded": true,
+             "labels": ["embeddings"]},
+            {"id": "Whisper", "recipe": "whispercpp", "downloaded": true, "labels": ["transcription"]}
+        ]});
+        let mut flm = BTreeMap::new();
+        flm.insert(
+            "gemma4-it:e2b".to_string(),
+            vec!["tool-calling".to_string(), "vision".to_string()],
+        );
+        let got = parse_lemonade_models(&v, &flm);
+        let names: Vec<(&str, bool, &str)> = got
+            .iter()
+            .map(|(m, id)| (m.name.as_str(), m.installed, id.as_str()))
+            .collect();
+        assert_eq!(
+            names,
+            [
+                ("gemma4-it:e2b", true, "gemma4-it-e2b-FLM"),
+                ("qwen3.5:9b", false, "qwen3.5-9b-FLM"),
+                ("gpu:Qwen3.5-9B-GGUF", true, "Qwen3.5-9B-GGUF"),
+            ]
+        );
+        // FLM's own labels win for FLM models; Lemonade's for the others.
+        assert!(got[0].0.can_see() && got[0].0.can_use_tools());
+        assert!(got[2].0.can_use_tools() && got[2].0.on_gpu());
+        assert_eq!(lemonade_flm_name("qwen3.5:4b"), "qwen3.5-4b-FLM");
+    }
+
+    #[test]
+    fn graphics_chip_models_only_when_chosen() {
+        let models = vec![
+            Model::new("gemma4-it:e2b", true, &["tool-calling", "vision"]),
+            Model::new("qwen3.5:4b", true, &["tool-calling"]),
+            Model::new("gpu:Qwen3.5-9B-GGUF", true, &["tool-calling", "vision"]),
+            Model::new("gpu:Gemma-4-E2B-it-GGUF", true, &["tool-calling", "vision"]),
+        ];
+        assert_eq!(models[2].size_b(), 9.0);
+        assert_eq!(models[3].size_b(), 2.0);
+        assert_eq!(
+            Model::new("gpu:Gemma-4-26B-A4B-it-GGUF", true, &[]).size_b(),
+            26.0
+        );
+        assert_eq!(
+            pick_smarter_model(&models, "gemma4-it:e2b", Some(16.0)).as_deref(),
+            Some("qwen3.5:4b")
+        );
+        assert_eq!(
+            pick_vision_model(&models, "qwen3.5:4b", Some(16.0)).as_deref(),
+            Some("gemma4-it:e2b")
+        );
+        assert_eq!(default_model(&models[2..]), "gemma4-it:e2b");
+    }
+
+    #[test]
+    fn lemonade_loads_with_our_context_then_chats_by_its_name() {
+        use crate::fake_flm::{FakeFlm, text_reply};
+        let fake = FakeFlm::start(vec![
+            (200, "{}".into()),          // load the GPU model
+            (200, text_reply("Hi.")),    // chat
+            (200, text_reply("Again.")), // chat, already loaded
+            (200, "{}".into()),          // load the NPU model
+            (200, text_reply("Small.")),
+            (200, "{}".into()), // unload the GPU model
+        ]);
+        let c = FlmClient::lemonade(&fake.url);
+        let msgs = [json!({"role": "user", "content": "hi"})];
+        let opts = ChatOptions {
+            think: Some(false),
+            ..Default::default()
+        };
+        for _ in 0..2 {
+            let _: Vec<_> = c
+                .chat_stream("gpu:Qwen3.5-9B-GGUF", &msgs, None, &opts)
+                .unwrap()
+                .collect();
+        }
+        let _: Vec<_> = c
+            .chat_stream("gemma4-it:e2b", &msgs, None, &opts)
+            .unwrap()
+            .collect();
+        assert!(c.owns_server() && c.keeps_both("gpu:Qwen3.5-9B-GGUF"));
+        c.unload_model("gpu:Qwen3.5-9B-GGUF");
+        let r = fake.requests();
+        assert_eq!(
+            r[0],
+            json!({"model_name": "Qwen3.5-9B-GGUF", "ctx_size": DEFAULT_CTX_LEN})
+        );
+        assert_eq!(r[1]["model"], "Qwen3.5-9B-GGUF");
+        assert_eq!(
+            r[1]["chat_template_kwargs"],
+            json!({"enable_thinking": false})
+        );
+        assert_eq!(r[2]["model"], "Qwen3.5-9B-GGUF");
+        assert_eq!(r[3]["model_name"], "gemma4-it-e2b-FLM");
+        assert_eq!(r[4]["model"], "gemma4-it-e2b-FLM");
+        assert!(r[4].get("chat_template_kwargs").is_none());
+        assert_eq!(r[5], json!({"model_name": "Qwen3.5-9B-GGUF"}));
+        assert_eq!(r.len(), 6);
+        // Dropping the client unloads what's left; nothing more is queued.
+        std::mem::forget(c);
+    }
 
     #[test]
     fn serve_command_sizes_context_and_prefix_cache() {

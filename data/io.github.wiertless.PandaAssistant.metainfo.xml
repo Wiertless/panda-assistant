@@ -21,6 +21,15 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.20.0" date="2026-11-17">
+      <description>
+        <ul>
+          <li>Uses Lemonade Server when it's installed: FastFlowLM on the NPU, and bigger models on the graphics chip next to it</li>
+          <li>A model on the graphics chip can take hard requests without unloading the small one; it's unloaded a minute after use</li>
+          <li>Falls back to FastFlowLM directly if Lemonade won't start</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.19.0" date="2026-11-17">
       <description>
         <ul>

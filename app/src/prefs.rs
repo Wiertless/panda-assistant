@@ -150,8 +150,10 @@ fn general_page(win: &Rc<Window>) -> adw::PreferencesPage {
     fill_allowed(&allowed, win);
 
     let smart = adw::PreferencesGroup::builder().title("Smarter Model")
-        .description("When a request is too hard, the model can hand it to a bigger one. Only one model is loaded at a \
-time, so the hand-off takes a moment. A minute after it's done, the bigger model is unloaded and the default one is loaded again.")
+        .description("When a request is too hard, the model can hand it to a bigger one. On the NPU only one model is \
+loaded at a time, so the hand-off takes a moment. With Lemonade, a model marked “graphics chip” runs next to the default \
+one instead, at the cost of more power and memory, so Automatic never picks one. A minute after it's done, the bigger \
+model is unloaded.")
         .build();
     let (models, current, choice) = {
         let st = win.st.borrow();
@@ -161,20 +163,19 @@ time, so the hand-off takes a moment. A minute after it's done, the bigger model
             st.smarter_choice.clone(),
         )
     };
-    let candidates: Vec<String> = models
+    let candidates: Vec<&assistant_core::flm::Model> = models
         .iter()
         .filter(|m| m.installed && m.can_use_tools() && !m.single_turn() && m.name != current)
-        .map(|m| m.name.clone())
         .collect();
     let auto = pick_smarter_model(&models, &current, None);
     let mut values = vec!["auto".to_string(), "off".to_string()];
-    values.extend(candidates.iter().cloned());
+    values.extend(candidates.iter().map(|m| m.name.clone()));
     let mut labels = vec![
         auto.map(|a| format!("Automatic ({a})"))
             .unwrap_or("Automatic (none available)".into()),
         "Off".into(),
     ];
-    labels.extend(candidates);
+    labels.extend(candidates.iter().map(|m| m.display_name()));
     let label_refs: Vec<&str> = labels.iter().map(String::as_str).collect();
     let smart_row = adw::ComboRow::builder()
         .title("Hand Hard Requests To")
