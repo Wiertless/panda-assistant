@@ -36,6 +36,9 @@ pub struct Variant {
     /// "compact": the ~28 broad tools, all sent with every request (no routing).
     pub tool_set: Option<String>,
     pub system_prompt: Option<String>,
+    /// Stand-ins for the prompt fragments: web, memory, escalate, nudge.
+    #[serde(default)]
+    pub prompt_parts: std::collections::HashMap<String, String>,
     /// Whether the prompt lists the devices and networks (default yes).
     pub known: Option<bool>,
     #[serde(default)]
@@ -312,6 +315,7 @@ pub fn run(client: &Arc<FlmClient>, model: &str, sees: bool, v: &Variant, s: &Sc
     agent.force_completion = v.force_completion.unwrap_or(agent.force_completion);
     agent.reply_tool = v.reply_tool.unwrap_or(agent.reply_tool);
     agent.system_prompt = v.system_prompt.clone();
+    agent.prompt_parts = v.prompt_parts.clone();
     if compact {
         agent.route_tools = false; // everything goes along
         agent.examples = false; // they name the narrow tools

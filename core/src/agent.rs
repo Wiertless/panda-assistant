@@ -1,6 +1,6 @@
 //! The chat loop: send messages, run the tools the model asks for, repeat.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 
@@ -274,6 +274,9 @@ pub struct Agent {
     pub tool_temperature: Option<f64>,
     /// Replaces the base system prompt (eval variants try alternatives).
     pub system_prompt: Option<String>,
+    /// The eval's stand-ins for the prompt fragments, by name: web, memory,
+    /// escalate, nudge.
+    pub prompt_parts: HashMap<String, String>,
     /// Worked examples for the active tool groups in the system prompt.
     pub examples: bool,
     /// Hand the turn to the smarter model when this one keeps failing.
@@ -324,6 +327,7 @@ impl Agent {
             active_groups: HashSet::new(),
             tool_temperature: Some(TOOL_TEMPERATURE),
             system_prompt: None,
+            prompt_parts: HashMap::new(),
             examples: true,
             auto_escalate: true,
             embedder: None,
@@ -407,10 +411,10 @@ impl Agent {
             .clone()
             .unwrap_or_else(|| SYSTEM_PROMPT.to_string());
         if self.use_tools && self.web_enabled {
-            system += WEB_PROMPT;
+            system += &self.part("web", WEB_PROMPT);
         }
         if self.use_tools && self.memory_enabled {
-            system += MEMORY_PROMPT;
+            system += &self.part("memory", MEMORY_PROMPT);
         }
         if self.use_tools {
             system += SKILL_PROMPT;
@@ -420,7 +424,7 @@ impl Agent {
             system += VISION_PROMPT;
         }
         if self.can_escalate() {
-            system += ESCALATE_PROMPT;
+            system += &self.part("escalate", ESCALATE_PROMPT);
         }
         // The machine description and notes go last and stay the same for the
         // whole chat, so the server can reuse the cached prompt between turns.
@@ -784,7 +788,7 @@ impl Agent {
                 cb.retract();
                 turn.nudge_at = Some(self.messages.len());
                 self.messages
-                    .push(json!({"role": "user", "content": NUDGE}));
+                    .push(json!({"role": "user", "content": self.part("nudge", NUDGE)}));
                 continue;
             }
             if self.force_completion
@@ -1159,6 +1163,13 @@ impl Agent {
             }
         }
         Ok((strip_think(&content), calls))
+    }
+
+    fn part(&self, name: &str, default: &str) -> String {
+        self.prompt_parts
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| default.to_string())
     }
 
     /// The tool a call really runs: the narrow one a broad tool forwards to.
