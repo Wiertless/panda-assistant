@@ -38,6 +38,8 @@ pub struct Variant {
     pub system_prompt: Option<String>,
     /// Every round must call exactly one tool (reply and ask_user always offered).
     pub required_rounds: Option<bool>,
+    /// Route by meaning too, when the eval has an embedding server (default yes).
+    pub embed: Option<bool>,
     /// Stand-ins for the prompt fragments: web, memory, escalate, nudge.
     #[serde(default)]
     pub prompt_parts: std::collections::HashMap<String, String>,
@@ -276,7 +278,14 @@ impl Callbacks for Quiet {
 }
 
 /// Run one scenario against a model.
-pub fn run(client: &Arc<FlmClient>, model: &str, sees: bool, v: &Variant, s: &Scenario) -> Outcome {
+pub fn run(
+    client: &Arc<FlmClient>,
+    model: &str,
+    sees: bool,
+    v: &Variant,
+    s: &Scenario,
+    embedder: Option<&Arc<crate::tools::groups::Embedder>>,
+) -> Outcome {
     let calls: Arc<Mutex<Vec<(String, Args)>>> = Arc::default();
     let (log, stubs, descriptions) = (
         calls.clone(),
@@ -321,6 +330,8 @@ pub fn run(client: &Arc<FlmClient>, model: &str, sees: bool, v: &Variant, s: &Sc
     agent.reply_tool = v.reply_tool.unwrap_or(agent.reply_tool);
     agent.system_prompt = v.system_prompt.clone();
     agent.required_rounds = v.required_rounds.unwrap_or(agent.required_rounds);
+    let embedder = embedder.filter(|_| v.embed.unwrap_or(true));
+    agent.embedder = embedder.cloned();
     agent.log_rounds = false;
     agent.prompt_parts = v.prompt_parts.clone();
     if compact {
@@ -343,6 +354,9 @@ pub fn run(client: &Arc<FlmClient>, model: &str, sees: bool, v: &Variant, s: &Sc
     let mut offered: Vec<&str> = vec![crate::tools::groups::CORE];
     for p in s.before.iter().chain([&s.prompt]) {
         offered.extend(crate::tools::groups::groups_for(p));
+        if let Some(e) = embedder {
+            offered.extend(e.groups_for(p));
+        }
     }
     let routed = s.expect.iter().chain(&s.also).all(|e| {
         e.tool
@@ -417,7 +431,27 @@ pub fn load(path: Option<&str>) -> Result<Vec<Scenario>, String> {
         .collect())
 }
 
-/// `assistantd --eval [--url URL] [--model M] [--variant NAME] [--repeat N] [--scenarios FILE] [--only NAME] [--sees] [--json FILE]`
+type Row = (String, usize, f64, Vec<Outcome>, Vec<String>);
+
+/// The JSON report for the scenarios run so far, marked partial.
+fn partial_report(model: &str, variant: &str, repeat: usize, rows: &[Row]) -> String {
+    let runs: Vec<&Outcome> = rows.iter().flat_map(|r| r.3.iter()).collect();
+    let n = runs.len().max(1) as f64;
+    let report = json!({"model": model, "variant": variant, "partial": true, "repeat": repeat,
+        "passed": rows.iter().map(|r| r.1).sum::<usize>(), "total": rows.len() * repeat,
+        "seconds": rows.iter().map(|r| r.2).sum::<f64>(),
+        "model_calls": runs.iter().map(|o| o.requests).sum::<usize>() as f64 / n,
+        "prompt_tokens": runs.iter().map(|o| o.prompt_tokens).sum::<u64>() as f64 / n,
+        "scenarios": rows.iter().map(|(name, ok, secs, runs, _)| {
+            let shown = runs.iter().find(|o| !o.passed).unwrap_or(&runs[0]);
+            json!({"name": name, "passed": *ok == repeat, "passed_runs": ok, "runs": repeat, "why": shown.why,
+                   "routed": runs.iter().all(|o| o.routed), "seconds": secs,
+                   "calls": shown.calls.iter().map(|(n, a)| json!({"tool": n, "args": a})).collect::<Vec<_>>()})
+        }).collect::<Vec<_>>()});
+    serde_json::to_string_pretty(&report).unwrap_or_default()
+}
+
+/// `assistantd --eval [--url URL] [--embed-url URL] [--model M] [--variant NAME] [--repeat N] [--scenarios FILE] [--only NAME] [--sees] [--json FILE]`
 pub fn main(args: &[String]) -> i32 {
     let opt = |k: &str| {
         args.iter()
@@ -457,6 +491,15 @@ pub fn main(args: &[String]) -> i32 {
             return 2;
         }
     }
+    // Routing by meaning: an embedding server next to the chat one (EmbeddingGemma).
+    let embedder = opt("--embed-url").map(|u| {
+        let mut c = FlmClient::new(&u);
+        c.embed_prompts = true;
+        Arc::new(crate::tools::groups::Embedder::new(
+            Arc::new(c),
+            crate::flm::EMBED_MODEL,
+        ))
+    });
     let sees = args.iter().any(|a| a == "--sees");
     let variant_name = opt("--variant").unwrap_or_else(|| "baseline".into());
     let v = match variant(&variant_name) {
@@ -476,10 +519,10 @@ pub fn main(args: &[String]) -> i32 {
         v.about,
         scenarios.len()
     );
-    let mut rows = vec![];
+    let mut rows: Vec<Row> = vec![];
     for s in &scenarios {
         let runs: Vec<Outcome> = (0..repeat)
-            .map(|_| run(&client, &model, sees, &v, s))
+            .map(|_| run(&client, &model, sees, &v, s, embedder.as_ref()))
             .collect();
         let ok = runs.iter().filter(|o| o.passed).count();
         let secs = runs.iter().map(|o| o.seconds).sum::<f64>() / repeat as f64;
@@ -512,6 +555,10 @@ pub fn main(args: &[String]) -> i32 {
             }
         );
         rows.push((s.name.clone(), ok, secs, runs, s.tags.clone()));
+        // Keep a report of what's done so far: a run cut off by a time limit still has one.
+        if let Some(path) = opt("--json") {
+            let _ = std::fs::write(&path, partial_report(&model, &variant_name, repeat, &rows));
+        }
     }
     let passed: usize = rows.iter().map(|r| r.1).sum();
     let total = rows.len() * repeat;
@@ -714,6 +761,7 @@ mod tests {
             false,
             &variant("baseline").unwrap(),
             &s,
+            None,
         );
         assert!(o.passed, "{}", o.why);
         assert_eq!(o.calls[0].0, "set_dark_mode");

@@ -6,6 +6,8 @@ reports = [json.load(open(p)) for p in sys.argv[1:]]
 for r in reports:
     v = r.get("variant", "baseline")
     r["label"] = r["model"] if v == "baseline" else f"{r['model']} · {v}"
+    if r.get("partial"):
+        r["label"] += " (cut off)"
 reports.sort(key=lambda r: (-r["passed"], r["seconds"]))
 names = []
 for r in reports:

@@ -646,6 +646,9 @@ pub struct FlmClient {
     /// Request fields this FLM refused (tool_choice, think): left out from then on.
     unsupported: Mutex<std::collections::HashSet<&'static str>>,
     version: Mutex<Option<Option<(u32, u32, u32)>>>,
+    /// Add EmbeddingGemma's task prompts to inputs ourselves (llama.cpp; FLM
+    /// adds them from the request's `task`).
+    pub embed_prompts: bool,
 }
 
 impl FlmClient {
@@ -670,6 +673,7 @@ impl FlmClient {
             plain_serve: std::sync::atomic::AtomicBool::new(false),
             unsupported: Mutex::new(Default::default()),
             version: Mutex::new(None),
+            embed_prompts: false,
         }
     }
 
@@ -1176,6 +1180,17 @@ impl FlmClient {
         inputs: &[String],
         task: &str,
     ) -> Result<Vec<Vec<f32>>, FlmError> {
+        let inputs: Vec<String> = if self.embed_prompts {
+            inputs
+                .iter()
+                .map(|x| match task {
+                    "query" => format!("task: search result | query: {x}"),
+                    _ => format!("title: none | text: {x}"),
+                })
+                .collect()
+        } else {
+            inputs.to_vec()
+        };
         let body = json!({"model": self.wire_name(model), "input": inputs, "task": task});
         let resp = self
             .agent

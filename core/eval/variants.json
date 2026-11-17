@@ -61,5 +61,9 @@
     "about": "The compact tool set, every round one required call: the redesign's fixed toolbox.",
     "tool_set": "compact",
     "required_rounds": true
+  },
+  "no-embed": {
+    "about": "Like baseline, routing by keywords only (no embedding model).",
+    "embed": false
   }
 }

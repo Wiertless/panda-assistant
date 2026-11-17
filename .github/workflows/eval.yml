@@ -102,13 +102,30 @@ jobs:
             -m /models/model.gguf --jinja -c 8192 -np 1 --host 0.0.0.0 --port 8080
           for i in $(seq 1 120); do curl -sf localhost:8080/health && break; sleep 5; done
           curl -sf localhost:8080/health || { docker logs llama; exit 1; }
+      # Routing by meaning, as on the laptop with FastFlowLM's embed-gemma:300m. If the
+      # model can't be found or won't start, the eval runs with keywords only.
+      - name: Start the embedding model
+        if: steps.pick.outputs.run == 'true'
+        id: embed
+        continue-on-error: true
+        run: |
+          read -r repo file < <(python3 .github/scripts/find_gguf.py "embeddinggemma-300m" Q8_0)
+          echo "Using $repo / $file"
+          curl -sSfL --retry 3 -o models/embed.gguf "https://huggingface.co/$repo/resolve/main/$file"
+          docker run -d --name embed -p 8081:8081 -v "$PWD/models:/models" ghcr.io/ggml-org/llama.cpp:server \
+            -m /models/embed.gguf --embeddings -c 2048 --host 0.0.0.0 --port 8081
+          for i in $(seq 1 60); do curl -sf localhost:8081/health && break; sleep 2; done
+          curl -sf localhost:8081/health || { docker logs embed; exit 1; }
+          echo "url=http://127.0.0.1:8081" >> "$GITHUB_OUTPUT"
       - name: Run the scenarios
         if: steps.pick.outputs.run == 'true'
         run: |
           chmod +x assistantd
           only=()
           if [ -n "${{ inputs.only }}" ]; then only=(--only "${{ inputs.only }}"); fi
-          ./assistantd --eval --url http://127.0.0.1:8080 --model "${{ matrix.m.model }}" \
+          embed=()
+          if [ -n "${{ steps.embed.outputs.url }}" ]; then embed=(--embed-url "${{ steps.embed.outputs.url }}"); fi
+          ./assistantd --eval --url http://127.0.0.1:8080 --model "${{ matrix.m.model }}" "${embed[@]}" \
             --variant "${{ matrix.variant }}" --repeat "${{ inputs.repeat || '1' }}" --json report.json "${only[@]}"
       - name: Summary
         if: always() && steps.pick.outputs.run == 'true'
