@@ -353,6 +353,9 @@
   ],
   "paraphrases": [
    "who's the 2026 F1 world champion?"
+  ],
+  "forbid": [
+   "research"
   ]
  },
  {
@@ -1238,6 +1241,34 @@
   ],
   "paraphrases": [
    "zagraj coś Queen"
+  ]
+ },
+ {
+  "name": "research",
+  "prompt": "research which e-reader is best for reading PDFs",
+  "stubs": {
+   "research": "Answer for the user (shown as written): The Kobo Elipsa 2E handles PDFs best, thanks to its 10.3-inch screen [1].\n\nSources:\n[1] Best e-readers for PDFs – https://example.com/pdf-readers",
+   "web_search": "1. Best e-readers for PDFs - https://example.com/pdf-readers\n   The Kobo Elipsa 2E has a 10.3-inch screen."
+  },
+  "expect": [
+   {
+    "tool": "research",
+    "args": {
+     "question": "pdf"
+    }
+   }
+  ],
+  "answer": [
+   "elipsa"
+  ],
+  "tags": [
+   "single",
+   "answer",
+   "near-tool"
+  ],
+  "paraphrases": [
+   "zbadaj, który czytnik e-booków jest najlepszy do PDF-ów",
+   "look into which e-reader handles PDFs best"
   ]
  }
 ]

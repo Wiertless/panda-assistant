@@ -326,24 +326,25 @@ pub fn format_results(query: &str, source: &str, hits: &[Hit]) -> String {
     lines.join("\n")
 }
 
-pub fn web_search(_: &Context, args: &Args) -> ToolResult {
-    let query = arg_str(args, "query").trim().to_string();
+/// Search results and where they came from: DuckDuckGo, or Wikipedia when it has none.
+pub fn search(query: &str) -> Result<(&'static str, Vec<Hit>), ToolError> {
+    let query = query.trim();
     if query.is_empty() {
         return Err("empty search".into());
     }
     let mut errors = vec![];
     let ddg = fetch(
         "https://lite.duckduckgo.com/lite/",
-        Some(&format!("q={}", url_encode(&query))),
+        Some(&format!("q={}", url_encode(query))),
     )
     .map(|(b, _)| parse_duckduckgo(&b));
     match ddg {
-        Ok(hits) if !hits.is_empty() => return Ok(format_results(&query, "DuckDuckGo", &hits)),
+        Ok(hits) if !hits.is_empty() => return Ok(("DuckDuckGo", hits)),
         Ok(_) => {}
         Err(e) => errors.push(e.0),
     }
-    match search_wikipedia(&query) {
-        Ok(hits) if !hits.is_empty() => Ok(format_results(&query, "Wikipedia", &hits)),
+    match search_wikipedia(query) {
+        Ok(hits) if !hits.is_empty() => Ok(("Wikipedia", hits)),
         Ok(_) => Err(format!(
             "no results; try fewer or different words{}",
             if errors.is_empty() {
@@ -358,6 +359,12 @@ pub fn web_search(_: &Context, args: &Args) -> ToolResult {
             Err(format!("no results ({})", errors.join("; ")).into())
         }
     }
+}
+
+pub fn web_search(_: &Context, args: &Args) -> ToolResult {
+    let query = arg_str(args, "query").trim().to_string();
+    let (source, hits) = search(&query)?;
+    Ok(format_results(&query, source, &hits))
 }
 
 /// (title, readable text) of an HTML page.
@@ -392,8 +399,9 @@ pub fn page_text(html: &str) -> (String, String) {
     (clean(&title), lines.join("\n"))
 }
 
-pub fn read_web_page(_: &Context, args: &Args) -> ToolResult {
-    let url = check_url(&arg_str(args, "url"))?;
+/// (title, readable text) of a web page, cut to about `max_chars`.
+pub fn read_page(url: &str, max_chars: usize) -> Result<(String, String), ToolError> {
+    let url = check_url(url)?;
     let (body, ctype) = fetch(&url, None)?;
     let head = body
         .trim_start()
@@ -417,13 +425,19 @@ pub fn read_web_page(_: &Context, args: &Args) -> ToolResult {
             )
             .into());
         };
-    if text.chars().count() > PAGE_CHARS {
-        let cut: String = text.chars().take(PAGE_CHARS).collect();
+    if text.chars().count() > max_chars {
+        let cut: String = text.chars().take(max_chars).collect();
         text = format!(
             "{} […]",
             cut.rsplit_once(' ').map_or(cut.as_str(), |(a, _)| a)
         );
     }
+    Ok((title, text))
+}
+
+pub fn read_web_page(_: &Context, args: &Args) -> ToolResult {
+    let url = check_url(&arg_str(args, "url"))?;
+    let (title, text) = read_page(&url, PAGE_CHARS)?;
     let head = if title.is_empty() {
         format!("{url}\n\n")
     } else {

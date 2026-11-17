@@ -491,6 +491,10 @@ impl Turn for Reply {
         self.scroll();
     }
 
+    fn on_progress(&self, text: &str) {
+        self.spin_label.set_label(text);
+    }
+
     fn on_notice(&self, text: &str) {
         if let Some(w) = self.win.upgrade() {
             w.toast(text);

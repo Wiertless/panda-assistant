@@ -22,6 +22,8 @@ pub trait Turn {
     fn on_tool_started(&self, name: &str, summary: &str);
     fn on_tool_finished(&self, name: &str, result: &str, ok: bool);
     fn on_notice(&self, text: &str);
+    /// A long tool's progress, shown in place of the spinner's text.
+    fn on_progress(&self, text: &str);
     fn on_handoff(&self, model: &str);
     fn on_compacting(&self);
     fn on_retract(&self);
@@ -330,6 +332,7 @@ impl Core {
                 params.child_value(3).get::<bool>().unwrap_or(false),
             ),
             "Notice" => turn.on_notice(&s(1)),
+            "Progress" => turn.on_progress(&s(1)),
             "Handoff" => turn.on_handoff(&s(1)),
             "Compacting" => turn.on_compacting(),
             "Retract" => turn.on_retract(),

@@ -21,6 +21,15 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.21.0" date="2026-11-17">
+      <description>
+        <ul>
+          <li>Research: "research which e-reader is best for PDFs" searches several ways, reads the best pages, and writes an answer that cites its sources</li>
+          <li>The small model gathers notes; the smarter model, when set, writes the answer</li>
+          <li>The spinner shows what a long task is doing</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.20.0" date="2026-11-17">
       <description>
         <ul>

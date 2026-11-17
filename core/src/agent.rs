@@ -26,6 +26,8 @@ pub const ASK_USER: &str = "ask_user";
 pub const REPLY: &str = "reply";
 /// The start of a tool result that no retry can fix (see ToolError::cannot).
 pub const FINAL_ERROR: &str = "Error (retrying won't help): ";
+/// A tool result that is the answer itself (research): shown as written, and the turn ends.
+pub const FINAL_ANSWER: &str = "Answer for the user (shown as written): ";
 const ANSWER_NOW: &str = "(Now answer the user from these results, in a sentence or two.)";
 const REPEATED: &str = "Error: you already tried exactly this and it failed. Don't repeat it: change the arguments, \
 look the options up with another tool, or tell the user what's wrong.";
@@ -149,6 +151,8 @@ pub trait Callbacks: Send + Sync {
     fn tool_started(&self, _name: &str, _summary: &str) {}
     fn tool_finished(&self, _name: &str, _result: &str, _ok: bool) {}
     fn notice(&self, _text: &str) {}
+    /// What a long tool is doing now ("Reading 3 pages…"), replacing the last such line.
+    fn progress(&self, _text: &str) {}
     fn handoff(&self, _model: &str) {}
     fn compacting(&self) {}
     /// Take back the text streamed so far this round (a claim that wasn't true).
@@ -640,6 +644,15 @@ impl Agent {
         self.ctx.ask_model = Some(Arc::new(move |system: &str, user: &str| {
             one_shot(&client, &model, system, user).map_err(|e| ToolError(e.message))
         }));
+        // Research hands its notes to the smarter model, when there is one.
+        let smarter = self.smarter_model.clone().filter(|m| *m != self.model);
+        self.ctx.smarter_name = smarter.clone();
+        self.ctx.ask_smarter = smarter.map(|m| {
+            let client = self.client.clone();
+            Arc::new(move |system: &str, user: &str| {
+                one_shot(&client, &m, system, user).map_err(|e| ToolError(e.message))
+            }) as crate::tool::AskModel
+        });
         self.cancel.store(false, Ordering::SeqCst);
         self.drop_old_images();
         if self.use_tools || !self.messages.is_empty() {
@@ -887,6 +900,29 @@ impl Agent {
                 }
                 self.messages
                     .push(json!({"role": "tool", "tool_call_id": call.id, "content": result}));
+            }
+            // A tool's result is the answer (research): show it as written, no rewording by the model.
+            let answer_at = self.messages.iter().rposition(|m| {
+                m["role"] == "tool"
+                    && m["content"]
+                        .as_str()
+                        .is_some_and(|c| c.starts_with(FINAL_ANSWER))
+            });
+            if let Some(i) =
+                answer_at.filter(|i| self.messages[*i..].iter().all(|m| m["role"] == "tool"))
+            {
+                let answer = self.messages[i]["content"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .trim_start_matches(FINAL_ANSWER)
+                    .to_string();
+                // The chat keeps one copy: the answer, not the tool result too.
+                self.messages[i]["content"] =
+                    json!("Done: the answer below was given to the user.");
+                cb.text(&answer);
+                self.messages
+                    .push(json!({"role": "assistant", "content": answer}));
+                return Ok(());
             }
             // Everything this round failed for a reason no retry fixes (nothing playing, a
             // service missing): say so now, without another round of the model.
@@ -1250,12 +1286,36 @@ impl Agent {
         }
         cb.tool_started(&call.name, &summary);
         let run = tool.run.clone();
-        let ctx = self.ctx.clone();
+        let mut ctx = self.ctx.clone();
         // A panicking tool is reported like a failed one instead of ending the turn.
-        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(&ctx, &args)));
+        let outcome = if tool.reports_progress {
+            // A long tool runs on its own thread and its progress lines reach the window meanwhile.
+            let (tx, rx) = std::sync::mpsc::channel::<String>();
+            let tx = Mutex::new(tx);
+            ctx.progress = Some(Arc::new(move |s: &str| {
+                let _ = tx.lock().unwrap().send(s.to_string());
+            }));
+            std::thread::scope(|s| {
+                let ctx = ctx;
+                let args = &args;
+                let job = s.spawn(move || {
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(&ctx, args)))
+                });
+                for line in rx.iter() {
+                    cb.progress(&line);
+                }
+                job.join().unwrap_or_else(Err)
+            })
+        } else {
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(&ctx, &args)))
+        };
         match outcome {
             Ok(Ok(result)) => {
-                cb.tool_finished(&call.name, &result, true);
+                cb.tool_finished(
+                    &call.name,
+                    result.strip_prefix(FINAL_ANSWER).unwrap_or(&result),
+                    true,
+                );
                 match crate::tools::next_step(&call.name) {
                     Some(hint) if !result.starts_with("No ") => format!("{result}\n{hint}"),
                     _ => result,
@@ -1411,6 +1471,9 @@ mod tests {
         }
         fn notice(&self, t: &str) {
             self.log.lock().unwrap().push(format!("notice:{t}"));
+        }
+        fn progress(&self, t: &str) {
+            self.log.lock().unwrap().push(format!("progress:{t}"));
         }
         fn handoff(&self, m: &str) {
             self.log.lock().unwrap().push(format!("handoff:{m}"));
@@ -2144,6 +2207,66 @@ mod tests {
         assert!(r[2].get("think").is_none(), "and not sent again");
         assert_eq!(a.messages.last().unwrap()["content"], "Volume 20%.");
         assert!(!a.client.supports("think") && !a.client.supports("tool_choice"));
+    }
+
+    #[test]
+    fn a_research_answer_is_shown_as_written_with_progress() {
+        let _h = temp_home();
+        let flm = FakeFlm::start(vec![(
+            200,
+            tool_reply(
+                "research",
+                r#"{"question": "best e-reader for PDFs?"}"#,
+                "c1",
+            ),
+        )]);
+        let mut tools = test_tools()();
+        tools.push(
+            Tool::new(
+                "research",
+                "Research",
+                obj(json!({"question": {"type": "string"}}), &["question"]),
+                Risk::Safe,
+                |ctx, _| {
+                    let p = ctx.progress.as_ref().expect("progress is set");
+                    p("Reading 3 pages…");
+                    Ok(format!("{FINAL_ANSWER}The Kobo Elipsa 2E [1].\n\nSources:\n[1] A – https://a.example"))
+                },
+                |_| "Research".into(),
+            )
+            .with_progress(),
+        );
+        let mut a = Agent::new(
+            Arc::new(FlmClient::new(&flm.url)),
+            "test-model",
+            Arc::new(move || tools.clone()),
+        );
+        a.reply_tool = false;
+        let rec = Rec::default();
+        a.ask("research the best e-reader for PDFs", &rec, &[])
+            .unwrap();
+        assert_eq!(flm.requests().len(), 1, "the small model doesn't reword it");
+        let answer = a.messages.last().unwrap()["content"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(answer.starts_with("The Kobo Elipsa 2E [1]."), "{answer}");
+        assert!(!answer.contains(FINAL_ANSWER));
+        let log = rec.log.lock().unwrap().clone();
+        assert!(
+            log.iter().any(|l| l.contains("Reading 3 pages…")),
+            "{log:?}"
+        );
+        let tool_msg = a
+            .messages
+            .iter()
+            .rev()
+            .find(|m| m["role"] == "tool")
+            .unwrap();
+        assert!(
+            !tool_msg["content"].as_str().unwrap().contains("Elipsa"),
+            "one copy in the chat"
+        );
     }
 
     #[test]

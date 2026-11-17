@@ -272,7 +272,8 @@ fn connect_route(a: &Args) -> Result<(String, Args), ToolError> {
 }
 
 /// Tools kept as they are.
-const KEPT: [&str; 14] = [
+const KEPT: [&str; 15] = [
+    "research",
     "play_music",
     "get_status",
     "get_datetime",

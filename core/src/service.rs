@@ -66,6 +66,7 @@ pub const INTROSPECTION: &str = r#"
     <signal name="ToolStarted"><arg type="s" name="chat_id"/><arg type="s" name="name"/><arg type="s" name="summary"/></signal>
     <signal name="ToolFinished"><arg type="s" name="chat_id"/><arg type="s" name="name"/><arg type="s" name="result"/><arg type="b" name="ok"/></signal>
     <signal name="Notice"><arg type="s" name="chat_id"/><arg type="s" name="text"/></signal>
+    <signal name="Progress"><arg type="s" name="chat_id"/><arg type="s" name="text"/></signal>
     <signal name="Handoff"><arg type="s" name="chat_id"/><arg type="s" name="model"/></signal>
     <signal name="Compacting"><arg type="s" name="chat_id"/></signal>
     <signal name="Retract"><arg type="s" name="chat_id"/></signal>
@@ -187,6 +188,9 @@ impl Callbacks for SignalCallbacks {
     }
     fn notice(&self, t: &str) {
         self.emit("Notice", (self.chat_id.as_str(), t).to_variant());
+    }
+    fn progress(&self, t: &str) {
+        self.emit("Progress", (self.chat_id.as_str(), t).to_variant());
     }
     fn handoff(&self, m: &str) {
         self.emit("Handoff", (self.chat_id.as_str(), m).to_variant());

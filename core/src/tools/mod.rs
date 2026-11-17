@@ -20,6 +20,7 @@ pub mod intents;
 pub mod localsearch;
 pub mod music;
 pub mod personal;
+pub mod research;
 pub mod run;
 pub mod screen;
 pub mod settings;
@@ -95,6 +96,7 @@ pub fn reads_untrusted(tool: &str) -> bool {
         tool,
         "web_search"
             | "read_web_page"
+            | "research"
             | "read_document"
             | "ask_document"
             | "read_file"
@@ -352,6 +354,12 @@ Returns titles, links and short snippets. Not for the user's own files, settings
         Tool::new("read_web_page", "Read the text of a web page, e.g. a search result, to answer from it.",
                   obj(json!({"url": {"type": "string"}}), &["url"]), Safe, web::read_web_page,
                   text("url", |u| format!("Read {}", or(u, "a page")))),
+        Tool::new("research", "Research a question on the web in depth: runs several searches, reads the best \
+pages and writes an answer that cites them, shown to the user as it is. Use it when the user asks to research, look \
+into, find out about or compare something, or for a question that needs several sources (reviews, comparisons, \
+explanations, recent events). For one quick fact, web_search is enough.",
+                  obj(json!({"question": {"type": "string", "description": "The full question, with any details the user gave"}}), &["question"]),
+                  Safe, research::research, text("question", |q| format!("Research “{q}”"))).with_progress(),
         Tool::new("copy_to_clipboard", "Copy text to the clipboard.", obj(json!({"text": {"type": "string"}}), &["text"]),
                   Safe, settings::copy_to_clipboard, |_| "Copy to clipboard".into()),
         Tool::new("undo", "Undo the last change you made (a setting, the volume, brightness, Wi-Fi, a reminder, \
@@ -564,7 +572,7 @@ mod tests {
     #[test]
     fn same_tools_and_risks_as_the_python_app() {
         let names: Vec<String> = all().into_iter().map(|t| t.name).collect();
-        assert_eq!(names.len(), 65, "{names:?}");
+        assert_eq!(names.len(), 66, "{names:?}");
         let risky: Vec<String> = all()
             .into_iter()
             .filter(|t| t.risk == Risk::Confirm)

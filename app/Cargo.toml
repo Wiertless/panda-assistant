@@ -1,6 +1,6 @@
 [package]
 name = "panda-assistant"
-version = "0.20.0"
+version = "0.21.0"
 edition = "2024"
 license = "MIT"
 description = "Assistant: a local AI assistant for GNOME on your NPU (the window)"

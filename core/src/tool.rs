@@ -70,7 +70,16 @@ pub struct Context {
     /// Ask the model a one-off question in a fresh context (system, user) ->
     /// answer, for tools that work on long text (documents, a selection).
     pub ask_model: Option<AskModel>,
+    /// The same with the smarter model (the one hard requests go to), if there is one.
+    pub ask_smarter: Option<AskModel>,
+    /// The smarter model's name, for progress notices.
+    pub smarter_name: Option<String>,
+    /// A line for the window about a long tool's progress ("Reading 3 pages…").
+    /// Set while a tool that reports progress runs.
+    pub progress: Option<Progress>,
 }
+
+pub type Progress = Arc<dyn Fn(&str) + Send + Sync>;
 
 pub type AskModel = Arc<dyn Fn(&str, &str) -> Result<String, ToolError> + Send + Sync>;
 
@@ -163,6 +172,8 @@ pub struct Tool {
     /// Set on a tool that forwards to another (the compact set's broad tools), so
     /// confirmation and the untrusted-text guard judge the tool that really runs.
     pub resolve: Option<ResolveFn>,
+    /// Runs long and reports progress through `Context::progress`.
+    pub reports_progress: bool,
 }
 
 impl Tool {
@@ -183,7 +194,13 @@ impl Tool {
             summary: Arc::new(summary),
             detail: None,
             resolve: None,
+            reports_progress: false,
         }
+    }
+
+    pub fn with_progress(mut self) -> Self {
+        self.reports_progress = true;
+        self
     }
 
     /// The tool that really runs for these arguments and its arguments: itself,
