@@ -21,6 +21,13 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.22.0" date="2026-11-17">
+      <description>
+        <ul>
+          <li>Messages typed while an answer is coming wait in a queue and go out when it ends; Stop puts them back in the text box</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.21.0" date="2026-11-17">
       <description>
         <ul>

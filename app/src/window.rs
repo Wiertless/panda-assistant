@@ -109,6 +109,19 @@ pub struct State {
     pub memory_enabled: bool,
     pub messages: Vec<Value>,
     stepped_aside: bool,
+    /// Messages typed while an answer was coming, sent one by one after it.
+    queue: Vec<Queued>,
+}
+
+/// A message waiting for the current answer to finish.
+struct Queued {
+    text: String,
+    prompt: String,
+    images: Vec<String>,
+    thumbs: Vec<gdk::Texture>,
+    /// Its bubble, shown dimmed with a "Queued" line until it's sent.
+    bubble: gtk::Box,
+    status: gtk::Box,
 }
 
 pub struct Window {
@@ -320,6 +333,7 @@ impl Window {
                 memory_enabled: config::bool_or(&cfg, "memory", true),
                 messages: vec![],
                 stepped_aside: false,
+                queue: vec![],
             }),
             win,
             app: app.clone(),
@@ -1254,7 +1268,7 @@ impl Window {
 
     fn send(self: &Rc<Self>) {
         let text = self.entry.text().trim().to_string();
-        if self.st.borrow().busy || (text.is_empty() && self.st.borrow().attachments.is_empty()) {
+        if text.is_empty() && self.st.borrow().attachments.is_empty() {
             return;
         }
         let mut prompt = if text.is_empty() {
@@ -1294,12 +1308,113 @@ impl Window {
         self.entry.set_text("");
         self.show_attachments();
         self.stack.set_visible_child_name("chat");
-        self.add_user(&text, &thumbs, true);
+        let bubble = self.add_user(&text, &thumbs, true);
+        if self.st.borrow().busy {
+            self.queue_message(text, prompt, images, thumbs, bubble);
+            return;
+        }
+        self.dispatch(&prompt, &images);
+    }
+
+    /// Show a message typed during an answer as queued: dimmed, with a way to take it back.
+    fn queue_message(
+        self: &Rc<Self>,
+        text: String,
+        prompt: String,
+        images: Vec<String>,
+        thumbs: Vec<gdk::Texture>,
+        bubble: gtk::Box,
+    ) {
+        bubble.add_css_class("dim-label");
+        let status = gtk::Box::builder()
+            .spacing(6)
+            .halign(gtk::Align::End)
+            .build();
+        let label = gtk::Label::new(Some("Queued"));
+        label.add_css_class("caption");
+        let undo = gtk::Button::builder()
+            .icon_name("edit-undo-symbolic")
+            .tooltip_text("Take Back")
+            .valign(gtk::Align::Center)
+            .build();
+        undo.add_css_class("flat");
+        undo.add_css_class("circular");
+        status.append(&label);
+        status.append(&undo);
+        bubble.append(&status);
+        let (w, b) = (self.weak(), bubble.clone());
+        undo.connect_clicked(move |_| {
+            if let Some(w) = w.upgrade() {
+                w.take_back(&b);
+            }
+        });
+        self.st.borrow_mut().queue.push(Queued {
+            text,
+            prompt,
+            images,
+            thumbs,
+            bubble,
+            status,
+        });
+    }
+
+    /// Put a queued message back in the text box and remove its bubble.
+    fn take_back(&self, bubble: &gtk::Box) {
+        let q = {
+            let mut st = self.st.borrow_mut();
+            let Some(i) = st.queue.iter().position(|q| q.bubble == *bubble) else {
+                return;
+            };
+            st.queue.remove(i)
+        };
+        self.restore(vec![q]);
+    }
+
+    /// Queued messages go back into the text box (after a stop or an error), so
+    /// nothing is lost and nothing is sent unasked.
+    fn restore(&self, queued: Vec<Queued>) {
+        if queued.is_empty() {
+            return;
+        }
+        let mut texts: Vec<String> = queued.iter().map(|q| q.text.clone()).collect();
+        let typed = self.entry.text().trim().to_string();
+        if !typed.is_empty() {
+            texts.push(typed);
+        }
+        for q in queued {
+            let gone = q
+                .bubble
+                .parent()
+                .and_then(|p| p.downcast::<gtk::Revealer>().ok());
+            match gone {
+                Some(rev) => self.messages.remove(&rev),
+                None => self.messages.remove(&q.bubble),
+            }
+            let mut st = self.st.borrow_mut();
+            st.attachments.extend(q.thumbs.into_iter().zip(q.images));
+        }
+        self.show_attachments();
+        self.entry.set_text(&texts.join(" "));
+        self.entry.set_position(-1);
+    }
+
+    /// Send the next queued message, if any.
+    fn send_queued(self: &Rc<Self>) {
+        if self.st.borrow().busy || self.st.borrow().queue.is_empty() {
+            return;
+        }
+        let q = self.st.borrow_mut().queue.remove(0);
+        q.bubble.remove(&q.status);
+        q.bubble.remove_css_class("dim-label");
+        self.dispatch(&q.prompt, &q.images);
+    }
+
+    fn dispatch(self: &Rc<Self>, prompt: &str, images: &[String]) {
         self.set_busy(true);
         let reply = Reply::new(self, true, None);
         self.st.borrow_mut().reply = Some(reply.clone());
         let chat_id = self.st.borrow().chat_id.clone();
-        if let Err(e) = self.core.ask(&chat_id, &prompt, &images, reply.clone()) {
+        if let Err(e) = self.core.ask(&chat_id, prompt, images, reply.clone()) {
             reply.on_finished(&e);
         }
     }
@@ -1308,10 +1423,13 @@ impl Window {
         if self.st.borrow().busy {
             self.core.stop();
         }
+        // Stopping means "not now": what was queued goes back to the text box.
+        let queued = std::mem::take(&mut self.st.borrow_mut().queue);
+        self.restore(queued);
     }
 
     /// The service finished a turn (it has saved the chat).
-    pub fn turn_finished(&self) {
+    pub fn turn_finished(self: &Rc<Self>, error: &str) {
         let chat_id = self.st.borrow().chat_id.clone();
         if let Some(data) = store::load_chat(&chat_id) {
             self.st.borrow_mut().messages =
@@ -1324,6 +1442,18 @@ impl Window {
         }
         self.refresh_chats();
         self.set_busy(false);
+        if !error.is_empty() {
+            let queued = std::mem::take(&mut self.st.borrow_mut().queue);
+            self.restore(queued);
+        } else if !self.st.borrow().queue.is_empty() {
+            // Not from inside the finished turn's own callback.
+            let w = self.weak();
+            glib::idle_add_local_once(move || {
+                if let Some(w) = w.upgrade() {
+                    w.send_queued();
+                }
+            });
+        }
     }
 
     pub fn set_busy(&self, busy: bool) {
@@ -1350,7 +1480,7 @@ impl Window {
         }
     }
 
-    pub fn add_user(&self, text: &str, thumbs: &[gdk::Texture], animate: bool) {
+    pub fn add_user(&self, text: &str, thumbs: &[gdk::Texture], animate: bool) -> gtk::Box {
         let bx = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(6)
@@ -1403,6 +1533,7 @@ impl Window {
         } else {
             self.messages.append(&bx)
         }
+        bx
     }
 
     pub fn weak(self: &Rc<Self>) -> Weak<Self> {

@@ -535,7 +535,7 @@ impl Turn for Reply {
         }
         self.finish(true);
         if let Some(w) = self.win.upgrade() {
-            w.turn_finished();
+            w.turn_finished(error);
         }
     }
 }
