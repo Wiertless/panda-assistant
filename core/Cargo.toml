@@ -19,6 +19,7 @@ serde_json = "1"
 ureq = { version = "3", default-features = false, features = ["rustls", "platform-verifier", "gzip"] }
 regex = "1"
 libloading = "0.8"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 tempfile = "3"

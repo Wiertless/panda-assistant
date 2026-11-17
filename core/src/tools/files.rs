@@ -298,15 +298,23 @@ pub fn read_file(_: &Context, args: &Args) -> ToolResult {
         return Err(format!("{} isn't a file", short(&path)).into());
     }
     let mut data = fs::read(&path).map_err(|e| e.to_string())?;
-    data.truncate(200_000);
-    if data.iter().take(4096).any(|&b| b == 0) {
-        return Err(format!(
-            "{} isn't a text file; use open_file to open it in its app",
-            short(&path)
-        )
-        .into());
-    }
-    let text = String::from_utf8_lossy(&data);
+    data.truncate(2_000_000);
+    // Documents (PDF, Word, spreadsheets, EPUB…) and other non-text files are read as their text.
+    const DOCUMENTS: [&str; 15] = [
+        "pdf", "docx", "docm", "pptx", "xlsx", "xlsm", "odt", "ods", "odp", "epub", "rtf", "ipynb",
+        "eml", "zip", "html",
+    ];
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_lowercase)
+        .unwrap_or_default();
+    let binary = data.iter().take(4096).any(|&b| b == 0);
+    let text = if binary || DOCUMENTS.contains(&ext.as_str()) {
+        std::borrow::Cow::Owned(super::localsearch::document_text(&path, 300)?)
+    } else {
+        String::from_utf8_lossy(&data)
+    };
     let lines: Vec<&str> = text.lines().collect();
     let from = args
         .get("from_line")

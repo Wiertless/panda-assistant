@@ -15,6 +15,7 @@ pub mod compact;
 pub mod connect;
 pub mod docs;
 pub mod edit;
+pub mod extract;
 pub mod files;
 pub mod groups;
 pub mod intents;
@@ -333,8 +334,9 @@ Characters for emoji, Weather, Settings pages, Files, Contacts and more.",
 mentions one of their own documents or files (\"my lease\", \"the invoice\", \"my CV\"), to read or send it.",
                   obj(json!({"name": {"type": "string"}, "folder": {"type": "string", "description": "Where to look (optional)"}}), &["name"]),
                   Safe, files::find_files, text("name", |n| format!("Find files named “{n}”"))),
-        Tool::new("read_file", "Read a text file (notes, code, configs, CSV…) to answer from it or before editing it. \
-Long files come a part at a time: pass from_line to read on.",
+        Tool::new("read_file", "Read any file's text: notes, code, configs, CSV, PDF, Word, Excel, PowerPoint, \
+LibreOffice, EPUB, RTF, e-mail, notebooks. Long files come a part at a time: pass from_line to read on. For a \
+question about a long document, ask_document is better.",
                   obj(json!({"path": {"type": "string"},
                              "from_line": {"type": "integer", "description": "First line to read (default 1)"}}), &["path"]), Safe,
                   files::read_file, text("path", |p| format!("Read {}", or(p, "a file")))),
@@ -507,7 +509,8 @@ in it. Use it when the user says this, here, or asks about what they're looking 
         Tool::new("search_file_contents", "Search inside the user's files (documents, PDFs, notes) for words, \
 using GNOME's file index. Returns files and matching snippets.", obj(json!({"query": {"type": "string"}}), &["query"]),
                   Safe, localsearch::search_file_contents, text("query", |q| format!("Search files for “{q}”"))),
-        Tool::new("read_document", "Read the text of a PDF, office document or other file that read_file can't.", path(),
+        Tool::new("read_document", "Read the text of a document (PDF, Word, Excel, PowerPoint, LibreOffice, EPUB…), \
+the start of it for long ones.", path(),
                   Safe, localsearch::read_document, text("path", |p| format!("Read {}", base_name(&or(p, "a document"))))),
         Tool::new("get_events", "Get calendar events. when: today, tomorrow, this week, next week, a weekday or a \
 date like 2026-11-20.", obj(json!({"when": {"type": "string"}}), &[]), Safe, personal::get_events,

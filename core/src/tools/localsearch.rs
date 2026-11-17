@@ -296,16 +296,12 @@ pub fn document_text(path: &Path, pages: u32) -> Result<String, ToolError> {
     if !path.is_file() {
         return Err(format!("{} isn't a file", short(path)).into());
     }
-    let plain = path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
-        [
-            "txt", "md", "markdown", "csv", "log", "org", "rst", "json", "toml", "yaml", "yml",
-            "ini", "html", "htm",
-        ]
-        .contains(&e.to_lowercase().as_str())
-    });
-    if plain {
-        let bytes = std::fs::read(path).map_err(|e| ToolError(e.to_string()))?;
-        return Ok(String::from_utf8_lossy(&bytes[..bytes.len().min(2_000_000)]).to_string());
+    // Read directly when the format is known (office files, EPUB, PDF, text…).
+    let mut direct_error = None;
+    match super::extract::text(path) {
+        Some(Ok(t)) if !t.trim().is_empty() => return Ok(t),
+        Some(Err(e)) => direct_error = Some(e),
+        _ => {}
     }
     let mut text = sparql()
         .ok()
@@ -331,11 +327,17 @@ pub fn document_text(path: &Path, pages: u32) -> Result<String, ToolError> {
         text = out.stdout;
     }
     if text.trim().is_empty() {
-        return Err(format!(
-            "no text is available for {} (it may not be indexed yet)",
-            short(path)
-        )
-        .into());
+        return Err(ToolError::cannot(match direct_error {
+            Some(e) if e.contains("pdftotext") || e.contains("No such file") => format!(
+                "{} can't be read: reading PDFs needs pdftotext (the poppler-utils package)",
+                short(path)
+            ),
+            Some(e) => format!("{} can't be read: {e}", short(path)),
+            None => format!(
+                "{} has no text to read (a picture, audio or video?); look_at_image shows pictures",
+                short(path)
+            ),
+        }));
     }
     Ok(text)
 }
