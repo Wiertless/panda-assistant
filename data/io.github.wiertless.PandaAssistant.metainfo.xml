@@ -21,6 +21,16 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.24.0" date="2026-11-18">
+      <description>
+        <ul>
+          <li>In-depth research: a report with sections, a summary and cited sources, from up to 12 pages; saved as PDF, Markdown or text on request</li>
+          <li>Files: write, edit, rename, move, make folders, move to the Trash and search inside text files; every change can be undone</li>
+          <li>Reads PDF, Word, Excel, PowerPoint, LibreOffice, EPUB, RTF, e-mails and notebooks directly</li>
+          <li>Faster follow-up rounds: the prompt stays the same, so FastFlowLM reuses it</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.23.0" date="2026-11-17">
       <description>
         <ul>

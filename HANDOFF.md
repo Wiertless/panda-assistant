@@ -34,15 +34,9 @@ Released so far: Assistant **0.23.0** (pinned in silverpanda). `main` has more o
 - Eval: judge fixes for Polish wordings; EmbeddingGemma server in the eval job (`--embed-url`), `no-embed`, `required`, `compact-required` variants; partial reports survive the 3-hour job limit; model calls and prompt tokens per request in the report.
 - `rewrite_selection` gets picked for selected text; "put on some X" routes to music.
 
-## In progress (nothing written yet)
+## Done since
 
-**In-depth research with export** (`core/src/tools/research.rs`). Keep the current quick mode; add `depth: "quick" | "in_depth"` (default in_depth) and `save_as: "pdf" | "md" | "txt" | path`:
-1. Small model writes an outline: 4–6 `## headings`, each with 1–2 search queries.
-2. Per section search, pick ≤2 pages (≤12 total, `pick()` dedupes), fetch in parallel (~9000 chars each).
-3. Small model takes notes per page (≤12 lines), sources numbered globally.
-4. Writer = smarter model if set (`ctx.ask_smarter`), else the small one: one call per section (150–300 words, [n] citations), then one for summary + conclusion.
-5. Markdown: title, summary, sections, conclusion, sources. Saved to `~/Documents/Research/<slug>.<ext>` (never overwrite: add -2). PDF via pangocairo (add `cairo-rs` with `pdf`, `pango`, `pangocairo` 0.21; CI needs `libpango1.0-dev libcairo2-dev` in eval.yml's apt line; Fedora CI already has them via gtk4-devel). Paginate with `layout.iter()` line by line on A4.
-6. When saved, the chat gets the summary and the path; otherwise the full report.
+- 0.24.0: in-depth research with PDF/MD/TXT export (`core/src/tools/research.rs`, pangocairo), reply offered every round (prompt cache: 0.6 s to first token).
 
 ## Next, in order
 

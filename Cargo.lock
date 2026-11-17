@@ -28,12 +28,15 @@ dependencies = [
 
 [[package]]
 name = "assistant-core"
-version = "0.23.0"
+version = "0.24.0"
 dependencies = [
+ "cairo-rs",
  "gdk-pixbuf",
  "gio",
  "glib",
  "libloading",
+ "pango",
+ "pangocairo",
  "regex",
  "serde",
  "serde_json",
@@ -745,7 +748,7 @@ checksum = "7e036b411754132fd6b74e94b74e9a13c5cf606fa93d1885c35860d3060820b1"
 
 [[package]]
 name = "panda-assistant"
-version = "0.23.0"
+version = "0.24.0"
 dependencies = [
  "assistant-core",
  "gio",
@@ -777,6 +780,32 @@ dependencies = [
  "glib-sys",
  "gobject-sys",
  "libc",
+ "system-deps",
+]
+
+[[package]]
+name = "pangocairo"
+version = "0.21.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b36c5c84304072939d860595d9bda2a797d3bd6f7215e20b8ccd0e72d84da8c8"
+dependencies = [
+ "cairo-rs",
+ "glib",
+ "libc",
+ "pango",
+ "pangocairo-sys",
+]
+
+[[package]]
+name = "pangocairo-sys"
+version = "0.21.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eadbb01ad38be76e0d37e329d40ba0f3f9ef261d7b84b05201d7a0f14f819406"
+dependencies = [
+ "cairo-sys-rs",
+ "glib-sys",
+ "libc",
+ "pango-sys",
  "system-deps",
 ]
 

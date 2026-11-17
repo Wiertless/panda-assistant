@@ -51,12 +51,349 @@ pub fn research(ctx: &Context, args: &crate::tool::Args) -> ToolResult {
     if question.is_empty() {
         return Err("say what to research".into());
     }
-    research_with(
-        ctx,
-        &question,
-        &|q| web::search(q).map(|(_, hits)| hits),
-        &|url| web::read_page(url, PAGE_CHARS),
-    )
+    let save = arg_str(args, "save_as").trim().to_lowercase();
+    let search = |q: &str| web::search(q).map(|(_, hits)| hits);
+    if arg_str(args, "depth").eq_ignore_ascii_case("quick") && save.is_empty() {
+        return research_with(ctx, &question, &search, &|url| {
+            web::read_page(url, PAGE_CHARS)
+        });
+    }
+    let report = in_depth(ctx, &question, &search, &|url| {
+        web::read_page(url, DEEP_PAGE_CHARS)
+    })?;
+    deliver(&question, &report, &save)
+}
+
+// In depth: an outline of sections, more pages, a section at a time.
+const MAX_SECTIONS: usize = 6;
+const PAGES_PER_SECTION: usize = 3;
+const MAX_DEEP_PAGES: usize = 12;
+const DEEP_PAGE_CHARS: usize = 9000;
+
+const OUTLINE: &str = "You plan an in-depth research report. Write 4 to 6 sections that together answer the \
+question thoroughly (background, the main points, options or comparisons, downsides, what to choose). One line per \
+section: the heading, then \" | \", then one or two short web search queries separated by \";\". Nothing else: no \
+numbering, no explanation. Headings in the question's language; queries in English when English sources are likely \
+better.";
+
+const SECTION: &str = "You write one section of a research report, from the numbered notes only. 150 to 300 words \
+in plain paragraphs or \"- \" lists, no heading. Put the note number in brackets after each claim, like [3]. If the \
+notes disagree, say so; if they miss something, say what's missing instead of guessing. Write in the question's \
+language.";
+
+const SUMMARY: &str = "You finish a research report. From its sections below, write two parts separated by a line \
+with only ---: first a summary of 3 to 5 sentences that answers the question directly, then a short concluding \
+paragraph (with a recommendation if the question asks for one). Keep the [n] citations. No headings. Write in the \
+question's language.";
+
+/// A finished report: the summary (for the chat) and the whole of it in Markdown.
+pub struct Report {
+    pub summary: String,
+    pub markdown: String,
+    pub sources: usize,
+}
+
+/// "Heading | query one; query two" lines.
+fn parse_outline(text: &str) -> Vec<(String, Vec<String>)> {
+    static LEAD: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^\s*(?:(?:#+|[-*•]|\d+[.)])\s*)*").unwrap());
+    text.lines()
+        .filter_map(|l| {
+            let (head, queries) = l.split_once('|')?;
+            let head = LEAD
+                .replace(head, "")
+                .trim()
+                .trim_matches('*')
+                .trim()
+                .to_string();
+            let queries: Vec<String> = queries
+                .split(';')
+                .map(clean_query)
+                .filter(|q| !q.is_empty())
+                .take(2)
+                .collect();
+            (!head.is_empty() && !queries.is_empty()).then_some((head, queries))
+        })
+        .take(MAX_SECTIONS)
+        .collect()
+}
+
+pub fn in_depth(
+    ctx: &Context,
+    question: &str,
+    search: SearchFn,
+    read: ReadFn,
+) -> Result<Report, ToolError> {
+    let ask = ctx
+        .ask_model
+        .as_ref()
+        .ok_or_else(|| ToolError::from("the model isn't available"))?;
+    let say = |s: &str| {
+        if let Some(p) = &ctx.progress {
+            p(s)
+        }
+    };
+    say("Planning the report…");
+    let mut outline = ask(OUTLINE, &format!("Question: {question}"))
+        .map(|t| parse_outline(&t))
+        .unwrap_or_default();
+    if outline.is_empty() {
+        outline = vec![(question.to_string(), plan(ask, question))];
+    }
+
+    // Pages per section, no page twice across the report.
+    let mut seen = HashSet::new();
+    let mut pages: Vec<(usize, Hit)> = vec![];
+    for (i, (head, queries)) in outline.iter().enumerate() {
+        say(&format!("Searching: {head}"));
+        let ranked: Vec<Vec<Hit>> = queries.iter().filter_map(|q| search(q).ok()).collect();
+        for h in pick(&ranked, PAGES_PER_SECTION + 2) {
+            let fresh = seen.insert(h.url.trim_end_matches('/').to_string());
+            if fresh && pages.iter().filter(|(s, _)| *s == i).count() < PAGES_PER_SECTION {
+                pages.push((i, h));
+            }
+        }
+    }
+    pages.truncate(MAX_DEEP_PAGES);
+    if pages.is_empty() {
+        return Err("the searches found nothing".into());
+    }
+    say(&format!("Reading {} pages…", pages.len()));
+    let texts: Vec<Result<(String, String), ToolError>> = std::thread::scope(|s| {
+        let jobs: Vec<_> = pages
+            .iter()
+            .map(|(_, h)| s.spawn(move || read(&h.url)))
+            .collect();
+        jobs.into_iter()
+            .map(|j| j.join().unwrap_or_else(|_| Err("reading failed".into())))
+            .collect()
+    });
+    let mut sources: Vec<(usize, Source)> = vec![];
+    for ((sec, hit), page) in pages.iter().zip(texts) {
+        let (title, text) = match page {
+            Ok((t, text)) if !text.trim().is_empty() => {
+                (if t.is_empty() { hit.title.clone() } else { t }, text)
+            }
+            _ if !hit.snippet.is_empty() => (hit.title.clone(), hit.snippet.clone()),
+            _ => continue,
+        };
+        say(&format!("Taking notes: {}", short(&title, 60)));
+        let user = format!(
+            "Question: {question}\nSection: {}\n\nPage: {title}\n{}\n\n{text}",
+            outline[*sec].0, hit.url
+        );
+        if let Ok(n) = ask(NOTES, &user) {
+            let notes = clean_notes(&n);
+            if !notes.is_empty() {
+                sources.push((
+                    *sec,
+                    Source {
+                        title,
+                        url: hit.url.clone(),
+                        notes,
+                    },
+                ));
+            }
+        }
+    }
+    if sources.is_empty() {
+        return Err("none of the pages it found had anything on this".into());
+    }
+
+    let writer: &AskModel = ctx.ask_smarter.as_ref().unwrap_or(ask);
+    let write = |system: &str, user: &str| {
+        writer(system, user).or_else(|e| {
+            if ctx.ask_smarter.is_some() {
+                ask(system, user)
+            } else {
+                Err(e)
+            }
+        })
+    };
+    let mut body = String::new();
+    for (i, (head, _)) in outline.iter().enumerate() {
+        let notes: Vec<String> = sources
+            .iter()
+            .enumerate()
+            .filter(|(_, (s, _))| *s == i)
+            .map(|(n, (_, s))| format!("[{}] {} ({})\n{}", n + 1, s.title, s.url, s.notes))
+            .collect();
+        if notes.is_empty() {
+            continue;
+        }
+        say(&match &ctx.smarter_name {
+            Some(m) if ctx.ask_smarter.is_some() => format!("Writing “{head}” with {m}…"),
+            _ => format!("Writing “{head}”…"),
+        });
+        let user = format!(
+            "Question: {question}\nSection: {head}\n\nNotes:\n\n{}",
+            notes.join("\n\n")
+        );
+        if let Ok(text) = write(SECTION, &user) {
+            body.push_str(&format!("## {head}\n\n{}\n\n", text.trim()));
+        }
+    }
+    if body.is_empty() {
+        return Err("the report couldn't be written".into());
+    }
+    say("Writing the summary…");
+    let end = write(SUMMARY, &format!("Question: {question}\n\n{body}")).unwrap_or_default();
+    let (summary, conclusion) = end.split_once("\n---").unwrap_or((&end, ""));
+    let (summary, conclusion) = (
+        summary.trim().to_string(),
+        conclusion.trim_matches(['-', '\n', ' ']).trim(),
+    );
+    let polish = question.chars().any(|c| "ąćęłńóśźżĄĆĘŁŃÓŚŹŻ".contains(c));
+    let list: Vec<String> = sources
+        .iter()
+        .enumerate()
+        .map(|(n, (_, s))| format!("{}. {} – {}", n + 1, s.title, s.url))
+        .collect();
+    let mut md = format!("# {question}\n\n");
+    if !summary.is_empty() {
+        md.push_str(&format!("{summary}\n\n"));
+    }
+    md.push_str(&body);
+    if !conclusion.is_empty() {
+        md.push_str(&format!(
+            "## {}\n\n{conclusion}\n\n",
+            if polish { "Podsumowanie" } else { "Conclusion" }
+        ));
+    }
+    md.push_str(&format!(
+        "## {}\n\n{}\n",
+        if polish { "Źródła" } else { "Sources" },
+        list.join("\n")
+    ));
+    Ok(Report {
+        summary,
+        markdown: md,
+        sources: sources.len(),
+    })
+}
+
+/// The report in the chat, or saved as a file with its summary in the chat.
+fn deliver(question: &str, r: &Report, save: &str) -> ToolResult {
+    let ext = match save {
+        "" => {
+            return Ok(format!(
+                "{}{}",
+                crate::agent::FINAL_ANSWER,
+                r.markdown.trim()
+            ));
+        }
+        s if s.contains("pdf") => "pdf",
+        s if s.contains("md") || s.contains("markdown") => "md",
+        _ => "txt",
+    };
+    let docs = super::files::user_dirs()
+        .into_iter()
+        .find(|(role, _)| role == "documents")
+        .map(|(_, p)| p)
+        .unwrap_or_else(|| super::files::real_home().join("Documents"));
+    let dir = docs.join("Research");
+    std::fs::create_dir_all(&dir).map_err(|e| ToolError(e.to_string()))?;
+    let slug: String = question
+        .to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect::<Vec<_>>()
+        .join("-")
+        .chars()
+        .take(60)
+        .collect();
+    let slug = if slug.is_empty() {
+        "research".to_string()
+    } else {
+        slug
+    };
+    let mut path = dir.join(format!("{slug}.{ext}"));
+    for n in 2.. {
+        if !path.exists() {
+            break;
+        }
+        path = dir.join(format!("{slug}-{n}.{ext}"));
+    }
+    if ext == "pdf" {
+        write_pdf(&path, &r.markdown)
+            .map_err(|e| ToolError(format!("couldn't make the PDF: {e}")))?;
+    } else {
+        std::fs::write(&path, &r.markdown).map_err(|e| ToolError(e.to_string()))?;
+    }
+    let words = r.markdown.split_whitespace().count();
+    Ok(format!(
+        "{}{}\n\nThe full report ({words} words, {} sources) is in {}.",
+        crate::agent::FINAL_ANSWER,
+        if r.summary.is_empty() {
+            "The report is ready."
+        } else {
+            r.summary.as_str()
+        },
+        r.sources,
+        super::files::short(&path)
+    ))
+}
+
+/// Pango markup for the report's Markdown (headings, lists, paragraphs).
+fn markup(md: &str) -> String {
+    let esc = |s: &str| glib::markup_escape_text(&s.replace("**", "")).to_string();
+    md.lines()
+        .map(|l| {
+            let l = l.trim_end();
+            if let Some(h) = l.strip_prefix("# ") {
+                format!("<span size=\"xx-large\" weight=\"bold\">{}</span>", esc(h))
+            } else if let Some(h) = l.strip_prefix("## ") {
+                format!("<span size=\"large\" weight=\"bold\">{}</span>", esc(h))
+            } else if let Some(i) = l.strip_prefix("- ") {
+                format!("  • {}", esc(i))
+            } else {
+                esc(l)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// An A4 PDF of the report, laid out by Pango, a page break wherever a line doesn't fit.
+/// Returns the number of pages.
+fn write_pdf(path: &std::path::Path, md: &str) -> Result<usize, String> {
+    let (w, h, m) = (595.0, 842.0, 56.0);
+    let scale = pango::SCALE as f64;
+    let surface = cairo::PdfSurface::new(w, h, path).map_err(|e| e.to_string())?;
+    let cr = cairo::Context::new(&surface).map_err(|e| e.to_string())?;
+    let layout = pangocairo::functions::create_layout(&cr);
+    layout.set_font_description(Some(&pango::FontDescription::from_string("Sans 10.5")));
+    layout.set_width(((w - 2.0 * m) * scale) as i32);
+    layout.set_wrap(pango::WrapMode::WordChar);
+    layout.set_markup(&markup(md));
+    let mut iter = layout.iter();
+    let mut offset = 0.0; // the layout's y at the top of this page
+    let mut pages = 1;
+    loop {
+        let (_, logical) = iter.line_extents();
+        let (top, bottom) = (
+            logical.y() as f64 / scale,
+            (logical.y() + logical.height()) as f64 / scale,
+        );
+        if bottom - offset > h - 2.0 * m {
+            cr.show_page().map_err(|e| e.to_string())?;
+            offset = top;
+            pages += 1;
+        }
+        if let Some(line) = iter.line_readonly() {
+            cr.move_to(
+                m + logical.x() as f64 / scale,
+                m + iter.baseline() as f64 / scale - offset,
+            );
+            pangocairo::functions::show_layout_line(&cr, &line);
+        }
+        if !iter.next_line() {
+            break;
+        }
+    }
+    drop(cr);
+    surface.finish();
+    Ok(pages)
 }
 
 type SearchFn<'a> = &'a dyn Fn(&str) -> Result<Vec<Hit>, ToolError>;
@@ -400,6 +737,73 @@ mod tests {
                 .any(|n| n == "Writing the answer with qwen3.5:9b…"),
             "{notices:?}"
         );
+    }
+
+    #[test]
+    fn outline_lines_are_parsed() {
+        let o = parse_outline(
+            "Here it is:\n1. ## Battery life | framework 13 battery test; ryzen ai 340 battery\n- Price | framework 13 price\nNo pipe here",
+        );
+        assert_eq!(o.len(), 2);
+        assert_eq!(o[0].0, "Battery life");
+        assert_eq!(
+            o[0].1,
+            ["framework 13 battery test", "ryzen ai 340 battery"]
+        );
+    }
+
+    #[test]
+    fn in_depth_report_and_pdf() {
+        let small: AskModel = Arc::new(|system: &str, user: &str| {
+            Ok(if system == OUTLINE {
+                "Battery | battery test\nPrice | price check".into()
+            } else if system == NOTES {
+                format!(
+                    "- fact from {}",
+                    user.lines().find(|l| l.starts_with("Page:")).unwrap_or("")
+                )
+            } else if system == SECTION {
+                "Section text [1].".into()
+            } else {
+                "Short summary [1].\n---\nBuy it.".into()
+            })
+        });
+        let ctx = Context {
+            ask_model: Some(small),
+            ..Default::default()
+        };
+        let search = |q: &str| {
+            Ok(vec![hit(
+                &format!("https://{}.example/a", q.replace(' ', "")),
+                q,
+            )])
+        };
+        let read =
+            |url: &str| -> Result<(String, String), ToolError> { Ok((url.into(), "text".into())) };
+        let r = in_depth(&ctx, "is it good?", &search, &read).unwrap();
+        assert_eq!(r.summary, "Short summary [1].");
+        assert_eq!(r.sources, 2);
+        for want in [
+            "# is it good?",
+            "## Battery",
+            "## Price",
+            "## Conclusion\n\nBuy it.",
+            "## Sources\n\n1. ",
+        ] {
+            assert!(r.markdown.contains(want), "{want} in {}", r.markdown);
+        }
+        let d = tempfile::tempdir().unwrap();
+        let pdf = d.path().join("r.pdf");
+        let pages = write_pdf(
+            &pdf,
+            &(r.markdown.clone()
+                + &"line
+"
+                .repeat(200)),
+        )
+        .unwrap();
+        assert!(std::fs::read(&pdf).unwrap().starts_with(b"%PDF"));
+        assert!(pages >= 3, "{pages} pages");
     }
 
     #[test]

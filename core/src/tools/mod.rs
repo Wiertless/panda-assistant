@@ -396,11 +396,14 @@ Returns titles, links and short snippets. Not for the user's own files, settings
         Tool::new("read_web_page", "Read the text of a web page, e.g. a search result, to answer from it.",
                   obj(json!({"url": {"type": "string"}}), &["url"]), Safe, web::read_web_page,
                   text("url", |u| format!("Read {}", or(u, "a page")))),
-        Tool::new("research", "Research a question on the web in depth: runs several searches, reads the best \
-pages and writes an answer that cites them, shown to the user as it is. Use it when the user asks to research, look \
-into, find out about or compare something, or for a question that needs several sources (reviews, comparisons, \
-explanations, recent events). For one quick fact, web_search is enough.",
-                  obj(json!({"question": {"type": "string", "description": "The full question, with any details the user gave"}}), &["question"]),
+        Tool::new("research", "Research a topic on the web: plans a report, searches and reads up to 12 pages, and \
+writes an in-depth report with sections and cited sources, shown to the user as it is. Use it when the user asks to \
+research, look into, review or compare something, or for a question that needs several sources. depth quick gives a \
+short answer from 5 pages. save_as pdf, md or txt saves the report in Documents/Research. For one quick fact, \
+web_search is enough.",
+                  obj(json!({"question": {"type": "string", "description": "The full question, with any details the user gave"},
+                             "depth": {"type": "string", "enum": ["in_depth", "quick"]},
+                             "save_as": {"type": "string", "enum": ["pdf", "md", "txt"], "description": "Only when the user asks for a file"}}), &["question"]),
                   Safe, research::research, text("question", |q| format!("Research “{q}”"))).with_progress(),
         Tool::new("copy_to_clipboard", "Copy text to the clipboard.", obj(json!({"text": {"type": "string"}}), &["text"]),
                   Safe, settings::copy_to_clipboard, |_| "Copy to clipboard".into()),
