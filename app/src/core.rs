@@ -261,6 +261,10 @@ impl Core {
     pub fn pending(&self, chat_id: &str) -> Result<Value, String> {
         self.json("Pending", Some(&(chat_id,).to_variant()))
     }
+    /// What the user was looking at: {app, title, selection}.
+    pub fn context(&self) -> Result<Value, String> {
+        self.json("Context", None)
+    }
     pub fn connections(&self) -> Result<Value, String> {
         self.json("Connections", None)
     }

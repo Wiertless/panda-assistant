@@ -28,6 +28,8 @@ pub const ASK_USER: &str = "ask_user";
 pub const REPLY: &str = "reply";
 /// The start of a tool result that no retry can fix (see ToolError::cannot).
 pub const FINAL_ERROR: &str = "Error (retrying won't help): ";
+/// A question asked from the pop-up starts with what was on screen; the window hides it.
+pub const CONTEXT_MARK: &str = "[On screen: ";
 /// A tool result that is the answer itself (research): shown as written, and the turn ends.
 pub const FINAL_ANSWER: &str = "Answer for the user (shown as written): ";
 const ANSWER_NOW: &str = "(Now answer the user from these results, in a sentence or two.)";
@@ -712,7 +714,11 @@ impl Agent {
         let turn_start = self.messages.len();
         self.messages
             .push(json!({"role": "user", "content": with_images(text, &images)}));
-        let mut turn = Turn::default();
+        // Selected text from another app is untrusted, like a web page.
+        let mut turn = Turn {
+            tainted: text.starts_with(CONTEXT_MARK) && text.contains("Selected text:"),
+            ..Turn::default()
+        };
         let result = self.run_turn(text, actionable, turn_start, &mut turn, cb);
         // The nudge was for the model only: it isn't part of the chat.
         if let Some(i) = turn.nudge_at.filter(|i| *i < self.messages.len()) {

@@ -28,6 +28,7 @@
           <li>Files: write, edit, rename, move, make folders, move to the Trash and search inside text files; every change can be undone</li>
           <li>Reads PDF, Word, Excel, PowerPoint, LibreOffice, EPUB, RTF, e-mails and notebooks directly</li>
           <li>Faster follow-up rounds: the prompt stays the same, so FastFlowLM reuses it</li>
+          <li>Pop-up on a shortcut: ask about the window you were in and the text you selected</li>
         </ul>
       </description>
     </release>

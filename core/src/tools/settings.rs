@@ -559,6 +559,25 @@ pub fn selected_text() -> Result<String, ToolError> {
     Ok(reply.child_value(0).get::<String>().unwrap_or_default())
 }
 
+/// What the user was looking at before Assistant: the last focused app and window
+/// title, and the selected text (both from the Assistant Clipboard extension).
+pub fn screen_context() -> (String, String, String) {
+    let focus = super::run::dbus_call(
+        false,
+        "org.gnome.Shell",
+        CLIP_PATH,
+        CLIP_IFACE,
+        "Focus",
+        None,
+        Some(glib::VariantTy::new("(ss)").unwrap()),
+        2000,
+    )
+    .ok()
+    .and_then(|v| v.get::<(String, String)>())
+    .unwrap_or_default();
+    (focus.0, focus.1, selected_text().unwrap_or_default())
+}
+
 /// rewrite_selection: proofread, shorten, translate… the selected text, in a
 /// fresh context with no tools, and put the result on the clipboard.
 pub fn rewrite_selection(ctx: &Context, args: &Args) -> ToolResult {

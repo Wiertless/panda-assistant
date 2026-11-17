@@ -146,6 +146,14 @@ fn main() -> glib::ExitCode {
         None,
     );
     app.add_main_option(
+        "popup",
+        b'\0'.into(),
+        glib::OptionFlags::NONE,
+        glib::OptionArg::None,
+        "Open ready to ask, with what's on screen (for a keyboard shortcut)",
+        None,
+    );
+    app.add_main_option(
         "unload",
         b'\0'.into(),
         glib::OptionFlags::NONE,
@@ -288,6 +296,8 @@ fn main() -> glib::ExitCode {
             w.open_chat(&id);
         } else if opts.contains("new-chat") {
             w.new_chat();
+        } else if opts.contains("popup") {
+            w.popup();
         }
         glib::ExitCode::SUCCESS
     });
