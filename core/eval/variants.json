@@ -52,5 +52,14 @@
       "escalate": " If a request needs more than you can do well (careful reasoning, longer writing, code, several steps, or you're unsure), call ask_smarter_model instead of guessing. It hands the task to a bigger local model, which answers the user directly.",
       "nudge": "(You said it's done, but no tool ran, so nothing happened yet. Call the tool now to do it, or say plainly that you can't.)"
     }
+  },
+  "required": {
+    "about": "Like baseline, but every round must call exactly one tool, reply and ask_user always offered (redesign step 2).",
+    "required_rounds": true
+  },
+  "compact-required": {
+    "about": "The compact tool set, every round one required call: the redesign's fixed toolbox.",
+    "tool_set": "compact",
+    "required_rounds": true
   }
 }

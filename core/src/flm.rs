@@ -158,6 +158,8 @@ pub struct ChatOptions {
     /// FLM's per-request thinking switch: false answers (and calls tools) without
     /// reasoning first, the biggest cost between tool calls on Qwen 3.5.
     pub think: Option<bool>,
+    /// false: at most one call per answer (with "required": exactly one).
+    pub parallel_tool_calls: Option<bool>,
 }
 
 /// The embedding model FLM serves next to the chat model, when installed.
@@ -445,7 +447,17 @@ pub enum StreamEvent {
     Done {
         tool_calls: Vec<ToolCall>,
         finish_reason: Option<String>,
+        usage: Option<Usage>,
     },
+}
+
+/// Token counts the server reports for one request (`stream_options.include_usage`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, serde::Serialize)]
+pub struct Usage {
+    pub prompt_tokens: u64,
+    /// Of the prompt, the tokens the server reused from its prefix cache.
+    pub cached_tokens: u64,
+    pub completion_tokens: u64,
 }
 
 /// Turns OpenAI chat-completion SSE lines into events. Tool call deltas are
@@ -455,6 +467,7 @@ pub enum StreamEvent {
 pub struct SseParser {
     calls: BTreeMap<i64, ToolCall>,
     finish_reason: Option<String>,
+    usage: Option<Usage>,
     pub finished: bool,
 }
 
@@ -472,6 +485,14 @@ impl SseParser {
         let Ok(chunk) = serde_json::from_str::<Value>(data) else {
             return Ok(out);
         };
+        if let Some(u) = chunk.get("usage").filter(|u| u.is_object()) {
+            let n = |v: &Value| v.as_u64().unwrap_or(0);
+            self.usage = Some(Usage {
+                prompt_tokens: n(&u["prompt_tokens"]),
+                cached_tokens: n(&u["prompt_tokens_details"]["cached_tokens"]),
+                completion_tokens: n(&u["completion_tokens"]),
+            });
+        }
         let choices = chunk.get("choices").and_then(Value::as_array);
         if let (Some(err), true) = (chunk.get("error"), choices.is_none_or(|c| c.is_empty())) {
             let msg = err
@@ -535,6 +556,7 @@ impl SseParser {
         StreamEvent::Done {
             tool_calls: std::mem::take(&mut self.calls).into_values().collect(),
             finish_reason: self.finish_reason.take(),
+            usage: self.usage.take(),
         }
     }
 }
@@ -1048,6 +1070,7 @@ sudo modprobe -r amdxdna && sudo modprobe amdxdna"
                     tools,
                     &ChatOptions {
                         tool_choice: None,
+                        parallel_tool_calls: None,
                         think: None,
                         ..opts.clone()
                     },
@@ -1084,7 +1107,8 @@ sudo modprobe -r amdxdna && sudo modprobe amdxdna"
             model.to_string()
         };
         *self.last_model.lock().unwrap() = Some(model.to_string());
-        let mut body = json!({"model": wire, "messages": messages, "stream": true});
+        let mut body = json!({"model": wire, "messages": messages, "stream": true,
+            "stream_options": {"include_usage": true}});
         if let Some(t) = tools.filter(|t| !t.is_empty()) {
             body["tools"] = Value::Array(t.to_vec());
         }
@@ -1100,6 +1124,12 @@ sudo modprobe -r amdxdna && sudo modprobe amdxdna"
             .filter(|_| self.supports("tool_choice"))
         {
             body["tool_choice"] = c.clone();
+        }
+        if let Some(p) = opts
+            .parallel_tool_calls
+            .filter(|_| self.supports("tool_choice"))
+        {
+            body["parallel_tool_calls"] = json!(p);
         }
         if let Some(t) = opts.think.filter(|_| self.supports("think")) {
             body["think"] = json!(t);
@@ -1730,6 +1760,26 @@ mod tests {
     }
 
     #[test]
+    fn sse_reads_the_usage_chunk() {
+        let mut p = SseParser::default();
+        p.feed(r#"data: {"choices":[{"delta":{"content":"Hi"},"finish_reason":"stop"}]}"#)
+            .unwrap();
+        p.feed(r#"data: {"choices":[],"usage":{"prompt_tokens":2100,"completion_tokens":12,"prompt_tokens_details":{"cached_tokens":2048}}}"#)
+            .unwrap();
+        let StreamEvent::Done { usage, .. } = p.finish() else {
+            panic!()
+        };
+        assert_eq!(
+            usage,
+            Some(Usage {
+                prompt_tokens: 2100,
+                cached_tokens: 2048,
+                completion_tokens: 12
+            })
+        );
+    }
+
+    #[test]
     fn sse_merges_tool_call_deltas() {
         let mut p = SseParser::default();
         let lines = [
@@ -1751,10 +1801,12 @@ mod tests {
         let StreamEvent::Done {
             tool_calls,
             finish_reason,
+            usage,
         } = &events[2]
         else {
             panic!()
         };
+        assert_eq!(*usage, None);
         assert_eq!(finish_reason.as_deref(), Some("tool_calls"));
         assert_eq!(tool_calls[0].name, "get_battery");
         assert_eq!(tool_calls[0].parsed_arguments().unwrap()["a"], 1);

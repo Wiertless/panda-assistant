@@ -10,12 +10,13 @@ reports.sort(key=lambda r: (-r["passed"], r["seconds"]))
 names = []
 for r in reports:
     names += [s["name"] for s in r["scenarios"] if s["name"] not in names]
-print("| Model | Passed | Scenarios fully passed | Not offered by routing | s/request |")
-print("|---|---|---|---|---|")
+print("| Model | Passed | Scenarios fully passed | Not offered by routing | s/request | Model calls/request | Prompt tokens/request |")
+print("|---|---|---|---|---|---|---|")
 for r in reports:
     clusters = f"{r['clusters_passed']}/{r['clusters']}" if "clusters" in r else "—"
+    cost = f"{r['model_calls']:.1f} | {r['prompt_tokens']:.0f}" if "model_calls" in r else "— | —"
     print(f"| `{r['label']}` | **{r['passed']}/{r['total']}** ({100 * r['passed'] / max(r['total'], 1):.0f}%) | {clusters} "
-          f"| {r.get('unrouted', '—')} | {r['seconds'] / max(len(r['scenarios']), 1):.1f} |")
+          f"| {r.get('unrouted', '—')} | {r['seconds'] / max(len(r['scenarios']), 1):.1f} | {cost} |")
 # What one variant fixed and broke against another (same model): totals hide offsetting changes.
 by_model = {}
 for r in reports:

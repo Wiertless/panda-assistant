@@ -36,6 +36,8 @@ pub struct Variant {
     /// "compact": the ~28 broad tools, all sent with every request (no routing).
     pub tool_set: Option<String>,
     pub system_prompt: Option<String>,
+    /// Every round must call exactly one tool (reply and ask_user always offered).
+    pub required_rounds: Option<bool>,
     /// Stand-ins for the prompt fragments: web, memory, escalate, nudge.
     #[serde(default)]
     pub prompt_parts: std::collections::HashMap<String, String>,
@@ -146,6 +148,9 @@ pub struct Outcome {
     pub why: String,
     pub calls: Vec<(String, Args)>,
     pub seconds: f64,
+    /// Model requests, and the prompt tokens they sent (cached ones included).
+    pub requests: usize,
+    pub prompt_tokens: u64,
 }
 
 fn text_of(v: &Value) -> String {
@@ -315,6 +320,8 @@ pub fn run(client: &Arc<FlmClient>, model: &str, sees: bool, v: &Variant, s: &Sc
     agent.force_completion = v.force_completion.unwrap_or(agent.force_completion);
     agent.reply_tool = v.reply_tool.unwrap_or(agent.reply_tool);
     agent.system_prompt = v.system_prompt.clone();
+    agent.required_rounds = v.required_rounds.unwrap_or(agent.required_rounds);
+    agent.log_rounds = false;
     agent.prompt_parts = v.prompt_parts.clone();
     if compact {
         agent.route_tools = false; // everything goes along
@@ -375,6 +382,8 @@ pub fn run(client: &Arc<FlmClient>, model: &str, sees: bool, v: &Variant, s: &Sc
         why: verdict.err().unwrap_or_default(),
         calls,
         seconds,
+        requests: agent.stats.len(),
+        prompt_tokens: agent.stats.iter().map(|r| r.usage.prompt_tokens).sum(),
     }
 }
 
@@ -507,8 +516,14 @@ pub fn main(args: &[String]) -> i32 {
     let passed: usize = rows.iter().map(|r| r.1).sum();
     let total = rows.len() * repeat;
     let secs: f64 = rows.iter().map(|r| r.2).sum();
+    let runs_all: Vec<&Outcome> = rows.iter().flat_map(|r| r.3.iter()).collect();
+    let requests =
+        runs_all.iter().map(|o| o.requests).sum::<usize>() as f64 / runs_all.len().max(1) as f64;
+    let prompt =
+        runs_all.iter().map(|o| o.prompt_tokens).sum::<u64>() as f64 / runs_all.len().max(1) as f64;
     println!(
-        "{model}: {passed}/{total} passed ({:.0}%), {:.1}s per request on average",
+        "{model}: {passed}/{total} passed ({:.0}%), {:.1}s per request on average, {requests:.1} model calls and \
+{prompt:.0} prompt tokens per request",
         100.0 * passed as f64 / total.max(1) as f64,
         secs / rows.len().max(1) as f64
     );
@@ -545,7 +560,7 @@ pub fn main(args: &[String]) -> i32 {
     if let Some(path) = opt("--json") {
         let report = json!({"model": model, "variant": variant_name, "passed": passed, "total": total, "repeat": repeat,
             "clusters_passed": clusters_ok, "clusters": clusters.len(), "unrouted": unrouted,
-            "seconds": secs, "capabilities": by_tag.iter().map(|(t, (ok, n))| (t.clone(), json!({"passed": ok, "total": n})))
+            "seconds": secs, "model_calls": requests, "prompt_tokens": prompt, "capabilities": by_tag.iter().map(|(t, (ok, n))| (t.clone(), json!({"passed": ok, "total": n})))
                 .collect::<serde_json::Map<_, _>>(),
             "scenarios": rows.iter().map(|(name, ok, secs, runs, _)| {
                 let shown = runs.iter().find(|o| !o.passed).unwrap_or(&runs[0]);

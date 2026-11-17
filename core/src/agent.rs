@@ -298,9 +298,18 @@ pub struct Agent {
     /// Thinking on requests that carry tools: Some(false) skips the reasoning
     /// before each call (the main cost between tool calls); None keeps the model's default.
     pub think_with_tools: Option<bool>,
+    /// Every round must call exactly one tool, with reply and ask_user always
+    /// offered: answering is a call too, so a round can't end without one, and
+    /// the tool list stays the same between rounds (the server reuses the prompt).
+    pub required_rounds: bool,
+    /// Per-round token counts and timings, newest last (the eval reads them).
+    pub stats: Vec<RoundStat>,
+    /// Append each round's stats to ~/.local/state/panda-assistant/rounds.jsonl.
+    pub log_rounds: bool,
     /// Turns counted, and the last turn each tool group was used: groups idle
     /// for a while are dropped, so the tool list doesn't only grow.
     pub turn_no: usize,
+    round_no: usize,
     pub group_seen: std::collections::HashMap<String, usize>,
 }
 
@@ -340,7 +349,11 @@ impl Agent {
             force_completion: true,
             reply_tool: true,
             think_with_tools: Some(false),
+            required_rounds: false,
+            stats: vec![],
+            log_rounds: true,
             turn_no: 0,
+            round_no: 0,
             group_seen: std::collections::HashMap::new(),
         }
     }
@@ -715,23 +728,33 @@ impl Agent {
                 Some(only) => Some(self.forced_schemas(only)),
                 None => self.tool_schemas(),
             };
+            let required = self.required_rounds && forced.is_none() && schemas.is_some();
             let reply_round =
-                self.reply_tool && round == 0 && forced.is_none() && schemas.is_some();
-            if reply_round && let Some(s) = schemas.as_mut() {
-                s.push(reply_schema());
+                !required && self.reply_tool && round == 0 && forced.is_none() && schemas.is_some();
+            if let Some(s) = schemas.as_mut() {
+                if required {
+                    s.push(final_reply_schema());
+                    s.push(ask_user_schema());
+                } else if reply_round {
+                    s.push(reply_schema());
+                }
             }
-            let (content, calls) =
-                match self.stream(schemas.as_deref(), forced.is_some() || reply_round, cb) {
-                    Err(e) if schemas.is_some() && matches!(e.status, Some(400 | 422)) => {
-                        self.use_tools = false;
-                        cb.notice(&format!(
-                            "{} can't use tools, so it can only chat.",
-                            self.model
-                        ));
-                        self.stream(None, false, cb)?
-                    }
-                    other => other?,
-                };
+            self.round_no = round;
+            let (content, calls) = match self.stream(
+                schemas.as_deref(),
+                forced.is_some() || reply_round || required,
+                cb,
+            ) {
+                Err(e) if schemas.is_some() && matches!(e.status, Some(400 | 422)) => {
+                    self.use_tools = false;
+                    cb.notice(&format!(
+                        "{} can't use tools, so it can only chat.",
+                        self.model
+                    ));
+                    self.stream(None, false, cb)?
+                }
+                other => other?,
+            };
             // A reply call is the answer, as if the model had written it.
             let (content, calls) = match calls.iter().position(|c| c.name == REPLY) {
                 Some(i) if calls.len() == 1 => {
@@ -1023,10 +1046,38 @@ impl Agent {
         if self.reply_tool {
             v.push(reply_schema());
         }
-        v.push(json!({"type": "function", "function": {"name": ASK_USER,
-            "description": "Ask the user a short question when you can't tell which one they mean.",
-            "parameters": {"type": "object", "properties": {"question": {"type": "string"}}, "required": ["question"]}}}));
+        v.push(ask_user_schema());
         v
+    }
+
+    fn record_round(&mut self, stat: RoundStat) {
+        if self.log_rounds {
+            let path = crate::paths::state_dir().join("rounds.jsonl");
+            let _ = std::fs::create_dir_all(crate::paths::state_dir());
+            // Keep the log small: start over past 1 MB.
+            if std::fs::metadata(&path).is_ok_and(|m| m.len() > 1 << 20) {
+                let _ = std::fs::remove_file(&path);
+            }
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+            {
+                use std::io::Write;
+                let mut line = serde_json::to_value(&stat).unwrap_or_default();
+                line["at"] = json!(
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map_or(0, |d| d.as_secs())
+                );
+                let _ = writeln!(f, "{line}");
+            }
+        }
+        self.stats.push(stat);
+        let n = self.stats.len();
+        if n > 200 {
+            self.stats.drain(..n - 200);
+        }
     }
 
     fn activate(&mut self, group: &str) {
@@ -1163,12 +1214,16 @@ impl Agent {
         cb: &dyn Callbacks,
     ) -> Result<(String, Vec<ToolCall>), FlmError> {
         let conversation = self.conversation();
+        let one_call = self.required_rounds && schemas.is_some();
         let opts = ChatOptions {
             temperature: schemas.and(self.tool_temperature),
             max_tokens: Some(MAX_REPLY_TOKENS),
             tool_choice: force.then(|| json!("required")),
             think: schemas.and(self.think_with_tools),
+            parallel_tool_calls: one_call.then_some(false),
         };
+        let started = std::time::Instant::now();
+        let mut first: Option<std::time::Duration> = None;
         let stream = self
             .client
             .chat_stream(&self.model, &conversation, schemas, &opts)?;
@@ -1178,7 +1233,11 @@ impl Agent {
             if self.cancelled() {
                 return Ok((strip_think(&content), vec![]));
             }
-            match ev? {
+            let ev = ev?;
+            if first.is_none() && !matches!(ev, StreamEvent::Done { .. }) {
+                first = Some(started.elapsed());
+            }
+            match ev {
                 StreamEvent::Text(t) => {
                     content.push_str(&t);
                     cb.text(&t);
@@ -1187,7 +1246,18 @@ impl Agent {
                 StreamEvent::Done {
                     tool_calls,
                     finish_reason,
+                    usage,
                 } => {
+                    self.record_round(RoundStat {
+                        model: self.model.clone(),
+                        round: self.round_no,
+                        tools: schemas.map_or(0, <[Value]>::len),
+                        required: force,
+                        usage: usage.unwrap_or_default(),
+                        first_ms: first.unwrap_or(started.elapsed()).as_millis() as u64,
+                        total_ms: started.elapsed().as_millis() as u64,
+                        calls: tool_calls.iter().map(|c| c.name.clone()).collect(),
+                    });
                     calls = tool_calls;
                     if finish_reason.as_deref() == Some("length") && !calls.is_empty() {
                         cb.notice("The answer was cut off before the action was complete.");
@@ -1337,6 +1407,37 @@ impl Agent {
     }
 }
 
+/// The answer as a call, when every round must call one: also the final
+/// answer after tools ran.
+fn final_reply_schema() -> Value {
+    json!({"type": "function", "function": {"name": REPLY,
+        "description": "Answer the user in words: the final answer once the tools you needed have run \
+(say what they did or found), or small talk and general knowledge. Never say something was done unless a tool \
+did it this turn.",
+        "parameters": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}}})
+}
+
+fn ask_user_schema() -> Value {
+    json!({"type": "function", "function": {"name": ASK_USER,
+        "description": "Ask the user a short question when you can't tell which one they mean.",
+        "parameters": {"type": "object", "properties": {"question": {"type": "string"}}, "required": ["question"]}}})
+}
+
+/// One model request: what it was sent, what came back, how long it took.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct RoundStat {
+    pub model: String,
+    pub round: usize,
+    pub tools: usize,
+    pub required: bool,
+    #[serde(flatten)]
+    pub usage: crate::flm::Usage,
+    /// Time to the first streamed token (≈ prompt reading), and to the end.
+    pub first_ms: u64,
+    pub total_ms: u64,
+    pub calls: Vec<String>,
+}
+
 fn reply_schema() -> Value {
     json!({"type": "function", "function": {"name": REPLY,
         "description": "Answer the user in words: small talk and general knowledge only. Never for \
@@ -1359,8 +1460,8 @@ pub fn one_shot(
     let opts = ChatOptions {
         temperature: Some(TOOL_TEMPERATURE),
         max_tokens: Some(MAX_REPLY_TOKENS),
-        tool_choice: None,
         think: Some(false),
+        ..Default::default()
     };
     let mut text = String::new();
     for ev in client.chat_stream(model, &messages, None, &opts)? {
@@ -1560,6 +1661,43 @@ mod tests {
         a.reply_tool = false; // most tests script plain replies; reply_is_a_tool_on_the_first_round turns it on
         a.machine = Some("About this computer: test".into());
         a
+    }
+
+    #[test]
+    fn required_rounds_end_with_a_reply_call_and_keep_the_tool_list() {
+        let _h = temp_home();
+        let flm = FakeFlm::start(vec![
+            (200, tool_reply("set_volume", r#"{"percent": 30}"#, "c1")),
+            (200, tool_reply(REPLY, r#"{"text": "Volume 30%."}"#, "c2")),
+        ]);
+        let mut a = agent(&flm);
+        a.required_rounds = true;
+        let rec = Rec::default();
+        a.ask("volume 30", &rec, &[]).unwrap();
+        let r = flm.requests();
+        assert_eq!(r.len(), 2);
+        for req in &r {
+            assert_eq!(req["tool_choice"], "required");
+            assert_eq!(req["parallel_tool_calls"], false);
+            assert_eq!(req["stream_options"]["include_usage"], true);
+            let names: Vec<&str> = req["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|t| t["function"]["name"].as_str().unwrap())
+                .collect();
+            assert!(
+                names.contains(&REPLY) && names.contains(&ASK_USER),
+                "{names:?}"
+            );
+        }
+        assert_eq!(r[0]["tools"], r[1]["tools"], "the same tools every round");
+        assert_eq!(a.messages.last().unwrap()["content"], "Volume 30%.");
+        assert_eq!(a.stats.len(), 2);
+        assert_eq!(a.stats[0].calls, ["set_volume"]);
+        assert!(a.stats.iter().all(|s| s.required));
+        let log = std::fs::read_to_string(crate::paths::state_dir().join("rounds.jsonl")).unwrap();
+        assert_eq!(log.lines().count(), 2);
     }
 
     #[test]
