@@ -18,6 +18,23 @@ impl<T: Into<String>> From<T> for ToolError {
     }
 }
 
+/// Marks an error that retrying can't fix (a missing service, nothing running).
+pub const CANNOT: &str = "[cannot] ";
+
+impl ToolError {
+    /// An error no other call can work around: the turn ends with it.
+    pub fn cannot(msg: impl Into<String>) -> Self {
+        ToolError(format!("{CANNOT}{}", msg.into()))
+    }
+    pub fn is_final(&self) -> bool {
+        self.0.starts_with(CANNOT)
+    }
+    /// The message without the marker.
+    pub fn text(&self) -> &str {
+        self.0.strip_prefix(CANNOT).unwrap_or(&self.0)
+    }
+}
+
 impl std::fmt::Display for ToolError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)

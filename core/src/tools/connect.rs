@@ -136,7 +136,7 @@ type RawObjects = HashMap<glib::variant::ObjectPath, HashMap<String, Props>>;
 fn bluez_objects() -> Result<Objects, ToolError> {
     let reply = dbus_call(true, "org.bluez", "/", "org.freedesktop.DBus.ObjectManager", "GetManagedObjects", None,
                           Some(glib::VariantTy::new("(a{oa{sa{sv}}})").unwrap()), 5000)
-        .map_err(|_| ToolError("Bluetooth isn't available (BlueZ isn't running)".into()))?;
+        .map_err(|_| ToolError::cannot("Bluetooth isn't available (BlueZ isn't running)"))?;
     let (objects,): (RawObjects,) =
         reply.get().ok_or("unexpected answer from BlueZ")?;
     Ok(objects.into_iter().map(|(k, v)| (k.as_str().to_string(), v)).collect())
@@ -370,7 +370,7 @@ fn players() -> Result<Vec<MediaPlayer>, ToolError> {
 
 pub fn choose_player(players: &[MediaPlayer], name: &str) -> Result<MediaPlayer, ToolError> {
     if players.is_empty() {
-        return Err("no media player is running".into());
+        return Err(ToolError::cannot("no music or video player is running. Open one first (\"open Spotify\"), or ask to play a song from your library"));
     }
     if !name.trim().is_empty() {
         let names: Vec<String> = players.iter().map(|p| p.name.clone()).collect();

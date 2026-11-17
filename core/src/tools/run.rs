@@ -16,7 +16,7 @@ pub struct Output {
 /// Run a program; Err if it's missing or takes longer than `timeout`.
 pub fn output(cmd: &[&str], timeout: Duration, cwd: Option<&std::path::Path>) -> Result<Output, ToolError> {
     if which(cmd[0]).is_none() && !cmd[0].starts_with('/') {
-        return Err(format!("{} is not installed", cmd[0]).into());
+        return Err(ToolError::cannot(format!("{} is not installed", cmd[0])));
     }
     let mut c = Command::new(cmd[0]);
     c.args(&cmd[1..]).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());

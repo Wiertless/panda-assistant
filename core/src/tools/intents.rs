@@ -339,7 +339,7 @@ pub fn open_terminal(_: &Context, args: &Args) -> ToolResult {
             return Ok(format!("Opened a terminal in {}.", short(&dir)));
         }
     }
-    Err("no terminal app found".into())
+    Err(ToolError::cannot("no terminal app found"))
 }
 
 #[cfg(test)]

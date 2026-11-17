@@ -25,6 +25,8 @@ pub const ASK_USER: &str = "ask_user";
 /// required mode): the first round must call one, so talking instead of
 /// acting is a choice among tools, not the easy way out.
 pub const REPLY: &str = "reply";
+/// The start of a tool result that no retry can fix (see ToolError::cannot).
+pub const FINAL_ERROR: &str = "Error (retrying won't help): ";
 const ANSWER_NOW: &str = "(Now answer the user from these results, in a sentence or two.)";
 const REPEATED: &str = "Error: you already tried exactly this and it failed. Don't repeat it: change the arguments, \
 look the options up with another tool, or tell the user what's wrong.";
@@ -653,11 +655,25 @@ impl Agent {
                     turn.done.push(call.name.clone());
                 }
                 turn.tools_ran += 1;
-                if result.starts_with("Error") {
+                if result.starts_with("Error") && !result.starts_with(FINAL_ERROR) {
                     turn.failed.push(key);
                     turn.errors.push(result.lines().next().unwrap_or("").to_string());
                 }
                 self.messages.push(json!({"role": "tool", "tool_call_id": call.id, "content": result}));
+            }
+            // Everything this round failed for a reason no retry fixes (nothing playing, a
+            // service missing): say so now, without another round of the model.
+            let results: Vec<&str> = self.messages.iter().rev().take_while(|m| m["role"] == "tool")
+                .filter_map(|m| m["content"].as_str()).collect();
+            if !results.is_empty() && results.iter().all(|r| r.starts_with(FINAL_ERROR)) {
+                let reasons: Vec<&str> = results.iter().rev().map(|r| r.trim_start_matches(FINAL_ERROR)).collect();
+                let mut answer = format!("I couldn't do that: {}.", reasons.join("; ").trim_end_matches('.'));
+                if let Some(first) = answer.get_mut(..1) {
+                    first.make_ascii_uppercase();
+                }
+                cb.text(&answer);
+                self.messages.push(json!({"role": "assistant", "content": answer}));
+                return Ok(());
             }
             if turn.errors.len() >= FAILURES_BEFORE_HANDOFF && self.auto_escalate && self.can_escalate() {
                 return self.take_over(text, turn_start, &turn.errors, cb);
@@ -868,6 +884,10 @@ impl Agent {
                     Some(hint) if !result.starts_with("No ") => format!("{result}\n{hint}"),
                     _ => result,
                 }
+            }
+            Ok(Err(e)) if e.is_final() => {
+                cb.tool_finished(&call.name, e.text(), false);
+                format!("{FINAL_ERROR}{}", e.text())
             }
             Ok(Err(e)) => {
                 cb.tool_finished(&call.name, &e.0, false);
@@ -1345,6 +1365,22 @@ mod tests {
         assert!(r[2].get("think").is_none(), "and not sent again");
         assert_eq!(a.messages.last().unwrap()["content"], "Volume 20%.");
         assert!(!a.client.supports("think") && !a.client.supports("tool_choice"));
+    }
+
+    #[test]
+    fn an_error_no_retry_fixes_ends_the_turn_at_once() {
+        let _h = temp_home();
+        let flm = FakeFlm::start(vec![(200, tool_reply("media", r#"{"action": "next_track"}"#, "c1"))]);
+        let mut tools = test_tools()();
+        tools.push(Tool::new("media", "Media", obj(json!({"action": {"type": "string"}}), &[]), Risk::Safe,
+                             |_, _| Err(ToolError::cannot("no music or video player is running")), |_| "Media".into()));
+        let mut a = Agent::new(Arc::new(FlmClient::new(&flm.url)), "test-model", Arc::new(move || tools.clone()));
+        a.reply_tool = false;
+        let rec = Rec::default();
+        a.ask("skip this song", &rec, &[]).unwrap();
+        assert_eq!(flm.requests().len(), 1, "no second round to retry or apologise");
+        assert_eq!(a.messages.last().unwrap()["content"], "I couldn't do that: no music or video player is running.");
+        assert!(rec.log.lock().unwrap().contains(&"tool:media:false:no music or video player is running".to_string()));
     }
 
     #[test]

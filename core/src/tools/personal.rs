@@ -239,7 +239,7 @@ fn address_books(bus: &gio::DBusConnection) -> Result<Vec<String>, ToolError> {
     let reply = bus.call_sync(Some("org.gnome.evolution.dataserver.Sources5"), "/org/gnome/evolution/dataserver/SourceManager",
         "org.freedesktop.DBus.ObjectManager", "GetManagedObjects", None, Some(glib::VariantTy::new("(a{oa{sa{sv}}})").unwrap()),
         gio::DBusCallFlags::NONE, 10000, None::<&gio::Cancellable>)
-        .map_err(|_| ToolError("contacts need Evolution Data Server, which isn't running".into()))?;
+        .map_err(|_| ToolError::cannot("contacts need Evolution Data Server, which isn't running"))?;
     let (objects,): (Objects,) = reply.get().unwrap_or_default();
     Ok(objects.values().filter_map(|ifaces| {
         let src = ifaces.get("org.gnome.evolution.dataserver.Source")?;
@@ -349,7 +349,7 @@ fn calendars(bus: &gio::DBusConnection) -> Result<Vec<(String, String)>, ToolErr
     let reply = bus.call_sync(Some(SOURCES_BUS), "/org/gnome/evolution/dataserver/SourceManager",
         "org.freedesktop.DBus.ObjectManager", "GetManagedObjects", None, Some(glib::VariantTy::new("(a{oa{sa{sv}}})").unwrap()),
         gio::DBusCallFlags::NONE, 10000, None::<&gio::Cancellable>)
-        .map_err(|_| ToolError("the calendar needs Evolution Data Server, which isn't running".into()))?;
+        .map_err(|_| ToolError::cannot("the calendar needs Evolution Data Server, which isn't running"))?;
     let (objects,): (Objects,) = reply.get().unwrap_or_default();
     let mut cals: Vec<(String, String)> = objects.values().filter_map(|ifaces| {
         let src = ifaces.get("org.gnome.evolution.dataserver.Source")?;

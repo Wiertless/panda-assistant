@@ -59,7 +59,7 @@ pub fn take_screenshot() -> Result<PathBuf, ToolError> {
             None, gio::DBusCallFlags::NONE, 10000, None::<&gio::Cancellable>);
         if let Err(e) = call {
             bus.signal_unsubscribe(sub);
-            return Err(ToolError(format!("the screenshot portal isn't available: {}", e.message())));
+            return Err(ToolError::cannot(format!("the screenshot portal isn't available: {}", e.message())));
         }
         let l = main_loop.clone();
         let timeout = glib::timeout_source_new(Duration::from_secs(60), None, glib::Priority::DEFAULT, move || {
@@ -127,7 +127,7 @@ const MAX_OUTPUT: usize = 3000;
 
 fn toolbox_ready() -> Result<(), ToolError> {
     if crate::flm::which("toolbox").is_none() {
-        return Err("toolbox isn't installed".into());
+        return Err(ToolError::cannot("toolbox isn't installed"));
     }
     if output(&["podman", "container", "exists", TOOLBOX], Duration::from_secs(30), None).is_ok_and(|o| o.code == 0) {
         return Ok(());

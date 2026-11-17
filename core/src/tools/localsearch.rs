@@ -89,7 +89,7 @@ pub fn sparql() -> Result<&'static Sparql, ToolError> {
                 _lib: lib,
             })
         }
-    }).as_ref().ok_or_else(|| ToolError("GNOME's file index (LocalSearch) isn't installed".into()))
+    }).as_ref().ok_or_else(|| ToolError::cannot("GNOME's file index (LocalSearch) isn't installed"))
 }
 
 /// A connection to the indexer (or, in tests, any connection).
@@ -153,7 +153,7 @@ impl Sparql {
                 return Ok(conn);
             }
         }
-        Err("GNOME's file index (LocalSearch) isn't running".into())
+        Err(ToolError::cannot("GNOME's file index (LocalSearch) isn't running"))
     }
 }
 

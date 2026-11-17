@@ -104,7 +104,7 @@ fn backlight() -> Result<(String, u32, u32), ToolError> {
             return Ok((d.file_name().unwrap().to_string_lossy().into(), cur, top));
         }
     }
-    Err("no screen backlight found".into())
+    Err(ToolError::cannot("no screen backlight found"))
 }
 
 fn set_backlight(dev: &str, value: u32) -> Result<(), ToolError> {
@@ -315,7 +315,7 @@ pub fn open_settings(_: &Context, args: &Args) -> ToolResult {
         return Err(format!("unknown Settings page; one of: {}", SETTINGS_PANELS.join(", ")).into());
     }
     if crate::flm::which("gnome-control-center").is_none() {
-        return Err("GNOME Settings isn't installed".into());
+        return Err(ToolError::cannot("GNOME Settings isn't installed"));
     }
     super::spawn_detached(&["gnome-control-center", &panel])?;
     Ok(format!("Opened Settings at {panel}."))
@@ -340,7 +340,7 @@ names, numbers and formatting. Output only the rewritten text, nothing before or
 pub fn selected_text() -> Result<String, ToolError> {
     let reply = super::run::dbus_call(false, "org.gnome.Shell", CLIP_PATH, CLIP_IFACE, "Selection", None,
                                       Some(glib::VariantTy::new("(s)").unwrap()), 3000)
-        .map_err(|_| ToolError("reading the selection needs the Assistant Clipboard extension (Extensions app)".into()))?;
+        .map_err(|_| ToolError::cannot("reading the selection needs the Assistant Clipboard extension (turn it on in the Extensions app)"))?;
     Ok(reply.child_value(0).get::<String>().unwrap_or_default())
 }
 
@@ -396,7 +396,7 @@ fn short_clip(c: &str) -> String {
 pub fn clipboard_history(_: &Context, args: &Args) -> ToolResult {
     let reply = super::run::dbus_call(false, "org.gnome.Shell", CLIP_PATH, CLIP_IFACE, "History", None,
                                       Some(glib::VariantTy::new("(as)").unwrap()), 3000)
-        .map_err(|_| ToolError("clipboard history is off: turn on the Assistant Clipboard extension in the Extensions app".into()))?;
+        .map_err(|_| ToolError::cannot("clipboard history is off: turn on the Assistant Clipboard extension in the Extensions app"))?;
     let clips: Vec<String> = reply.child_value(0).get().unwrap_or_default();
     Ok(format_clips(&clips, &arg_str(args, "query")))
 }
