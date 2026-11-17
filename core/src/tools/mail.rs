@@ -615,6 +615,8 @@ mod tests {
         let head =
             "Content-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n";
         let b64 = base64::engine::general_purpose::STANDARD.encode("Spotkanie w piątek o 13.");
-        assert!(body_text(head, b64[..b64.len() - 2].as_bytes()).starts_with("Spotkanie w piątek"));
+        assert!(
+            body_text(head, &b64.as_bytes()[..b64.len() - 2]).starts_with("Spotkanie w piątek")
+        );
     }
 }
