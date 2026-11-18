@@ -51,6 +51,8 @@ Released so far: Assistant **0.23.0** (pinned in silverpanda). `main` has more o
 ## Eval state (2026-11-18 evening)
 
 - 160 families (345 prompts), `eval_verdict.py` heads every summary (sign test per family). `--shard K/N`, workflow input `shards` = 3, 4 or 6.
+- **Routing verdict (run 44372794027, repeat 3):** `examples` +0.5 points (95% range −1.3 to +2.3) — no real difference; keep baseline routing, `examples` stays only as a variant.
+- **Cue-words eval running: 44403890158** (repeat 3, 6 shards): `baseline` = new descriptions with Polish cues, `pre-cues` = old ones. pre-cues WORSE → keep the cues and release 0.30.0; no difference → revert them.
 - Run over 160: `examples` +1.9 points vs baseline, UNDECIDED (p 0.24), same direction as the 48-family run. **Decisive run 44372794027** (repeat 3, 6 shards, made before the description fixes below): if BETTER, make `route_by_examples` the default and release 0.30.0.
 - No-tool fixes in progress: Polish cue words in set_volume/set_brightness/media_control/open_file descriptions, media keywords ("leci", "playing", "utwór"), eval failures now include the reply. Local NPU check: "ścisz trochę" and "a bit quieter" pass, "ciszej proszę" now calls set_volume (value still off). Next: rerun these families locally (`assistantd --eval --url http://127.0.0.1:8002 --model gemma4-it:e2b --only NAME`, ~4 s/prompt on the NPU), then a CI eval of baseline before/after.
 
