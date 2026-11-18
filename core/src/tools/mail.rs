@@ -269,7 +269,7 @@ fn parse_fetch(items: &[Item]) -> Vec<Mail> {
             head = String::from_utf8_lossy(lit).into_owned();
             m.from = decode_words(&header(&head, "from"));
             m.subject = decode_words(&header(&head, "subject"));
-            m.date = header(&head, "date");
+            m.date = mail_date(&header(&head, "date"), &glib::TimeZone::local());
         } else if line.contains("BODY[TEXT]") {
             m.text = body_text(&head, lit);
         }
@@ -466,6 +466,38 @@ fn fetch(imap: &mut Imap, uids: &[u32], bytes: usize) -> Result<Vec<Mail>, ToolE
     Ok(parse_fetch(&items))
 }
 
+/// "Tue, 17 Nov 2026 07:48:16 -0000" as "Tuesday 2026-11-17 08:48" in `tz`, the
+/// same shape as the prompt's date line: small models misread raw RFC 2822 dates.
+fn mail_date(raw: &str, tz: &glib::TimeZone) -> String {
+    static DATE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(\d{1,2}) ([A-Za-z]{3}) (\d{4}) (\d{1,2}):(\d{2})(?::(\d{2}))? ?([+-]\d{4}|UT|UTC|GMT)?").unwrap()
+    });
+    const MONTHS: [&str; 12] = [
+        "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+    ];
+    let parsed = DATE.captures(raw).and_then(|c| {
+        let n = |i: usize| {
+            c.get(i)
+                .and_then(|m| m.as_str().parse::<i32>().ok())
+                .unwrap_or(0)
+        };
+        let month = MONTHS.iter().position(|m| c[2].eq_ignore_ascii_case(m))? as i32 + 1;
+        let zone = match c.get(7).map(|m| m.as_str()) {
+            Some(z) if z.starts_with(['+', '-']) => {
+                glib::TimeZone::new(Some(&format!("{}:{}", &z[..3], &z[3..])))
+            }
+            _ => glib::TimeZone::utc(),
+        };
+        let t = glib::DateTime::new(&zone, n(3), month, n(1), n(4), n(5), n(6) as f64).ok()?;
+        t.to_timezone(tz)
+            .ok()?
+            .format("%A %Y-%m-%d %H:%M")
+            .ok()
+            .map(|s| s.to_string())
+    });
+    parsed.unwrap_or_else(|| raw.to_string())
+}
+
 fn one_line(s: &str, max: usize) -> String {
     let flat = s.split_whitespace().collect::<Vec<_>>().join(" ");
     if flat.chars().count() > max {
@@ -619,6 +651,24 @@ mod tests {
         assert_eq!(m.from, "Ola Kowalska <ola@x.pl>");
         assert_eq!(m.subject, "Umowa najmu łódź");
         assert_eq!(m.text.trim(), "Czynsz 3 200 zł,\r\n do piątku.");
+    }
+
+    #[test]
+    fn dates_read_like_the_prompt() {
+        let warsaw = glib::TimeZone::new(Some("+01:00"));
+        assert_eq!(
+            mail_date("Tue, 17 Nov 2026 07:48:16 -0000", &warsaw),
+            "Tuesday 2026-11-17 08:48"
+        );
+        assert_eq!(
+            mail_date("Mon, 16 Nov 2026 23:30:00 +0000", &warsaw),
+            "Tuesday 2026-11-17 00:30"
+        );
+        assert_eq!(
+            mail_date("16 Nov 2026 10:00 +0100", &warsaw),
+            "Monday 2026-11-16 10:00"
+        );
+        assert_eq!(mail_date("not a date", &warsaw), "not a date");
     }
 
     #[test]
