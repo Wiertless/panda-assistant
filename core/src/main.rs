@@ -11,6 +11,15 @@ fn main() {
     {
         return;
     }
+    // For writing eval scenarios: every tool's schema as the model sees it.
+    if args.iter().any(|a| a == "--schemas") {
+        let all: Vec<_> = assistant_core::tools::all()
+            .iter()
+            .map(|t| t.schema())
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&all).unwrap_or_default());
+        return;
+    }
     // For testing: `assistantd --tool NAME '{"arg": "value"}'` runs one tool and prints its result.
     if let Some(i) = args.iter().position(|a| a == "--tool") {
         let name = args.get(i + 1).cloned().unwrap_or_default();

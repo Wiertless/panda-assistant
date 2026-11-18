@@ -13,6 +13,30 @@ from collections import defaultdict
 ALPHA = 0.05
 
 
+def merge(reports):
+    """Reports of one model and variant from parallel shards, as one."""
+    out = {}
+    for r in reports:
+        key = (r["model"], r.get("variant", "baseline"))
+        if key not in out:
+            out[key] = {**r, "scenarios": list(r["scenarios"]), "capabilities": dict(r.get("capabilities", {}))}
+            continue
+        m = out[key]
+        n_m, n_r = len(m["scenarios"]), len(r["scenarios"])
+        for k in ("model_calls", "prompt_tokens", "cached_share"):
+            if k in m and k in r:
+                m[k] = (m[k] * n_m + r[k] * n_r) / max(n_m + n_r, 1)
+        for k in ("passed", "total", "seconds", "clusters", "clusters_passed", "unrouted"):
+            if k in m and k in r:
+                m[k] += r[k]
+        m["partial"] = m.get("partial", False) or r.get("partial", False)
+        m["scenarios"] += r["scenarios"]
+        for c, v in r.get("capabilities", {}).items():
+            have = m["capabilities"].get(c, {"passed": 0, "total": 0})
+            m["capabilities"][c] = {"passed": have["passed"] + v["passed"], "total": have["total"] + v["total"]}
+    return list(out.values())
+
+
 def family(name):
     return name.split(" ~")[0]
 
@@ -90,7 +114,7 @@ def compare(base, other):
 
 
 def main(paths):
-    reports = [json.load(open(p)) for p in paths]
+    reports = merge([json.load(open(p)) for p in paths])
     by_model = defaultdict(list)
     for r in reports:
         by_model[r["model"]].append(r)
@@ -118,6 +142,10 @@ if __name__ == "__main__":
         base, other = mk([False] * 15 + [True] * 25), mk([True] * 40)
         assert "BETTER" in compare(base, other), compare(base, other)
         assert "UNDECIDED" in compare(base, mk([True] + [False] * 14 + [True] * 25))
+        shard = lambda i, ok: {"model": "m", "variant": "v", "passed": int(ok), "total": 1, "seconds": 2.0,
+                               "scenarios": [{"name": f"s{i}", "passed": ok, "runs": 1, "seconds": 2.0}]}
+        both = merge([shard(0, True), shard(1, False)])
+        assert len(both) == 1 and both[0]["passed"] == 1 and both[0]["total"] == 2 and len(both[0]["scenarios"]) == 2
         print("ok")
     else:
         main(sys.argv[1:])

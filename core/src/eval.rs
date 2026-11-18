@@ -202,6 +202,11 @@ fn stub_result(stub: Option<&Stub>, args: &Args) -> Result<String, ToolError> {
     }
 }
 
+/// A scenario's family: its prompt and paraphrases ("name ~2") share one.
+fn family(name: &str) -> &str {
+    name.split(" ~").next().unwrap_or(name)
+}
+
 /// Did the run do what the scenario asks?
 pub fn judge(s: &Scenario, calls: &[(String, Args)], answer: &str) -> Result<(), String> {
     if s.no_tools && !calls.is_empty() {
@@ -464,7 +469,7 @@ fn partial_report(model: &str, variant: &str, repeat: usize, rows: &[Row]) -> St
     serde_json::to_string_pretty(&report).unwrap_or_default()
 }
 
-/// `assistantd --eval [--url URL] [--embed-url URL] [--model M] [--variant NAME] [--repeat N] [--scenarios FILE] [--only NAME] [--sees] [--json FILE]`
+/// `assistantd --eval [--url URL] [--embed-url URL] [--model M] [--variant NAME] [--repeat N] [--scenarios FILE] [--only NAME] [--shard K/N] [--sees] [--json FILE]`
 pub fn main(args: &[String]) -> i32 {
     let opt = |k: &str| {
         args.iter()
@@ -489,6 +494,28 @@ pub fn main(args: &[String]) -> i32 {
     };
     if let Some(only) = opt("--only") {
         scenarios.retain(|s| s.name.contains(&only) || s.tags.contains(&only));
+    }
+    // `--shard K/N`: every Nth family from the Kth, so parallel jobs split the work.
+    if let Some((k, n)) = opt("--shard").and_then(|s| {
+        let (k, n) = s.split_once('/')?;
+        Some((k.parse::<usize>().ok()?, n.parse::<usize>().ok()?.max(1)))
+    }) {
+        let families: Vec<String> =
+            scenarios
+                .iter()
+                .map(|s| family(&s.name).to_string())
+                .fold(vec![], |mut v, f| {
+                    if !v.contains(&f) {
+                        v.push(f);
+                    }
+                    v
+                });
+        scenarios.retain(|s| {
+            families
+                .iter()
+                .position(|f| f == family(&s.name))
+                .is_some_and(|i| i % n == k)
+        });
     }
     if args.iter().any(|a| a == "--no-paraphrases") {
         scenarios.retain(|s| !s.name.contains(" ~"));

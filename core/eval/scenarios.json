@@ -1297,5 +1297,2312 @@
   "paraphrases": [
    "kiedy mam lot do Lizbony?"
   ]
+ },
+ {
+  "name": "night light",
+  "prompt": "turn on the night light",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "set_night_light",
+    "args": {
+     "enabled": "true"
+    }
+   }
+  ],
+  "paraphrases": [
+   "włącz światło nocne"
+  ]
+ },
+ {
+  "name": "dnd on",
+  "prompt": "turn on do not disturb",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "set_do_not_disturb",
+    "args": {
+     "enabled": "true"
+    }
+   }
+  ],
+  "paraphrases": [
+   "włącz tryb nie przeszkadzać"
+  ]
+ },
+ {
+  "name": "dnd off",
+  "prompt": "I'm back, show my notifications again",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "set_do_not_disturb",
+    "args": {
+     "enabled": "false"
+    }
+   }
+  ],
+  "paraphrases": [
+   "wyłącz nie przeszkadzać"
+  ]
+ },
+ {
+  "name": "brightness",
+  "prompt": "set the screen brightness to 40%",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "set_brightness",
+    "args": {
+     "percent": "40"
+    }
+   }
+  ],
+  "paraphrases": [
+   "jasność ekranu na 40"
+  ]
+ },
+ {
+  "name": "dimmer",
+  "prompt": "the screen is too bright",
+  "tags": [
+   "chain"
+  ],
+  "expect": [
+   {
+    "tool": "set_brightness",
+    "args": {
+     "percent": "10|20|25|30|40|50|60|65|70|75"
+    }
+   }
+  ],
+  "paraphrases": [
+   "przyciemnij trochę ekran"
+  ],
+  "stubs": {
+   "get_status": "Volume 70%, not muted. Brightness 80%. Dark mode on. Wi-Fi: Home 5G. Model: gemma4-it:e2b on the NPU (FastFlowLM)."
+  }
+ },
+ {
+  "name": "mute",
+  "prompt": "mute the sound completely",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "set_mute",
+    "args": {
+     "muted": "true"
+    }
+   }
+  ],
+  "paraphrases": [
+   "wycisz dźwięk"
+  ]
+ },
+ {
+  "name": "unmute",
+  "prompt": "unmute please",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "set_mute",
+    "args": {
+     "muted": "false"
+    }
+   }
+  ],
+  "paraphrases": [
+   "włącz z powrotem dźwięk"
+  ]
+ },
+ {
+  "name": "volume max",
+  "prompt": "volume all the way up",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "set_volume",
+    "args": {
+     "percent": "100"
+    }
+   }
+  ],
+  "paraphrases": [
+   "głośność na maksa"
+  ]
+ },
+ {
+  "name": "power saver",
+  "prompt": "switch to power saver mode",
+  "tags": [
+   "enum"
+  ],
+  "expect": [
+   {
+    "tool": "set_power_mode",
+    "args": {
+     "mode": "power-saver"
+    }
+   }
+  ],
+  "paraphrases": [
+   "włącz oszczędzanie energii"
+  ]
+ },
+ {
+  "name": "performance mode",
+  "prompt": "I need full performance, I'm about to play a game",
+  "tags": [
+   "enum"
+  ],
+  "expect": [
+   {
+    "tool": "set_power_mode",
+    "args": {
+     "mode": "performance"
+    }
+   }
+  ],
+  "paraphrases": [
+   "tryb wydajności proszę"
+  ]
+ },
+ {
+  "name": "light mode",
+  "prompt": "go back to the light theme",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "set_dark_mode",
+    "args": {
+     "enabled": "false"
+    }
+   }
+  ],
+  "paraphrases": [
+   "wyłącz tryb ciemny"
+  ]
+ },
+ {
+  "name": "wifi off",
+  "prompt": "turn off wifi",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "set_wifi",
+    "args": {
+     "enabled": "false"
+    }
+   }
+  ],
+  "paraphrases": [
+   "wyłącz wifi"
+  ],
+  "forbid": [
+   "disconnect_network"
+  ]
+ },
+ {
+  "name": "bluetooth on",
+  "prompt": "turn on bluetooth",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "set_bluetooth",
+    "args": {
+     "enabled": "true"
+    }
+   }
+  ],
+  "paraphrases": [
+   "włącz bluetootha"
+  ]
+ },
+ {
+  "name": "radios off",
+  "prompt": "turn off wifi and bluetooth",
+  "tags": [
+   "chain"
+  ],
+  "expect": [
+   {
+    "tool": "set_wifi",
+    "args": {
+     "enabled": "false"
+    }
+   },
+   {
+    "tool": "set_bluetooth",
+    "args": {
+     "enabled": "false"
+    }
+   }
+  ],
+  "paraphrases": [
+   "wyłącz wifi i bluetooth"
+  ],
+  "unordered": true
+ },
+ {
+  "name": "leave network",
+  "prompt": "disconnect from Biuro-Gosc",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "disconnect_network",
+    "args": {
+     "name": "biuro"
+    }
+   }
+  ],
+  "paraphrases": [
+   "rozłącz się z siecią Biuro-Gosc"
+  ]
+ },
+ {
+  "name": "hotspot",
+  "prompt": "connect to my phone's hotspot",
+  "tags": [
+   "resolve"
+  ],
+  "expect": [
+   {
+    "tool": "connect_network",
+    "args": {
+     "name": "hotspot"
+    }
+   }
+  ],
+  "paraphrases": [
+   "połącz z hotspotem z telefonu"
+  ]
+ },
+ {
+  "name": "home wifi (pl)",
+  "prompt": "połącz z domowym wifi",
+  "tags": [
+   "resolve"
+  ],
+  "expect": [
+   {
+    "tool": "connect_network",
+    "args": {
+     "name": "home"
+    }
+   }
+  ],
+  "paraphrases": [
+   "get me on the home network"
+  ]
+ },
+ {
+  "name": "list networks",
+  "prompt": "what wifi networks can you see?",
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "expect": [
+   {
+    "tool": "list_networks"
+   }
+  ],
+  "paraphrases": [
+   "jakie sieci wifi są w pobliżu?"
+  ],
+  "answer": [
+   "netia"
+  ],
+  "stubs": {
+   "list_networks": "Home 5G (saved, 80%)\nBiuro-Gosc (saved, 40%)\nNetia-1234 (60%)"
+  }
+ },
+ {
+  "name": "sony headphones",
+  "prompt": "connect the Sony headphones",
+  "tags": [
+   "resolve"
+  ],
+  "expect": [
+   {
+    "tool": "connect_bluetooth",
+    "args": {
+     "device": "sony|wh-1000"
+    }
+   }
+  ],
+  "paraphrases": [
+   "połącz słuchawki Sony"
+  ]
+ },
+ {
+  "name": "airpods off",
+  "prompt": "disconnect my airpods",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "disconnect_bluetooth",
+    "args": {
+     "device": "airpods"
+    }
+   }
+  ],
+  "paraphrases": [
+   "rozłącz airpodsy"
+  ]
+ },
+ {
+  "name": "mouse",
+  "prompt": "connect the mouse",
+  "tags": [
+   "resolve"
+  ],
+  "expect": [
+   {
+    "tool": "connect_bluetooth",
+    "args": {
+     "device": "mx"
+    }
+   }
+  ],
+  "paraphrases": [
+   "podłącz myszkę"
+  ]
+ },
+ {
+  "name": "paired list",
+  "prompt": "which bluetooth gadgets are paired with this laptop?",
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "expect": [
+   {
+    "tool": "list_bluetooth"
+   }
+  ],
+  "paraphrases": [
+   "jakie urządzenia bluetooth mam sparowane?"
+  ],
+  "answer": [
+   "sony"
+  ],
+  "stubs": {
+   "list_bluetooth": "Jakub's AirPods Pro (paired)\nSony WH-1000XM5 (paired, connected)\nMX Master 3 (paired)"
+  }
+ },
+ {
+  "name": "sound settings",
+  "prompt": "open the sound settings",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "open_settings",
+    "args": {
+     "panel": "sound"
+    }
+   }
+  ],
+  "paraphrases": [
+   "otwórz ustawienia dźwięku"
+  ]
+ },
+ {
+  "name": "display settings",
+  "prompt": "open display settings",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "open_settings",
+    "args": {
+     "panel": "display"
+    }
+   }
+  ],
+  "paraphrases": [
+   "pokaż ustawienia ekranu"
+  ]
+ },
+ {
+  "name": "cursor size",
+  "prompt": "make the mouse pointer bigger",
+  "tags": [
+   "chain"
+  ],
+  "expect": [
+   {
+    "tool": "change_setting",
+    "args": {
+     "key": "cursor-size"
+    }
+   }
+  ],
+  "paraphrases": [
+   "powiększ kursor"
+  ],
+  "stubs": {
+   "find_settings": "org.gnome.desktop.interface cursor-size = 24 — Cursor size (int)",
+   "get_setting": "24"
+  }
+ },
+ {
+  "name": "battery percent",
+  "prompt": "show the battery percentage in the top bar",
+  "tags": [
+   "chain"
+  ],
+  "expect": [
+   {
+    "tool": "change_setting",
+    "args": {
+     "key": "show-battery-percentage",
+     "value": "true"
+    }
+   }
+  ],
+  "paraphrases": [
+   "pokaż procent baterii na pasku"
+  ],
+  "stubs": {
+   "find_settings": "org.gnome.desktop.interface show-battery-percentage = false — Show battery percentage (boolean)"
+  }
+ },
+ {
+  "name": "read a setting",
+  "prompt": "what's my double-click time set to?",
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "expect": [
+   {
+    "tool": "find_settings|get_setting"
+   }
+  ],
+  "paraphrases": [
+   "jaki mam czas podwójnego kliknięcia?"
+  ],
+  "answer": [
+   "400"
+  ],
+  "stubs": {
+   "find_settings": "org.gnome.desktop.peripherals.mouse double-click = 400 — Double click time (int)",
+   "get_setting": "400"
+  }
+ },
+ {
+  "name": "disk space",
+  "prompt": "how much free space is left on my disk?",
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "expect": [
+   {
+    "tool": "get_system_info"
+   }
+  ],
+  "paraphrases": [
+   "ile mam wolnego miejsca na dysku?"
+  ],
+  "answer": [
+   "182"
+  ],
+  "stubs": {
+   "get_system_info": "Disk: 182 GB free of 475 GB. Memory: 9.1 GB used of 15.3 GB. CPU: AMD Ryzen AI 5 340, 6 cores."
+  }
+ },
+ {
+  "name": "memory use",
+  "prompt": "how much RAM is being used?",
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "expect": [
+   {
+    "tool": "get_system_info"
+   }
+  ],
+  "paraphrases": [
+   "ile ramu jest zajęte?"
+  ],
+  "answer": [
+   "9.1|9,1"
+  ],
+  "stubs": {
+   "get_system_info": "Disk: 182 GB free of 475 GB. Memory: 9.1 GB used of 15.3 GB. CPU: AMD Ryzen AI 5 340, 6 cores."
+  }
+ },
+ {
+  "name": "what time",
+  "prompt": "what time is it?",
+  "tags": [
+   "answer"
+  ],
+  "paraphrases": [
+   "która godzina?"
+  ],
+  "answer": [
+   "10"
+  ],
+  "forbid": [
+   "web_search"
+  ]
+ },
+ {
+  "name": "what day",
+  "prompt": "what day of the week is it?",
+  "tags": [
+   "answer"
+  ],
+  "paraphrases": [
+   "jaki dziś dzień tygodnia?"
+  ],
+  "answer": [
+   "sunday|niedziel"
+  ],
+  "forbid": [
+   "web_search"
+  ]
+ },
+ {
+  "name": "charging",
+  "prompt": "is the laptop charging?",
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "expect": [
+   {
+    "tool": "get_battery"
+   }
+  ],
+  "paraphrases": [
+   "czy laptop się ładuje?"
+  ],
+  "answer": [
+   "charg|ładuj"
+  ],
+  "stubs": {
+   "get_battery": "62%, charging, full in 1 h 10 min"
+  }
+ },
+ {
+  "name": "which model",
+  "prompt": "which AI model are you running on?",
+  "tags": [
+   "answer"
+  ],
+  "paraphrases": [
+   "na jakim modelu działasz?"
+  ],
+  "answer": [
+   "gemma"
+  ],
+  "stubs": {
+   "get_status": "Volume 70%, not muted. Brightness 80%. Dark mode on. Wi-Fi: Home 5G. Model: gemma4-it:e2b on the NPU (FastFlowLM)."
+  },
+  "forbid": [
+   "web_search"
+  ]
+ },
+ {
+  "name": "calculator",
+  "prompt": "otwórz kalkulator",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "open_app",
+    "args": {
+     "name": "calcul|kalkul"
+    }
+   }
+  ],
+  "paraphrases": [
+   "launch the calculator app"
+  ]
+ },
+ {
+  "name": "file manager",
+  "prompt": "open the file manager",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "open_app|list_folder|open_file|show_in_files"
+   }
+  ],
+  "paraphrases": [
+   "otwórz menedżer plików"
+  ]
+ },
+ {
+  "name": "open site",
+  "prompt": "open github.com",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "open_url",
+    "args": {
+     "url": "github"
+    }
+   }
+  ],
+  "paraphrases": [
+   "wejdź na github.com"
+  ]
+ },
+ {
+  "name": "drawing app",
+  "prompt": "do I have any app for drawing?",
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "expect": [
+   {
+    "tool": "search_apps"
+   }
+  ],
+  "paraphrases": [
+   "mam jakiś program do rysowania?"
+  ],
+  "answer": [
+   "krita|inkscape"
+  ],
+  "stubs": {
+   "search_apps": "Krita (org.kde.krita) — digital painting\nInkscape (org.inkscape.Inkscape) — vector graphics"
+  }
+ },
+ {
+  "name": "private window",
+  "prompt": "open a new private window in firefox",
+  "tags": [
+   "chain"
+  ],
+  "expect": [
+   {
+    "tool": "run_app_action",
+    "args": {
+     "app": "firefox",
+     "action": "private"
+    }
+   }
+  ],
+  "paraphrases": [
+   "otwórz okno prywatne w firefoxie"
+  ],
+  "stubs": {
+   "list_app_actions": "firefox: new-window (New Window), new-private-window (New Private Window)"
+  }
+ },
+ {
+  "name": "plain terminal",
+  "prompt": "open a terminal",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "open_terminal"
+   }
+  ],
+  "paraphrases": [
+   "otwórz terminal"
+  ],
+  "forbid": [
+   "run_command"
+  ]
+ },
+ {
+  "name": "weather",
+  "prompt": "what's the weather in Toruń?",
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "expect": [
+   {
+    "tool": "get_weather",
+    "args": {
+     "place": "toru"
+    }
+   }
+  ],
+  "paraphrases": [
+   "jaka jest pogoda w Toruniu?"
+  ],
+  "answer": [
+   "6|rain|deszcz"
+  ],
+  "stubs": {
+   "get_weather": "Toruń, Polska: now 6°C (feels like 3°C), light rain, wind 15 km/h\nToday: 4…9°C, light rain, rain 90%\nTomorrow: 2…7°C, overcast, rain 30%\n2026-11-17: 1…5°C, snow, rain 60%"
+  },
+  "forbid": [
+   "web_search"
+  ]
+ },
+ {
+  "name": "umbrella",
+  "prompt": "do I need an umbrella in Kraków today?",
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "expect": [
+   {
+    "tool": "get_weather",
+    "args": {
+     "place": "krak"
+    }
+   }
+  ],
+  "paraphrases": [
+   "czy dziś w Krakowie potrzebuję parasola?"
+  ],
+  "answer": [
+   "yes|tak|rain|deszcz|umbrella|parasol"
+  ],
+  "stubs": {
+   "get_weather": "Kraków, Polska: now 6°C (feels like 3°C), light rain, wind 15 km/h\nToday: 4…9°C, light rain, rain 90%\nTomorrow: 2…7°C, overcast, rain 30%\n2026-11-17: 1…5°C, snow, rain 60%"
+  }
+ },
+ {
+  "name": "latest fedora",
+  "prompt": "what's the newest Fedora release?",
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "expect": [
+   {
+    "tool": "web_search",
+    "args": {
+     "query": "fedora"
+    }
+   }
+  ],
+  "paraphrases": [
+   "jaka jest najnowsza wersja Fedory?"
+  ],
+  "answer": [
+   "45"
+  ],
+  "stubs": {
+   "web_search": "1. Fedora 45 released - https://fedoramagazine.org/announcing-fedora-45\n   Fedora Linux 45 is now available."
+  }
+ },
+ {
+  "name": "exchange rate",
+  "prompt": "how much is 100 euro in złoty right now?",
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "expect": [
+   {
+    "tool": "web_search",
+    "args": {
+     "query": "eur|euro"
+    }
+   }
+  ],
+  "paraphrases": [
+   "ile to 100 euro w złotówkach?"
+  ],
+  "answer": [
+   "42"
+  ],
+  "stubs": {
+   "web_search": "1. EUR to PLN - https://example.com/eur-pln\n   1 EUR = 4.25 PLN (15 Nov 2026)."
+  }
+ },
+ {
+  "name": "read a page",
+  "prompt": "summarize https://example.com/npu-article",
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "expect": [
+   {
+    "tool": "read_web_page",
+    "args": {
+     "url": "example.com"
+    }
+   }
+  ],
+  "paraphrases": [
+   "streść tę stronę: https://example.com/npu-article"
+  ],
+  "answer": [
+   "npu|neural"
+  ],
+  "stubs": {
+   "read_web_page": "NPUs explained\nA neural processing unit runs AI models with little power. Laptops in 2026 ship NPUs of 50 TOPS."
+  }
+ },
+ {
+  "name": "research to pdf",
+  "prompt": "research the best e-bike under 5000 zł and save it as a PDF",
+  "tags": [
+   "single",
+   "near-tool"
+  ],
+  "expect": [
+   {
+    "tool": "research",
+    "args": {
+     "save_as": "pdf"
+    }
+   }
+  ],
+  "paraphrases": [
+   "zbadaj jaki rower elektryczny do 5000 zł i zapisz jako PDF"
+  ],
+  "stubs": {
+   "research": "Answer for the user (shown as written): The Kross Trans Hybrid is the best value [1].\n\nThe full report (1200 words, 9 sources) is in ~/Dokumenty/Research/best-e-bike.pdf."
+  }
+ },
+ {
+  "name": "find cv",
+  "prompt": "where's my CV?",
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "expect": [
+   {
+    "tool": "find_files",
+    "args": {
+     "name": "cv|resume|życiorys"
+    }
+   }
+  ],
+  "paraphrases": [
+   "gdzie jest moje CV?"
+  ],
+  "answer": [
+   "dokumenty|cv-jakub"
+  ],
+  "stubs": {
+   "find_files": "~/Dokumenty/CV-Jakub-2026.pdf (2026-10-02)"
+  }
+ },
+ {
+  "name": "downloads",
+  "prompt": "list what I've downloaded",
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "expect": [
+   {
+    "tool": "list_folder",
+    "args": {
+     "path": "download|pobran"
+    }
+   }
+  ],
+  "paraphrases": [
+   "co mam w pobranych?"
+  ],
+  "answer": [
+   "fedora|iso|photo"
+  ],
+  "stubs": {
+   "list_folder": "Fedora-Workstation-45.iso (2.3 GB)\nlease-2026.pdf\nphoto.jpg"
+  }
+ },
+ {
+  "name": "open lease",
+  "prompt": "open my lease",
+  "tags": [
+   "chain"
+  ],
+  "expect": [
+   {
+    "tool": "open_file",
+    "args": {
+     "path": "lease"
+    }
+   }
+  ],
+  "paraphrases": [
+   "otwórz moją umowę najmu"
+  ],
+  "stubs": {
+   "find_files": "~/Dokumenty/lease-2026.pdf (2026-09-01)"
+  }
+ },
+ {
+  "name": "show lease",
+  "prompt": "show me where my lease pdf is",
+  "tags": [
+   "chain"
+  ],
+  "expect": [
+   {
+    "tool": "show_in_files",
+    "args": {
+     "path": "lease"
+    }
+   }
+  ],
+  "paraphrases": [
+   "pokaż w plikach gdzie jest umowa najmu"
+  ],
+  "stubs": {
+   "find_files": "~/Dokumenty/lease-2026.pdf (2026-09-01)"
+  }
+ },
+ {
+  "name": "write note",
+  "prompt": "make a file todo.txt on the desktop that says: buy milk",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "write_file",
+    "args": {
+     "path": "todo",
+     "content": "milk|mleko"
+    }
+   }
+  ],
+  "paraphrases": [
+   "zapisz na pulpicie plik todo.txt z treścią: kupić mleko"
+  ]
+ },
+ {
+  "name": "make folder",
+  "prompt": "make a folder called Taxes in Documents",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "make_folder",
+    "args": {
+     "path": "taxes|podatki"
+    }
+   }
+  ],
+  "paraphrases": [
+   "utwórz folder Podatki w dokumentach"
+  ]
+ },
+ {
+  "name": "trash iso",
+  "prompt": "delete the Fedora iso from Downloads",
+  "tags": [
+   "chain"
+  ],
+  "expect": [
+   {
+    "tool": "trash_file",
+    "args": {
+     "path": "fedora"
+    }
+   }
+  ],
+  "paraphrases": [
+   "usuń obraz iso Fedory z pobranych"
+  ],
+  "stubs": {
+   "find_files": "~/Pobrane/Fedora-Workstation-45.iso (2026-11-10)",
+   "list_folder": "Fedora-Workstation-45.iso (2.3 GB)\nlease-2026.pdf"
+  }
+ },
+ {
+  "name": "rename file",
+  "prompt": "rename notes.txt in Documents to ideas.txt",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "move_file",
+    "args": {
+     "from": "notes",
+     "to": "ideas|pomysly"
+    }
+   }
+  ],
+  "paraphrases": [
+   "zmień nazwę notes.txt w dokumentach na pomysly.txt"
+  ]
+ },
+ {
+  "name": "move photo",
+  "prompt": "move photo.jpg from Downloads to Pictures",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "move_file",
+    "args": {
+     "from": "photo",
+     "to": "pictures|obrazy"
+    }
+   }
+  ],
+  "paraphrases": [
+   "przenieś photo.jpg z pobranych do obrazów"
+  ]
+ },
+ {
+  "name": "read todo",
+  "prompt": "what's on my todo list in todo.md?",
+  "tags": [
+   "chain",
+   "answer"
+  ],
+  "expect": [
+   {
+    "tool": "read_file",
+    "args": {
+     "path": "todo"
+    }
+   }
+  ],
+  "paraphrases": [
+   "co jest w pliku todo.md?"
+  ],
+  "answer": [
+   "landlord|internet|ola"
+  ],
+  "stubs": {
+   "find_files": "~/Dokumenty/todo.md (2026-11-14)",
+   "read_file": "- call the landlord\n- pay internet\n- buy a birthday gift for Ola"
+  }
+ },
+ {
+  "name": "edit todo",
+  "prompt": "in todo.md change 'pay internet' to 'pay electricity'",
+  "tags": [
+   "chain"
+  ],
+  "expect": [
+   {
+    "tool": "edit_file",
+    "args": {
+     "old_text": "internet",
+     "new_text": "electricity"
+    }
+   }
+  ],
+  "paraphrases": [
+   "w todo.md zamień 'pay internet' na 'pay electricity'"
+  ],
+  "stubs": {
+   "find_files": "~/Dokumenty/todo.md (2026-11-14)",
+   "read_file": "- call the landlord\n- pay internet\n- buy a birthday gift for Ola"
+  }
+ },
+ {
+  "name": "notes about dentist",
+  "prompt": "find notes where I wrote about the dentist",
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "expect": [
+   {
+    "tool": "search_text|search_file_contents",
+    "args": {
+     "query": "dentist|dentyst"
+    }
+   }
+  ],
+  "paraphrases": [
+   "w których notatkach pisałem o dentyście?"
+  ],
+  "answer": [
+   "appointments|wizyty"
+  ],
+  "stubs": {
+   "search_text": "~/Dokumenty/appointments.md:3: dentist on Tuesday 10:00",
+   "search_file_contents": "~/Dokumenty/appointments.md — dentist on Tuesday 10:00"
+  }
+ },
+ {
+  "name": "notice period",
+  "prompt": "what's the notice period in my lease?",
+  "tags": [
+   "chain",
+   "answer"
+  ],
+  "expect": [
+   {
+    "tool": "ask_document",
+    "args": {
+     "path": "lease",
+     "question": "notice|wypowiedz"
+    }
+   }
+  ],
+  "paraphrases": [
+   "jaki jest okres wypowiedzenia w mojej umowie najmu?"
+  ],
+  "answer": [
+   "month|miesi"
+  ],
+  "stubs": {
+   "find_files": "~/Dokumenty/lease-2026.pdf (2026-09-01)",
+   "ask_document": "The notice period is one month, to the end of a calendar month."
+  }
+ },
+ {
+  "name": "read cv",
+  "prompt": "read my CV to me",
+  "tags": [
+   "chain"
+  ],
+  "expect": [
+   {
+    "tool": "read_document|read_file|ask_document",
+    "args": {
+     "path": "cv"
+    }
+   }
+  ],
+  "paraphrases": [
+   "przeczytaj mi moje CV"
+  ],
+  "stubs": {
+   "find_files": "~/Dokumenty/CV-Jakub-2026.pdf (2026-10-02)",
+   "read_document": "Jakub Wiertel — student of mathematics, UMK Toruń. Skills: Rust, Linux.",
+   "read_file": "Jakub Wiertel — student of mathematics, UMK Toruń."
+  }
+ },
+ {
+  "name": "mail from ola",
+  "prompt": "did Ola email me?",
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "expect": [
+   {
+    "tool": "search_mail|search_everything",
+    "args": {
+     "query": "ola"
+    }
+   }
+  ],
+  "paraphrases": [
+   "czy Ola do mnie pisała?"
+  ],
+  "answer": [
+   "lunch|obiad|friday|piąt"
+  ],
+  "stubs": {
+   "search_mail": "Mail matching, newest first:\n[me@x.pl:41] Ola Kowalska <ola@x.pl> — Lunch on Friday? (Saturday 2026-11-14 18:02)\n  Hej, masz czas na obiad w piątek o 13?\nread_mail with an id in brackets reads the whole message.",
+   "search_everything": "## Mail\nMail matching, newest first:\n[me@x.pl:41] Ola Kowalska <ola@x.pl> — Lunch on Friday? (Saturday 2026-11-14 18:02)\n  Hej, masz czas na obiad w piątek o 13?\nread_mail with an id in brackets reads the whole message."
+  }
+ },
+ {
+  "name": "train tickets",
+  "prompt": "find the email with my train tickets",
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "expect": [
+   {
+    "tool": "search_mail|search_everything",
+    "args": {
+     "query": "train|ticket|bilet|pkp|intercity|pociąg"
+    }
+   }
+  ],
+  "paraphrases": [
+   "znajdź maila z biletami na pociąg"
+  ],
+  "answer": [
+   "warsz|warsaw|17"
+  ],
+  "stubs": {
+   "search_mail": "[me@x.pl:52] PKP Intercity — Your tickets: Toruń → Warszawa (Friday 2026-11-13 09:12)\n  Train IC 5320, Tuesday 2026-11-17 07:15, car 7 seat 45.",
+   "search_everything": "## Mail\n[me@x.pl:52] PKP Intercity — Your tickets: Toruń → Warszawa\n  Train IC 5320, Tuesday 2026-11-17 07:15."
+  }
+ },
+ {
+  "name": "landlord mail",
+  "prompt": "what did the landlord say in his last email?",
+  "tags": [
+   "chain",
+   "answer"
+  ],
+  "expect": [
+   {
+    "tool": "search_mail|search_everything"
+   },
+   {
+    "tool": "read_mail",
+    "args": {
+     "id": "33"
+    }
+   }
+  ],
+  "paraphrases": [
+   "co napisał wynajmujący w ostatnim mailu?"
+  ],
+  "answer": [
+   "heat|ogrzew|plumber|hydraulik"
+  ],
+  "stubs": {
+   "search_mail": "[me@x.pl:33] Piotr Nowak (landlord) — Heating (Thursday 2026-11-12 08:30)\n  Dzień dobry, w sprawie ogrzewania...\nread_mail with an id in brackets reads the whole message.",
+   "search_everything": "## Mail\n[me@x.pl:33] Piotr Nowak (landlord) — Heating (Thursday 2026-11-12 08:30)\n  Dzień dobry, w sprawie ogrzewania...",
+   "read_mail": "From: Piotr Nowak\nSubject: Heating\nDate: Thursday 2026-11-12 08:30\n\nDzień dobry, a plumber will come on Monday at 9 to fix the heating."
+  }
+ },
+ {
+  "name": "dentist anything",
+  "prompt": "find anything about my dentist appointment",
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "expect": [
+   {
+    "tool": "search_everything|get_events|search_mail"
+   }
+  ],
+  "paraphrases": [
+   "znajdź cokolwiek o mojej wizycie u dentysty"
+  ],
+  "answer": [
+   "tuesday|wtorek|17"
+  ],
+  "stubs": {
+   "search_everything": "## Calendar\nTue 17 Nov, 10:00–10:30: Dentist (dr Nowak)",
+   "get_events": "Tue 17 Nov, 10:00–10:30: Dentist (dr Nowak)",
+   "search_mail": "No mail matches."
+  }
+ },
+ {
+  "name": "this week",
+  "prompt": "what's on my calendar this week?",
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "expect": [
+   {
+    "tool": "get_events",
+    "args": {
+     "when": "week|tydz"
+    }
+   }
+  ],
+  "paraphrases": [
+   "co mam w tym tygodniu?"
+  ],
+  "answer": [
+   "dentist|algebra|lunch"
+  ],
+  "stubs": {
+   "get_events": "Mon 16 Nov, 09:00–10:30: Linear algebra\nTue 17 Nov, 10:00–10:30: Dentist\nFri 20 Nov, 13:00–14:00: Lunch with Ola"
+  }
+ },
+ {
+  "name": "friday plans",
+  "prompt": "do I have anything on Friday?",
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "expect": [
+   {
+    "tool": "get_events",
+    "args": {
+     "when": "fri|piąt|2026-11-20|20"
+    }
+   }
+  ],
+  "paraphrases": [
+   "mam coś w piątek?"
+  ],
+  "answer": [
+   "lunch|ola|13"
+  ],
+  "stubs": {
+   "get_events": "Fri 20 Nov, 13:00–14:00: Lunch with Ola"
+  }
+ },
+ {
+  "name": "event (pl)",
+  "prompt": "dodaj spotkanie z promotorem w środę o 12",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "create_event",
+    "args": {
+     "title": "promotor|supervisor",
+     "start": "12:00|12|2026-11-18|wed|śr"
+    }
+   }
+  ],
+  "paraphrases": [
+   "put a meeting with my supervisor on Wednesday at noon"
+  ]
+ },
+ {
+  "name": "event with place",
+  "prompt": "dentist on Tuesday at 10 at Szeroka 5, add it to my calendar",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "create_event",
+    "args": {
+     "title": "dentist|dentyst",
+     "place": "szeroka"
+    }
+   }
+  ],
+  "paraphrases": [
+   "dodaj dentystę we wtorek o 10, Szeroka 5"
+  ]
+ },
+ {
+  "name": "study block",
+  "prompt": "block two hours for studying tomorrow at 4pm",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "create_event",
+    "args": {
+     "title": "stud|nauk",
+     "start": "16:00|4pm|4 pm|2026-11-16"
+    }
+   }
+  ],
+  "paraphrases": [
+   "zarezerwuj jutro dwie godziny na naukę od 16"
+  ]
+ },
+ {
+  "name": "list reminders",
+  "prompt": "which reminders are set?",
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "expect": [
+   {
+    "tool": "list_reminders"
+   }
+  ],
+  "paraphrases": [
+   "jakie mam ustawione przypomnienia?"
+  ],
+  "answer": [
+   "pizza|ola|20"
+  ],
+  "stubs": {
+   "list_reminders": "1. take the pizza out — today 10:20\n2. call Ola — tomorrow 18:00"
+  }
+ },
+ {
+  "name": "cancel reminder",
+  "prompt": "cancel the pizza reminder",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "cancel_reminder",
+    "args": {
+     "which": "pizza"
+    }
+   }
+  ],
+  "paraphrases": [
+   "usuń przypomnienie o pizzy"
+  ],
+  "stubs": {
+   "list_reminders": "1. take the pizza out — today 10:20\n2. call Ola — tomorrow 18:00"
+  }
+ },
+ {
+  "name": "reminder in (pl)",
+  "prompt": "przypomnij mi za godzinę żeby wyjąć pranie",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "set_reminder",
+    "args": {
+     "in_minutes": "60",
+     "text": "pran|laundry"
+    }
+   }
+  ],
+  "paraphrases": [
+   "in an hour remind me to take out the laundry"
+  ]
+ },
+ {
+  "name": "timer (pl)",
+  "prompt": "minutnik na 10 minut",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "set_reminder",
+    "args": {
+     "in_minutes": "10"
+    }
+   }
+  ],
+  "paraphrases": [
+   "start a 10 minute timer"
+  ]
+ },
+ {
+  "name": "evening reminder",
+  "prompt": "remind me at 8pm to water the plants",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "set_reminder",
+    "args": {
+     "at": "20:00|8pm|8 pm|20",
+     "text": "plant|water|kwiat|podla"
+    }
+   }
+  ],
+  "paraphrases": [
+   "przypomnij mi o 20 żeby podlać kwiatki"
+  ]
+ },
+ {
+  "name": "contact email",
+  "prompt": "give me Marek's email",
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "expect": [
+   {
+    "tool": "find_contact",
+    "args": {
+     "name": "marek|mark"
+    }
+   }
+  ],
+  "paraphrases": [
+   "jaki jest mail Marka?"
+  ],
+  "answer": [
+   "marek@"
+  ],
+  "stubs": {
+   "find_contact": "Marek Zieliński — email marek@example.com, phone +48 501 222 333"
+  }
+ },
+ {
+  "name": "email (pl)",
+  "prompt": "napisz maila do Oli, że spóźnię się 15 minut",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "draft_email",
+    "args": {
+     "body": "15"
+    }
+   }
+  ],
+  "paraphrases": [
+   "email Ola that I'll be 15 minutes late"
+  ]
+ },
+ {
+  "name": "email landlord",
+  "prompt": "draft an email to the landlord about the broken heater",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "draft_email",
+    "args": {
+     "body": "heat|grzej|ogrzew|kaloryfer"
+    }
+   }
+  ],
+  "paraphrases": [
+   "napisz maila do wynajmującego o zepsutym grzejniku"
+  ]
+ },
+ {
+  "name": "email marek",
+  "prompt": "email Marek that the meeting moved to 3pm",
+  "tags": [
+   "chain"
+  ],
+  "expect": [
+   {
+    "tool": "draft_email",
+    "args": {
+     "to": "marek",
+     "body": "3|15"
+    }
+   }
+  ],
+  "paraphrases": [
+   "napisz Markowi maila, że spotkanie przeniesione na 15"
+  ],
+  "stubs": {
+   "find_contact": "Marek Zieliński — email marek@example.com"
+  }
+ },
+ {
+  "name": "link to phone",
+  "prompt": "send this link to my phone: https://example.com/recipe",
+  "tags": [
+   "resolve"
+  ],
+  "expect": [
+   {
+    "tool": "send_text",
+    "args": {
+     "text": "example.com",
+     "device": "iphone|jakub"
+    }
+   }
+  ],
+  "paraphrases": [
+   "wyślij na telefon ten link: https://example.com/recipe"
+  ],
+  "memory": [
+   "The user's phone is the iPhone (Jakub)"
+  ]
+ },
+ {
+  "name": "cv to phone",
+  "prompt": "send my CV to my phone",
+  "tags": [
+   "chain",
+   "resolve"
+  ],
+  "expect": [
+   {
+    "tool": "find_files",
+    "args": {
+     "name": "cv|resume"
+    }
+   },
+   {
+    "tool": "send_file",
+    "args": {
+     "path": "cv-jakub",
+     "device": "iphone|jakub"
+    }
+   }
+  ],
+  "paraphrases": [
+   "wyślij CV na telefon"
+  ],
+  "memory": [
+   "The user's phone is the iPhone (Jakub)"
+  ],
+  "stubs": {
+   "find_files": "~/Dokumenty/CV-Jakub-2026.pdf (2026-10-02)"
+  }
+ },
+ {
+  "name": "online devices",
+  "prompt": "which of my devices are online?",
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "expect": [
+   {
+    "tool": "list_devices"
+   }
+  ],
+  "paraphrases": [
+   "które moje urządzenia są online?"
+  ],
+  "answer": [
+   "iphone"
+  ],
+  "stubs": {
+   "list_devices": "jakubs-iphone (iOS, online)\nframework (linux, this device)"
+  }
+ },
+ {
+  "name": "pause",
+  "prompt": "stop the music for a sec",
+  "tags": [
+   "enum"
+  ],
+  "expect": [
+   {
+    "tool": "media_control",
+    "args": {
+     "action": "pause|play_pause|stop"
+    }
+   }
+  ],
+  "paraphrases": [
+   "zatrzymaj muzykę"
+  ]
+ },
+ {
+  "name": "previous song",
+  "prompt": "go back to the previous song",
+  "tags": [
+   "enum"
+  ],
+  "expect": [
+   {
+    "tool": "media_control",
+    "args": {
+     "action": "previous"
+    }
+   }
+  ],
+  "paraphrases": [
+   "poprzedni utwór"
+  ]
+ },
+ {
+  "name": "now playing",
+  "prompt": "what song is this?",
+  "tags": [
+   "enum",
+   "answer"
+  ],
+  "expect": [
+   {
+    "tool": "media_control",
+    "args": {
+     "action": "status"
+    }
+   }
+  ],
+  "paraphrases": [
+   "co teraz leci?"
+  ],
+  "answer": [
+   "don't stop|queen"
+  ],
+  "stubs": {
+   "media_control": "Queen – Don't Stop Me Now (Gapless, playing)"
+  }
+ },
+ {
+  "name": "resume",
+  "prompt": "resume playback",
+  "tags": [
+   "enum"
+  ],
+  "expect": [
+   {
+    "tool": "media_control",
+    "args": {
+     "action": "play"
+    }
+   }
+  ],
+  "paraphrases": [
+   "wznów muzykę"
+  ]
+ },
+ {
+  "name": "study music",
+  "prompt": "play some lo-fi for studying",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "play_music",
+    "args": {
+     "query": "lo-fi|lofi|lo fi"
+    }
+   }
+  ],
+  "paraphrases": [
+   "puść lo-fi do nauki"
+  ]
+ },
+ {
+  "name": "screen now",
+  "prompt": "what am I looking at right now?",
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "expect": [
+   {
+    "tool": "look_at_screen|read_window"
+   }
+  ],
+  "paraphrases": [
+   "co jest teraz na ekranie?"
+  ],
+  "answer": [
+   "terminal|cargo|error|błąd"
+  ],
+  "stubs": {
+   "look_at_screen": "A terminal showing a Rust build error: cannot find value `x` in this scope.",
+   "read_window": "Terminal — cargo build\nerror[E0425]: cannot find value `x` in this scope"
+  }
+ },
+ {
+  "name": "open article",
+  "prompt": "summarize the article I have open",
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "expect": [
+   {
+    "tool": "read_window|look_at_screen"
+   }
+  ],
+  "paraphrases": [
+   "streść artykuł, który mam otwarty"
+  ],
+  "answer": [
+   "npu|neural|tops"
+  ],
+  "stubs": {
+   "read_window": "Firefox — NPUs explained\nA neural processing unit runs AI models with little power. Laptops in 2026 ship NPUs of 50 TOPS.",
+   "look_at_screen": "A Firefox page titled 'NPUs explained' about neural processing units and 50 TOPS laptops."
+  }
+ },
+ {
+  "name": "translate selection",
+  "prompt": "translate the selected text to English",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "rewrite_selection",
+    "args": {
+     "instruction": "english|angiel"
+    }
+   }
+  ],
+  "paraphrases": [
+   "przetłumacz zaznaczony tekst na angielski"
+  ],
+  "stubs": {
+   "rewrite_selection": "Copied the result to the clipboard; paste it with Ctrl+V. It reads: See you tomorrow at nine."
+  }
+ },
+ {
+  "name": "shorten selection",
+  "prompt": "make the selected paragraph shorter",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "rewrite_selection",
+    "args": {
+     "instruction": "short|skró|krót|concise|zwięź"
+    }
+   }
+  ],
+  "paraphrases": [
+   "skróć zaznaczony tekst"
+  ],
+  "stubs": {
+   "rewrite_selection": "Copied the result to the clipboard; paste it with Ctrl+V. It reads: Meeting moved to 3."
+  }
+ },
+ {
+  "name": "recent copy",
+  "prompt": "what did I copy a few minutes ago?",
+  "tags": [
+   "single",
+   "answer"
+  ],
+  "expect": [
+   {
+    "tool": "clipboard_history"
+   }
+  ],
+  "paraphrases": [
+   "co skopiowałem kilka minut temu?"
+  ],
+  "answer": [
+   "szeroka"
+  ],
+  "stubs": {
+   "clipboard_history": "1. ul. Szeroka 5, Toruń\n2. https://example.com/recipe"
+  }
+ },
+ {
+  "name": "copy text",
+  "prompt": "copy my email address to the clipboard: jakub@example.com",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "copy_to_clipboard",
+    "args": {
+     "text": "jakub@example.com"
+    }
+   }
+  ],
+  "paraphrases": [
+   "skopiuj do schowka mój mail: jakub@example.com"
+  ]
+ },
+ {
+  "name": "screenshot only",
+  "prompt": "grab a screenshot",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "save_screenshot"
+   }
+  ],
+  "paraphrases": [
+   "zrób screena"
+  ],
+  "forbid": [
+   "send_file"
+  ]
+ },
+ {
+  "name": "remember (pl)",
+  "prompt": "zapamiętaj, że w poniedziałki pracuję zdalnie",
+  "tags": [
+   "memory"
+  ],
+  "expect": [
+   {
+    "tool": "remember",
+    "args": {
+     "fact": "monday|poniedział|home|zdaln"
+    }
+   }
+  ],
+  "paraphrases": [
+   "keep in mind that I work from home on Mondays"
+  ]
+ },
+ {
+  "name": "forget",
+  "prompt": "forget that I'm vegetarian",
+  "tags": [
+   "memory"
+  ],
+  "expect": [
+   {
+    "tool": "forget",
+    "args": {
+     "fact": "vegetarian|wegetaria"
+    }
+   }
+  ],
+  "paraphrases": [
+   "zapomnij, że jestem wegetarianinem"
+  ],
+  "memory": [
+   "The user is vegetarian"
+  ]
+ },
+ {
+  "name": "use memory",
+  "prompt": "what's my dentist's phone number?",
+  "tags": [
+   "memory",
+   "answer"
+  ],
+  "paraphrases": [
+   "jaki jest numer do mojego dentysty?"
+  ],
+  "answer": [
+   "600 200 300|600200300|600-200-300"
+  ],
+  "memory": [
+   "The user's dentist is dr Nowak, phone 600 200 300"
+  ]
+ },
+ {
+  "name": "allergy",
+  "prompt": "I'm allergic to peanuts, keep that in mind",
+  "tags": [
+   "memory"
+  ],
+  "expect": [
+   {
+    "tool": "remember",
+    "args": {
+     "fact": "peanut|orzesz"
+    }
+   }
+  ],
+  "paraphrases": [
+   "mam alergię na orzeszki ziemne, pamiętaj o tym"
+  ]
+ },
+ {
+  "name": "save skill",
+  "prompt": "save a skill called focus mode: turn on do not disturb and dark mode",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "save_skill",
+    "args": {
+     "name": "focus|skupien"
+    }
+   }
+  ],
+  "paraphrases": [
+   "zapisz umiejętność 'tryb skupienia': włącz nie przeszkadzać i tryb ciemny"
+  ]
+ },
+ {
+  "name": "use skill",
+  "prompt": "run my focus mode skill",
+  "tags": [
+   "single"
+  ],
+  "expect": [
+   {
+    "tool": "use_skill",
+    "args": {
+     "name": "focus|skupien"
+    }
+   }
+  ],
+  "paraphrases": [
+   "uruchom mój tryb skupienia"
+  ],
+  "stubs": {
+   "use_skill": "Skill “focus mode”: turn on do not disturb, then turn on dark mode."
+  }
+ },
+ {
+  "name": "joke",
+  "prompt": "know any good jokes?",
+  "tags": [
+   "no-tool"
+  ],
+  "paraphrases": [
+   "opowiedz kawał"
+  ],
+  "no_tools": true
+ },
+ {
+  "name": "explain npu",
+  "prompt": "explain what an NPU is in two sentences",
+  "tags": [
+   "no-tool",
+   "answer"
+  ],
+  "paraphrases": [
+   "wyjaśnij w dwóch zdaniach czym jest NPU"
+  ],
+  "no_tools": true,
+  "answer": [
+   "neural|neuron|ai|si"
+  ]
+ },
+ {
+  "name": "translate word",
+  "prompt": "how do you say 'deposit' in Polish?",
+  "tags": [
+   "no-tool",
+   "answer"
+  ],
+  "paraphrases": [
+   "jak jest 'kaucja' po angielsku?"
+  ],
+  "no_tools": true,
+  "answer": [
+   "kaucja|deposit|depozyt"
+  ]
+ },
+ {
+  "name": "math (pl)",
+  "prompt": "ile to 17 razy 23?",
+  "tags": [
+   "no-tool",
+   "answer"
+  ],
+  "paraphrases": [
+   "what's 17 times 23?"
+  ],
+  "no_tools": true,
+  "answer": [
+   "391"
+  ]
+ },
+ {
+  "name": "poem",
+  "prompt": "write a two-line poem about rain",
+  "tags": [
+   "no-tool"
+  ],
+  "paraphrases": [
+   "napisz dwuwierszowy wierszyk o deszczu"
+  ],
+  "no_tools": true
+ },
+ {
+  "name": "unit math",
+  "prompt": "how many minutes are in 3.5 hours?",
+  "tags": [
+   "no-tool",
+   "answer"
+  ],
+  "paraphrases": [
+   "ile minut ma 3,5 godziny?"
+  ],
+  "no_tools": true,
+  "answer": [
+   "210"
+  ]
+ },
+ {
+  "name": "bye",
+  "prompt": "ok that's all, bye",
+  "tags": [
+   "no-tool"
+  ],
+  "paraphrases": [
+   "na razie, dzięki"
+  ],
+  "no_tools": true
+ },
+ {
+  "name": "follow-up: louder",
+  "prompt": "a bit louder",
+  "tags": [
+   "multi-turn"
+  ],
+  "expect": [
+   {
+    "tool": "set_volume",
+    "args": {
+     "percent": "55|60|65|70|75|80"
+    }
+   }
+  ],
+  "paraphrases": [
+   "trochę głośniej"
+  ],
+  "before": [
+   "set the volume to 50"
+  ],
+  "forbid": [
+   "set_mute"
+  ]
+ },
+ {
+  "name": "follow-up: wifi back",
+  "prompt": "ok turn it back on",
+  "tags": [
+   "multi-turn"
+  ],
+  "expect": [
+   {
+    "tool": "set_wifi",
+    "args": {
+     "enabled": "true"
+    }
+   }
+  ],
+  "paraphrases": [
+   "dobra, włącz je z powrotem"
+  ],
+  "before": [
+   "turn off wifi"
+  ]
+ },
+ {
+  "name": "follow-up: weather",
+  "prompt": "and tomorrow in Gdańsk?",
+  "tags": [
+   "multi-turn"
+  ],
+  "expect": [
+   {
+    "tool": "get_weather",
+    "args": {
+     "place": "gdań|gdan"
+    }
+   }
+  ],
+  "paraphrases": [
+   "a jutro w Gdańsku?"
+  ],
+  "before": [
+   "what's the weather in Toruń?"
+  ],
+  "stubs": {
+   "get_weather": "Gdańsk, Polska: now 6°C (feels like 3°C), light rain, wind 15 km/h\nToday: 4…9°C, light rain, rain 90%\nTomorrow: 2…7°C, overcast, rain 30%\n2026-11-17: 1…5°C, snow, rain 60%"
+  }
+ },
+ {
+  "name": "follow-up: that day",
+  "prompt": "add a dentist appointment at 3pm that day",
+  "tags": [
+   "multi-turn"
+  ],
+  "expect": [
+   {
+    "tool": "create_event",
+    "args": {
+     "title": "dentist|dentyst",
+     "start": "15:00|3pm|3 pm|2026-11-20|fri|piąt"
+    }
+   }
+  ],
+  "paraphrases": [
+   "dodaj tego dnia dentystę o 15"
+  ],
+  "before": [
+   "what do I have on Friday?"
+  ],
+  "stubs": {
+   "get_events": "Fri 20 Nov, 13:00–14:00: Lunch with Ola"
+  }
+ },
+ {
+  "name": "battery saver",
+  "prompt": "check the battery and if it's under 20% turn on power saver",
+  "tags": [
+   "chain"
+  ],
+  "expect": [
+   {
+    "tool": "get_battery"
+   },
+   {
+    "tool": "set_power_mode",
+    "args": {
+     "mode": "power-saver"
+    }
+   }
+  ],
+  "paraphrases": [
+   "sprawdź baterię i jeśli jest poniżej 20%, włącz oszczędzanie energii"
+  ],
+  "stubs": {
+   "get_battery": "15%, discharging, about 40 min left"
+  }
+ },
+ {
+  "name": "rain reminder",
+  "prompt": "if it rains in Toruń tomorrow, remind me at 8 to take an umbrella",
+  "tags": [
+   "chain"
+  ],
+  "expect": [
+   {
+    "tool": "get_weather",
+    "args": {
+     "place": "toru"
+    }
+   },
+   {
+    "tool": "set_reminder",
+    "args": {
+     "at": "08:00|8:00|8 am|8am|2026-11-16"
+    }
+   }
+  ],
+  "paraphrases": [
+   "jeśli jutro w Toruniu będzie padać, przypomnij mi o 8 żeby wziąć parasol"
+  ],
+  "stubs": {
+   "get_weather": "Toruń, Polska: now 6°C, overcast\nToday: 4…9°C, overcast, rain 10%\nTomorrow: 3…7°C, rain, rain 90%"
+  }
+ },
+ {
+  "name": "mail then event",
+  "prompt": "Ola asked about lunch by email, put it in my calendar",
+  "tags": [
+   "chain"
+  ],
+  "expect": [
+   {
+    "tool": "search_mail|search_everything",
+    "args": {
+     "query": "ola|lunch|obiad"
+    }
+   },
+   {
+    "tool": "create_event",
+    "args": {
+     "start": "13:00|1pm|1 pm|2026-11-20|fri|piąt"
+    }
+   }
+  ],
+  "paraphrases": [
+   "Ola pisała o obiedzie, dodaj to do kalendarza"
+  ],
+  "stubs": {
+   "search_mail": "Mail matching, newest first:\n[me@x.pl:41] Ola Kowalska <ola@x.pl> — Lunch on Friday? (Saturday 2026-11-14 18:02)\n  Hej, masz czas na obiad w piątek o 13?\nread_mail with an id in brackets reads the whole message.",
+   "search_everything": "## Mail\nMail matching, newest first:\n[me@x.pl:41] Ola Kowalska <ola@x.pl> — Lunch on Friday? (Saturday 2026-11-14 18:02)\n  Hej, masz czas na obiad w piątek o 13?\nread_mail with an id in brackets reads the whole message."
+  }
  }
 ]

@@ -1,8 +1,12 @@
 """Markdown table from assistantd --eval reports: python3 eval_table.py report.json..."""
 import json
+import os
 import sys
 
-reports = [json.load(open(p)) for p in sys.argv[1:]]
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from eval_verdict import merge  # noqa: E402
+
+reports = merge([json.load(open(p)) for p in sys.argv[1:]])
 for r in reports:
     v = r.get("variant", "baseline")
     r["label"] = r["model"] if v == "baseline" else f"{r['model']} · {v}"

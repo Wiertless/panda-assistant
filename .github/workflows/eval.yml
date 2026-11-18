@@ -62,13 +62,15 @@ jobs:
       fail-fast: false
       matrix:
         variant: ${{ fromJSON(inputs.variants || '["baseline"]') }}
+        # 160 families take ~3.5 h on one runner: three in parallel stay under the 3 h job limit.
+        shard: [0, 1, 2]
         m:
           - { model: "gemma4-it:e2b", search: "gemma-4-E2B-it" }
           - { model: "gemma4-it:e4b", search: "gemma-4-E4B-it" }
           - { model: "qwen3.5:2b", search: "Qwen3.5-2B" }
           - { model: "qwen3.5:4b", search: "Qwen3.5-4B" }
           - { model: "qwen3-it:4b", search: "Qwen3-4B-Instruct-2507" }
-    name: eval (${{ matrix.m.model }}, ${{ matrix.variant }})
+    name: eval (${{ matrix.m.model }}, ${{ matrix.variant }}, ${{ matrix.shard }}/3)
     steps:
       - name: Is this model wanted?
         id: pick
@@ -126,14 +128,15 @@ jobs:
           embed=()
           if [ -n "${{ steps.embed.outputs.url }}" ]; then embed=(--embed-url "${{ steps.embed.outputs.url }}"); fi
           ./assistantd --eval --url http://127.0.0.1:8080 --model "${{ matrix.m.model }}" "${embed[@]}" \
-            --variant "${{ matrix.variant }}" --repeat "${{ inputs.repeat || '1' }}" --json report.json "${only[@]}"
+            --variant "${{ matrix.variant }}" --repeat "${{ inputs.repeat || '1' }}" --json report.json "${only[@]}" \
+            --shard "${{ matrix.shard }}/3"
       - name: Summary
         if: always() && steps.pick.outputs.run == 'true'
         run: |
           [ -f report.json ] || exit 0
           { echo "### ${{ matrix.m.model }} · ${{ matrix.variant }} (${{ steps.gguf.outputs.source }})"
             python3 .github/scripts/eval_table.py report.json; } >> "$GITHUB_STEP_SUMMARY"
-          cp report.json "report-$(echo '${{ matrix.m.model }}-${{ matrix.variant }}' | tr ':' '_').json"
+          cp report.json "report-$(echo '${{ matrix.m.model }}-${{ matrix.variant }}-${{ matrix.shard }}' | tr ':' '_').json"
       - uses: actions/upload-artifact@v4
         if: always() && steps.pick.outputs.run == 'true'
         with:
