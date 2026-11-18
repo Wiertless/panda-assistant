@@ -40,6 +40,7 @@ window.popup { background: none; box-shadow: none; outline: none; border: none; 
   color: @popover_fg_color;
   box-shadow: 0 4px 14px alpha(black, 0.14), 0 10px 30px alpha(black, 0.10);
 }
+.info-card { padding: 12px 16px; }
 .popup-pill.open { border-radius: 28px; padding: 9px 9px 9px 20px; }
 .composer entry, .composer entry:focus-within { background: none; box-shadow: none; outline: none; min-height: 36px; }
 .bubble-user {

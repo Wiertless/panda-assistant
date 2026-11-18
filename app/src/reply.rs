@@ -15,6 +15,8 @@ use crate::window::{APP_NAME, Window};
 
 fn tool_icon(name: &str) -> &'static str {
     match name {
+        "get_weather" => "weather-overcast-symbolic",
+        "list_reminders" => "alarm-symbolic",
         "web_search" | "find_files" | "search_file_contents" => "system-search-symbolic",
         "read_web_page" | "open_url" => "web-browser-symbolic",
         "open_app" | "run_app_action" => "application-x-executable-symbolic",
@@ -269,6 +271,37 @@ impl Reply {
         }
     }
 
+    /// Weather, events, reminders: the first line as the heading, the rest as rows.
+    fn card(&self, icon: &str, text: &str) {
+        let card = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(4)
+            .halign(gtk::Align::Start)
+            .build();
+        card.add_css_class("card");
+        card.add_css_class("info-card");
+        let mut lines = text.lines().filter(|l| !l.trim().is_empty());
+        let head = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        head.append(&gtk::Image::from_icon_name(icon));
+        let title = gtk::Label::builder()
+            .label(lines.next().unwrap_or(""))
+            .xalign(0.0)
+            .wrap(true)
+            .build();
+        title.add_css_class("heading");
+        head.append(&title);
+        card.append(&head);
+        for l in lines {
+            let row = gtk::Label::builder()
+                .label(l)
+                .xalign(0.0)
+                .wrap(true)
+                .build();
+            card.append(&row);
+        }
+        self.before_spinner(&card);
+    }
+
     fn confirm_card(self: &Rc<Self>, request: u32, summary: &str, detail: &str, can_always: bool) {
         let card = gtk::Box::new(gtk::Orientation::Vertical, 10);
         card.add_css_class("card");
@@ -471,6 +504,10 @@ impl Turn for Reply {
     }
 
     fn on_tool_finished(&self, name: &str, result: &str, ok: bool) {
+        if ok && assistant_core::tools::CARDS.contains(&name) && !result.starts_with("No ") {
+            self.card(tool_icon(name), result);
+            return;
+        }
         let short = result.chars().count() <= 90 && !result.contains('\n');
         let pill = if ok {
             // Short confirmations ("Dark mode on.") read best; long results go in the tooltip.

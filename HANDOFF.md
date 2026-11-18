@@ -41,6 +41,9 @@ Released so far: Assistant **0.23.0** (pinned in silverpanda). `main` has more o
 - `assistantd --tool NAME JSON` runs one tool, for live tests. Live testing: download the GitHub release, `pkill -x assistantd`, run the release's `core-bin/assistantd`, call it over D-Bus (`gdbus call ... Core1.Ask`).
 - Rust on the laptop: the `panda-dev` toolbox; call `/usr/bin/cargo-fmt` and `/usr/bin/cargo-clippy clippy` directly (~/.cargo/bin has broken rustup shims). `gh` is in that toolbox. Build on GitHub, not locally, when possible.
 
+- 0.26–0.28 released on GitHub: search_everything, speed line under answers, slim pop-up bar (spring damping 0.425), clipboard extension auto-enable. **0.28.0 is not pinned in silverpanda yet** (silverpanda pins 0.25.0).
+- On main, unreleased: mail dates in local time with weekday; `get_weather` (Open-Meteo, web group); cards for weather/events/reminders (`tools::CARDS`, hint via `next_step`); one prompt line on fitting answer length. Tests pass; the live model test (does it answer in one sentence beside the card?) was interrupted, so do it next, then release 0.29.0 and pin.
+
 ## Eval verdicts (Gemma 4 E2B, CPU, 119 prompts)
 
 baseline 105-107, no-embed 104, required 101 (+35% tokens), compact 83, compact-required 81.

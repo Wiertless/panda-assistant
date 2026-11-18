@@ -30,6 +30,7 @@ pub mod screen;
 pub mod settings;
 pub mod system;
 pub mod system_actions;
+pub mod weather;
 pub mod web;
 
 /// Spawn a program and forget it (opening a window, a Settings page…).
@@ -165,6 +166,9 @@ pub const UNDOABLE: [&str; 18] = [
 
 /// What to do with a lookup's result, appended to it so the model keeps the
 /// thread ("found it" → "now use it"). Only for results that found something.
+/// Tools whose results the window shows as a card instead of a pill.
+pub const CARDS: [&str; 3] = ["get_weather", "get_events", "list_reminders"];
+
 pub fn next_step(tool: &str) -> Option<&'static str> {
     Some(match tool {
         "find_files" | "search_file_contents" | "list_folder" => {
@@ -179,6 +183,10 @@ pub fn next_step(tool: &str) -> Option<&'static str> {
         "get_setting" => "(To change it, call change_setting with a new value.)",
         "list_app_actions" => "(To do one, call run_app_action with the app and the action.)",
         "find_contact" => "(Answer with the details asked for.)",
+        // The window shows these as a card.
+        n if CARDS.contains(&n) => {
+            "(Answer in one short sentence at most: the user sees this as a card, so don't repeat it.)"
+        }
         _ => return None,
     })
 }
@@ -401,6 +409,9 @@ Returns titles, links and short snippets. Not for the user's own files, settings
         Tool::new("read_web_page", "Read the text of a web page, e.g. a search result, to answer from it.",
                   obj(json!({"url": {"type": "string"}}), &["url"]), Safe, web::read_web_page,
                   text("url", |u| format!("Read {}", or(u, "a page")))),
+        Tool::new("get_weather", "The weather now and for the next three days in a city or town.",
+                  obj(json!({"place": {"type": "string", "description": "City or town, e.g. Toruń"}}), &["place"]),
+                  Safe, weather::get_weather, text("place", |p| format!("Weather in {p}"))),
         Tool::new("search_everything", "Search all of the user's own things at once: calendar, mail, file names, \
 what's inside documents, and contacts. Use it when the answer is somewhere in their stuff but you can't tell where \
 (\"when's my flight?\", \"what did the landlord say about the deposit?\", \"find anything about the conference\"). \
@@ -636,7 +647,7 @@ mod tests {
     #[test]
     fn same_tools_and_risks_as_the_python_app() {
         let names: Vec<String> = all().into_iter().map(|t| t.name).collect();
-        assert_eq!(names.len(), 75, "{names:?}");
+        assert_eq!(names.len(), 76, "{names:?}");
         let risky: Vec<String> = all()
             .into_iter()
             .filter(|t| t.risk == Risk::Confirm)

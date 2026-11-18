@@ -46,7 +46,7 @@ fn host(url: &str) -> String {
         .unwrap_or_default()
 }
 
-fn fetch(url: &str, form: Option<&str>) -> Result<(String, String), ToolError> {
+pub fn fetch(url: &str, form: Option<&str>) -> Result<(String, String), ToolError> {
     let a = agent();
     let resp = match form {
         Some(body) => a

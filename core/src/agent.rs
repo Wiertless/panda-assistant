@@ -94,6 +94,8 @@ Do not escalate ordinary multi-step tasks.
 ## Responses
 Be brief and natural. Report results, not internal reasoning.
 
+Fit the answer to the question: a quick question gets one or two sentences, an explanation gets a few short paragraphs, never padding.
+
 If the task is complete, give the result. If it cannot be completed, explain why.
 
 Your goal: understand, act, verify when needed, and finish efficiently."#;
