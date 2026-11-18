@@ -21,6 +21,15 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.29.0" date="2026-11-18">
+      <description>
+        <ul>
+          <li>Weather for any town, shown as a card; events and reminders as cards too</li>
+          <li>Answers sized to the question</li>
+          <li>Mail dates in your time zone, with the weekday</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.28.0" date="2026-11-18">
       <description>
         <ul>
