@@ -154,4 +154,4 @@ jobs:
       - name: All models
         run: |
           ls report-*.json >/dev/null 2>&1 || { echo "No reports." >> "$GITHUB_STEP_SUMMARY"; exit 0; }
-          { echo "## Model scores"; python3 .github/scripts/eval_table.py report-*.json; } >> "$GITHUB_STEP_SUMMARY"
+          { python3 .github/scripts/eval_verdict.py report-*.json; echo "## Model scores"; python3 .github/scripts/eval_table.py report-*.json; } >> "$GITHUB_STEP_SUMMARY"

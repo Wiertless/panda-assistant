@@ -15,6 +15,7 @@ build:
 
 test:
 	cargo test
+	python3 -I .github/scripts/eval_verdict.py --test
 
 lint:
 	cargo clippy --all-targets --features $(FEATURES) -- -D warnings
