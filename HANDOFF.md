@@ -41,8 +41,8 @@ Released so far: Assistant **0.23.0** (pinned in silverpanda). `main` has more o
 - `assistantd --tool NAME JSON` runs one tool, for live tests. Live testing: download the GitHub release, `pkill -x assistantd`, run the release's `core-bin/assistantd`, call it over D-Bus (`gdbus call ... Core1.Ask`).
 - Rust on the laptop: the `panda-dev` toolbox; call `/usr/bin/cargo-fmt` and `/usr/bin/cargo-clippy clippy` directly (~/.cargo/bin has broken rustup shims). `gh` is in that toolbox. Build on GitHub, not locally, when possible.
 
-- 0.26–0.28 released on GitHub: search_everything, speed line under answers, slim pop-up bar (spring damping 0.425), clipboard extension auto-enable. **0.28.0 is not pinned in silverpanda yet** (silverpanda pins 0.25.0).
-- On main, unreleased: mail dates in local time with weekday; `get_weather` (Open-Meteo, web group); cards for weather/events/reminders (`tools::CARDS`, hint via `next_step`); one prompt line on fitting answer length. Tests pass; the live model test (does it answer in one sentence beside the card?) was interrupted, so do it next, then release 0.29.0 and pin.
+- 0.26–0.29 released: search_everything, speed line under answers, slim pop-up bar (spring damping 0.425), clipboard extension auto-enable, get_weather + cards (weather/events/reminders via `tools::CARDS`, hint via `next_step`), answer-length line in the prompt, local mail dates. 0.29.0 pinned in silverpanda (PR 42).
+- Live checks of 0.29: weather → one call + one sentence; calendar → one call; "ile to 15% z 240?" answered right but **in English** (small-model language slip on short questions; not fixed).
 
 ## Eval verdicts (Gemma 4 E2B, CPU, 119 prompts)
 
@@ -58,7 +58,7 @@ So: keep narrow tools + routing + embeddings; **don't** switch to the compact se
    - a learned proposer: k-nearest-neighbour over EmbeddingGemma vectors of example requests → force the likely tool with `tool_choice` naming it;
    - typed workflows behind the tools (finish the job in Rust, error kinds Done/NeedChoice/Fixable/Fatal);
    - delete keyword routing, more_tools, nudge/force heuristics once the above beats them in the eval.
-4. **Answers that fit**: short for quick questions, cards for weather/events/timers.
+4. ~~**Answers that fit**~~ (done in 0.29).
 5. The FastFlowLM merged-LoRA PR.
 
 ## Evals running when this was written
