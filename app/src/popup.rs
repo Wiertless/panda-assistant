@@ -92,7 +92,7 @@ impl Bar {
             &self.unfold,
             from,
             target,
-            adw::SpringParams::new(0.375, 1.0, 320.0),
+            adw::SpringParams::new(0.425, 1.0, 320.0),
             set,
         );
         let (clip, busy) = (self.unfold.clone(), self.springing.clone());
