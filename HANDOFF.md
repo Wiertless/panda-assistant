@@ -48,6 +48,13 @@ Released so far: Assistant **0.23.0** (pinned in silverpanda). `main` has more o
 - Step 2 (typed workflows) parked: of Gemma's 14 baseline failures, 8 are "called no tool", only 2 are chains.
 - embed-gemma-300m-FLM is now downloaded on the laptop (routing by meaning was off there before). Lemonade 2026.46 forwards the wrong name for it; `flm.rs` works around it.
 
+## Idea on hold (owner deciding): super-heavy research
+
+A very long overnight research mode with a big model for a better PDF. AirLLM (layer streaming) is the wrong engine: a dense 70B streamed from the NVMe is ~10 s/token. Instead a big **MoE** via llama.cpp with mmap (CPU + SSD, NPU stays free):
+- **gpt-oss-120b** (~63 GB, 5.1B active, est. 1–3 t/s, 1–3 h per report) — the pick; Qwen3-Next-80B-A3B (~45 GB, 3B active) as the alternative; Qwen3-235B-A22B too slow.
+- Middle ground: gpt-oss-20b (11.6 GB, in Lemonade's list) on the iGPU, 20–40 min, but needs ~12 GB of the 14 GB RAM free.
+- Plan: ~30 pages, small model takes notes on the NPU, the big model writes each section, then a critique-and-revise pass, notification when the PDF is ready. **First measure real speed** (needs the ~63 GB download — ask first). Laptop: 251 GB disk free.
+
 ## Eval verdicts (Gemma 4 E2B, CPU, 119 prompts)
 
 baseline 105-107, no-embed 104, required 101 (+35% tokens), compact 83, compact-required 81.
