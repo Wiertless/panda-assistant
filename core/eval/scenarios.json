@@ -1280,7 +1280,8 @@
   ],
   "stubs": {
    "search_everything": "## Mail\n[me@x.pl:41] TAP Air Portugal — Your booking TP1245 (Mon, 9 Nov 2026)\n  Warsaw WAW → Lisbon LIS, Fri 4 Dec 2026, departs 06:40.",
-   "search_mail": "[me@x.pl:41] TAP Air Portugal — Your booking TP1245 (Mon, 9 Nov 2026)\n  Warsaw WAW → Lisbon LIS, Fri 4 Dec 2026, departs 06:40."
+   "search_mail": "[me@x.pl:41] TAP Air Portugal — Your booking TP1245 (Mon, 9 Nov 2026)\n  Warsaw WAW → Lisbon LIS, Fri 4 Dec 2026, departs 06:40.",
+   "get_events": "No events matching."
   },
   "expect": [
    {
@@ -1691,7 +1692,21 @@
   ],
   "paraphrases": [
    "podłącz myszkę"
-  ]
+  ],
+  "stubs": {
+   "list_bluetooth": "Jakub's AirPods Pro (paired)\nSony WH-1000XM5 (paired)\nMX Master 3 (paired)",
+   "connect_bluetooth": [
+    {
+     "when": {
+      "device": "mx"
+     },
+     "result": "Connected MX Master 3."
+    },
+    {
+     "error": "no paired device matches that; paired: Jakub's AirPods Pro, Sony WH-1000XM5, MX Master 3"
+    }
+   ]
+  }
  },
  {
   "name": "paired list",
@@ -1876,7 +1891,10 @@
   ],
   "forbid": [
    "web_search"
-  ]
+  ],
+  "stubs": {
+   "get_datetime": "Sunday 2026-11-15 10:00 CET"
+  }
  },
  {
   "name": "what day",
@@ -1892,7 +1910,10 @@
   ],
   "forbid": [
    "web_search"
-  ]
+  ],
+  "stubs": {
+   "get_datetime": "Sunday 2026-11-15 10:00 CET"
+  }
  },
  {
   "name": "charging",
@@ -2379,7 +2400,7 @@
     "tool": "move_file",
     "args": {
      "from": "photo",
-     "to": "pictures|obrazy"
+     "to": "pictures|obraz"
     }
    }
   ],
@@ -2447,7 +2468,7 @@
    {
     "tool": "search_text|search_file_contents",
     "args": {
-     "query": "dentist|dentyst"
+     "query": "dentist|denty"
     }
    }
   ],
@@ -2895,7 +2916,7 @@
    {
     "tool": "draft_email",
     "args": {
-     "to": "marek",
+     "to": "mar",
      "body": "3|15"
     }
    }
@@ -3523,7 +3544,8 @@
    "what do I have on Friday?"
   ],
   "stubs": {
-   "get_events": "Fri 20 Nov, 13:00–14:00: Lunch with Ola"
+   "get_events": "Fri 20 Nov, 13:00–14:00: Lunch with Ola",
+   "get_datetime": "Sunday 2026-11-15 10:00 CET"
   }
  },
  {
