@@ -1174,6 +1174,21 @@ sudo modprobe -r amdxdna && sudo modprobe amdxdna"
 impl FlmClient {
     /// Embedding vectors for `inputs` (one per string), from /v1/embeddings.
     /// `task` is FLM's EmbeddingGemma prompt: "query" or "document".
+    /// Where Lemonade runs a loaded model, and the name its backend knows it by.
+    fn lemonade_backend(&self, name: &str) -> Option<(String, String)> {
+        let mut text = String::new();
+        self.agent
+            .get(&format!("{}/v1/health", self.url()))
+            .call()
+            .ok()?
+            .into_body()
+            .into_reader()
+            .take(1 << 20)
+            .read_to_string(&mut text)
+            .ok()?;
+        lemonade_backend_in(&serde_json::from_str(&text).ok()?, name)
+    }
+
     pub fn embed(
         &self,
         model: &str,
@@ -1191,24 +1206,37 @@ impl FlmClient {
         } else {
             inputs.to_vec()
         };
-        let body = json!({"model": self.wire_name(model), "input": inputs, "task": task});
-        let resp = self
-            .agent
-            .post(&format!("{}/v1/embeddings", self.url()))
-            .header("Authorization", "Bearer flm")
-            .header("Content-Type", "application/json")
-            .config()
-            .timeout_global(Some(Duration::from_secs(20)))
-            .build()
-            .send(&serde_json::to_vec(&body).unwrap_or_default()[..])
-            .map_err(|e| FlmError::new(format!("embeddings: {e}")))?;
-        let status = resp.status().as_u16();
-        let mut text = String::new();
-        let _ = resp
-            .into_body()
-            .into_reader()
-            .take(4 << 20)
-            .read_to_string(&mut text);
+        let post = |url: &str, name: &str| -> Result<(u16, String), FlmError> {
+            let body = json!({"model": name, "input": inputs, "task": task});
+            let resp = self
+                .agent
+                .post(&format!("{url}/v1/embeddings"))
+                .header("Authorization", "Bearer flm")
+                .header("Content-Type", "application/json")
+                .config()
+                .timeout_global(Some(Duration::from_secs(20)))
+                .build()
+                .send(&serde_json::to_vec(&body).unwrap_or_default()[..])
+                .map_err(|e| FlmError::new(format!("embeddings: {e}")))?;
+            let status = resp.status().as_u16();
+            let mut text = String::new();
+            let _ = resp
+                .into_body()
+                .into_reader()
+                .take(4 << 20)
+                .read_to_string(&mut text);
+            Ok((status, text))
+        };
+        let wire = self.wire_name(model);
+        let (mut status, mut text) = post(&self.url(), &wire)?;
+        // Lemonade 2026.46 loads FLM's embedding model but forwards its own name for it,
+        // which FLM rejects: send the request to that backend with FLM's name instead.
+        if status == 400 && self.lemonade_mode() && text.contains("Unknown embedding model") {
+            let backend = self.lemonade_backend(&wire);
+            if let Some((url, checkpoint)) = backend {
+                (status, text) = post(url.trim_end_matches("/v1"), &checkpoint)?;
+            }
+        }
         if status >= 400 {
             return Err(FlmError {
                 message: format!("embeddings: {status}"),
@@ -1235,6 +1263,17 @@ impl FlmClient {
         }
         Ok(vecs)
     }
+}
+
+fn lemonade_backend_in(health: &Value, name: &str) -> Option<(String, String)> {
+    let m = health["all_models_loaded"]
+        .as_array()?
+        .iter()
+        .find(|m| m["model_name"] == name)?;
+    Some((
+        m["backend_url"].as_str()?.to_string(),
+        m["checkpoint"].as_str()?.to_string(),
+    ))
 }
 
 /// Lemonade Server.
@@ -1596,6 +1635,18 @@ fn new_session(cmd: &mut Command) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lemonade_backend_for_embeddings() {
+        let health = json!({"all_models_loaded": [
+            {"model_name": "gemma4-it-e2b-FLM", "backend_url": "http://127.0.0.1:8002/v1", "checkpoint": "gemma4-it:e2b"},
+            {"model_name": "embed-gemma-300m-FLM", "backend_url": "http://127.0.0.1:8001/v1", "checkpoint": "embed-gemma:300m"}]});
+        assert_eq!(
+            lemonade_backend_in(&health, "embed-gemma-300m-FLM"),
+            Some(("http://127.0.0.1:8001/v1".into(), "embed-gemma:300m".into()))
+        );
+        assert_eq!(lemonade_backend_in(&health, "other"), None);
+    }
 
     #[test]
     fn lemonade_models_by_flm_tag_and_gpu_name() {

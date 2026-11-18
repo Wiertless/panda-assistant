@@ -280,6 +280,12 @@ pub struct Agent {
     /// Tool routing: only core tools plus these groups go with a request (see
     /// tools::groups). Off for the bigger hand-off model, which gets everything.
     pub route_tools: bool,
+    /// Keyword lists pick tool groups (off: only meaning does).
+    pub keywords: bool,
+    /// Route by the nearest example requests instead of the group descriptions.
+    pub route_by_examples: bool,
+    /// When the nearest examples clearly agree on one tool, offer only it first.
+    pub force_proposal: bool,
     pub active_groups: HashSet<String>,
     /// Sampling temperature for requests that carry tools (steadier calls).
     pub tool_temperature: Option<f64>,
@@ -346,6 +352,9 @@ impl Agent {
             summary: String::new(),
             compacted: 0,
             route_tools: true,
+            keywords: true,
+            route_by_examples: false,
+            force_proposal: false,
             active_groups: HashSet::new(),
             tool_temperature: Some(TOOL_TEMPERATURE),
             system_prompt: None,
@@ -696,12 +705,31 @@ impl Agent {
             ));
             images.clear();
         }
-        let mut wanted: Vec<&str> = groups::groups_for(text);
+        let mut wanted: Vec<&str> = if self.keywords {
+            groups::groups_for(text)
+        } else {
+            vec![]
+        };
+        let mut proposed = None;
         if self.use_tools
             && self.route_tools
             && let Some(e) = &self.embedder
         {
-            wanted.extend(e.groups_for(text));
+            if self.route_by_examples {
+                if let Some(p) = e.propose(text) {
+                    wanted.extend(p.groups.iter().copied());
+                    let sure =
+                        p.similarity >= groups::FORCE_SIMILARITY && p.share >= groups::FORCE_SHARE;
+                    if self.force_proposal && sure && p.tool != "-" {
+                        proposed = Some(p.tool.to_string());
+                    }
+                }
+            } else {
+                wanted.extend(e.groups_for(text));
+            }
+        }
+        if let Some(t) = &proposed {
+            wanted.push(groups::group_of(t));
         }
         let actionable = !wanted.is_empty();
         self.turn_no += 1;
@@ -719,6 +747,7 @@ impl Agent {
         // Selected text from another app is untrusted, like a web page.
         let mut turn = Turn {
             tainted: text.starts_with(CONTEXT_MARK) && text.contains("Selected text:"),
+            forced: proposed.map(|t| vec![t]),
             ..Turn::default()
         };
         let result = self.run_turn(text, actionable, turn_start, &mut turn, cb);

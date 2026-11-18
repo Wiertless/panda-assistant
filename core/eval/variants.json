@@ -65,5 +65,25 @@
   "no-embed": {
     "about": "Like baseline, routing by keywords only (no embedding model).",
     "embed": false
+  },
+  "examples": {
+    "about": "Like baseline, but meaning picks tool groups from the nearest example requests (tools/requests.tsv) instead of the group descriptions (redesign step 1).",
+    "route_by_examples": true
+  },
+  "examples-force": {
+    "about": "Like examples, and when the nearest examples clearly agree on one tool, the first round offers only it (with reply and ask_user).",
+    "route_by_examples": true,
+    "force_proposal": true
+  },
+  "examples-only": {
+    "about": "Like examples, without the keyword lists (redesign step 3).",
+    "route_by_examples": true,
+    "keywords": false
+  },
+  "examples-force-only": {
+    "about": "Like examples-force, without the keyword lists.",
+    "route_by_examples": true,
+    "force_proposal": true,
+    "keywords": false
   }
 }
