@@ -7,6 +7,7 @@
 mod config;
 mod core;
 mod markup;
+mod popup;
 mod prefs;
 mod reply;
 mod window;
@@ -30,6 +31,16 @@ const CSS: &str = r#"
   padding: 5px 5px 5px 18px;
   box-shadow: 0 0 0 1px alpha(currentColor, 0.07), 0 2px 6px alpha(black, 0.08), 0 8px 24px alpha(black, 0.06);
 }
+window.popup { background: none; box-shadow: none; outline: none; border: none; }
+.popup-pill {
+  border-radius: 24px;
+  padding: 4px 4px 4px 16px;
+  transition: padding 420ms cubic-bezier(0.34, 1.56, 0.64, 1), border-radius 420ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  background: @popover_bg_color;
+  color: @popover_fg_color;
+  box-shadow: 0 4px 14px alpha(black, 0.14), 0 10px 30px alpha(black, 0.10);
+}
+.popup-pill.open { border-radius: 28px; padding: 9px 9px 9px 20px; }
 .composer entry, .composer entry:focus-within { background: none; box-shadow: none; outline: none; min-height: 36px; }
 .bubble-user {
   background: @accent_bg_color;
@@ -289,6 +300,20 @@ fn main() -> glib::ExitCode {
             app.activate_action("unload-model", None);
             return glib::ExitCode::SUCCESS;
         }
+        if opts.contains("popup") {
+            let (a, s2) = (app.clone(), s.clone());
+            popup::show(
+                app,
+                Rc::new(move |chat: &str, follow_up: &str| {
+                    let w = present(&a, &s2);
+                    w.open_chat(chat);
+                    if !follow_up.is_empty() {
+                        w.ask(follow_up);
+                    }
+                }),
+            );
+            return glib::ExitCode::SUCCESS;
+        }
         let w = present(app, &s);
         if let Some(text) = opts.lookup::<String>("ask").ok().flatten() {
             w.ask(&text);
@@ -296,8 +321,6 @@ fn main() -> glib::ExitCode {
             w.open_chat(&id);
         } else if opts.contains("new-chat") {
             w.new_chat();
-        } else if opts.contains("popup") {
-            w.popup();
         }
         glib::ExitCode::SUCCESS
     });

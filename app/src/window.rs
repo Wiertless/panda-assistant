@@ -72,7 +72,7 @@ pub fn relative_time(stamp: f64) -> String {
 
 /// How a saved user message reads in the chat: skill runs as /name.
 /// Ends the screen context a pop-up question starts with (see `Window::popup`).
-const CONTEXT_END: &str = "\n[/On screen]\n\n";
+pub const CONTEXT_END: &str = "\n[/On screen]\n\n";
 
 pub fn shown_user_text(content: &str) -> String {
     let content = match content.split_once(CONTEXT_END) {
@@ -118,9 +118,6 @@ pub struct State {
     stepped_aside: bool,
     /// Messages typed while an answer was coming, sent one by one after it.
     queue: Vec<Queued>,
-    /// Opened with the shortcut: Esc closes it, and the next message carries this screen context.
-    popped: bool,
-    context: Option<String>,
 }
 
 /// A message waiting for the current answer to finish.
@@ -344,8 +341,6 @@ impl Window {
                 messages: vec![],
                 stepped_aside: false,
                 queue: vec![],
-                popped: false,
-                context: None,
             }),
             win,
             app: app.clone(),
@@ -469,16 +464,7 @@ impl Window {
                     s.entry.grab_focus();
                 })),
             ),
-            (
-                "stop",
-                Box::new(on!(
-                    |s: &Rc<Self>| if !s.st.borrow().busy && s.st.borrow().popped {
-                        s.win.close()
-                    } else {
-                        s.stop()
-                    }
-                )),
-            ),
+            ("stop", Box::new(on!(|s: &Rc<Self>| s.stop()))),
             (
                 "show-help-overlay",
                 Box::new(on!(|s: &Rc<Self>| crate::prefs::show_shortcuts(s))),
@@ -1274,46 +1260,6 @@ impl Window {
     }
 
     /// A question from GNOME search while the window is open: a long pause starts a new chat.
-    /// Opened with the shortcut: a fresh chat after a pause, ready to type, with what was on
-    /// screen (app, window title, selected text) going along with the first message.
-    pub fn popup(self: &Rc<Self>) {
-        let stale = self
-            .st
-            .borrow()
-            .last_turn
-            .is_none_or(|t| t.elapsed() > STALE);
-        if stale && !self.st.borrow().busy && !self.st.borrow().messages.is_empty() {
-            self.new_chat();
-        }
-        let ctx = self.core.context().unwrap_or_default();
-        let s = |k: &str| ctx[k].as_str().unwrap_or("").trim().to_string();
-        let (app, title, selection) = (s("app"), s("title"), s("selection"));
-        let mut note = vec![];
-        if !app.is_empty() || !title.is_empty() {
-            note.push(format!("{app} — “{title}”"));
-        }
-        if !selection.is_empty() {
-            note.push(format!(
-                "Selected text: «{}»",
-                selection.chars().take(4000).collect::<String>()
-            ));
-        }
-        {
-            let mut st = self.st.borrow_mut();
-            st.popped = true;
-            st.context = (!note.is_empty()).then(|| {
-                format!(
-                    "{}{}{CONTEXT_END}",
-                    assistant_core::agent::CONTEXT_MARK,
-                    note.join(". ")
-                )
-            });
-        }
-        self.split.set_show_content(true);
-        self.win.present();
-        self.entry.grab_focus();
-    }
-
     pub fn ask_from_shell(self: &Rc<Self>, text: &str) {
         let stale = self
             .st
@@ -1357,9 +1303,6 @@ impl Window {
                     return;
                 }
             }
-        }
-        if let Some(ctx) = self.st.borrow_mut().context.take() {
-            prompt = format!("{ctx}{prompt}");
         }
         let (images, thumbs): (Vec<String>, Vec<gdk::Texture>) = {
             let mut st = self.st.borrow_mut();
