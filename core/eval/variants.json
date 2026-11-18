@@ -85,5 +85,14 @@
     "route_by_examples": true,
     "force_proposal": true,
     "keywords": false
+  },
+  "pre-cues": {
+    "about": "Like baseline, with the tool descriptions from before the Polish cue words (0.29): set_volume, set_brightness, media_control, open_file.",
+    "descriptions": {
+      "set_volume": "Set the output volume in percent (0-100).",
+      "set_brightness": "Set the screen brightness in percent (1-100).",
+      "media_control": "Control music and video players: play, pause, play_pause, next_track (skip this song), previous_track (go back a song), stop, or status (only to say what's playing).",
+      "open_file": "Open a file or folder with its default app. Paths can be relative to the home folder, start with ~, or start with a folder name like Downloads or Documents."
+    }
   }
 }
