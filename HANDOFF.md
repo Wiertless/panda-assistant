@@ -44,6 +44,10 @@ Released so far: Assistant **0.23.0** (pinned in silverpanda). `main` has more o
 - 0.26–0.29 released: search_everything, speed line under answers, slim pop-up bar (spring damping 0.425), clipboard extension auto-enable, get_weather + cards (weather/events/reminders via `tools::CARDS`, hint via `next_step`), answer-length line in the prompt, local mail dates. 0.29.0 pinned in silverpanda (PR 42).
 - Live checks of 0.29: weather → one call + one sentence; calendar → one call; "ile to 15% z 240?" answered right but **in English** (small-model language slip on short questions; not fixed).
 
+- Redesign step 1 built (0ef7cce): kNN over `tools/requests.tsv` (EmbeddingGemma), variants `examples`, `examples-force`, `examples-only`, `examples-force-only`. **Eval run 44282799806** (Gemma E2B) compares them with baseline: read it, ship the winner as the default, and if an `-only` variant holds up, delete keyword routing (step 3). Thresholds were calibrated on eval prompts (mild optimism).
+- Step 2 (typed workflows) parked: of Gemma's 14 baseline failures, 8 are "called no tool", only 2 are chains.
+- embed-gemma-300m-FLM is now downloaded on the laptop (routing by meaning was off there before). Lemonade 2026.46 forwards the wrong name for it; `flm.rs` works around it.
+
 ## Eval verdicts (Gemma 4 E2B, CPU, 119 prompts)
 
 baseline 105-107, no-embed 104, required 101 (+35% tokens), compact 83, compact-required 81.
