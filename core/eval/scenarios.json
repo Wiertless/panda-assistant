@@ -1179,7 +1179,7 @@
    {
     "tool": "rewrite_selection",
     "args": {
-     "instruction": "proofread|spelling|grammar|fix|correct"
+     "instruction": "proofread|spelling|grammar|fix|correct|short|skró|popraw"
     }
    }
   ],
@@ -2507,7 +2507,8 @@
   ],
   "stubs": {
    "find_files": "~/Dokumenty/lease-2026.pdf (2026-09-01)",
-   "ask_document": "The notice period is one month, to the end of a calendar month."
+   "ask_document": "The notice period is one month, to the end of a calendar month.",
+   "search_everything": "## Files named like it\n~/Dokumenty/lease-2026.pdf (2026-09-01)"
   }
  },
  {

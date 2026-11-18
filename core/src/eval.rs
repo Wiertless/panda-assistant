@@ -404,7 +404,21 @@ pub fn run(
     let calls = calls.lock().unwrap()[skip..].to_vec();
     let verdict = match result {
         Err(e) => Err(format!("request failed: {}", e.message)),
-        Ok(()) => judge(s, &calls, &answer),
+        // Without the reply a "never called" says nothing about why.
+        Ok(()) => judge(s, &calls, &answer).map_err(|e| {
+            if e.starts_with("never called") && !answer.is_empty() {
+                format!(
+                    "{e}; it replied: {}",
+                    answer
+                        .chars()
+                        .take(160)
+                        .collect::<String>()
+                        .replace('\n', " ")
+                )
+            } else {
+                e
+            }
+        }),
     };
     Outcome {
         name: s.name.clone(),

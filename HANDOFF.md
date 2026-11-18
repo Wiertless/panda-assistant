@@ -48,6 +48,12 @@ Released so far: Assistant **0.23.0** (pinned in silverpanda). `main` has more o
 - Step 2 (typed workflows) parked: of Gemma's 14 baseline failures, 8 are "called no tool", only 2 are chains.
 - embed-gemma-300m-FLM is now downloaded on the laptop (routing by meaning was off there before). Lemonade 2026.46 forwards the wrong name for it; `flm.rs` works around it.
 
+## Eval state (2026-11-18 evening)
+
+- 160 families (345 prompts), `eval_verdict.py` heads every summary (sign test per family). `--shard K/N`, workflow input `shards` = 3, 4 or 6.
+- Run over 160: `examples` +1.9 points vs baseline, UNDECIDED (p 0.24), same direction as the 48-family run. **Decisive run 44372794027** (repeat 3, 6 shards, made before the description fixes below): if BETTER, make `route_by_examples` the default and release 0.30.0.
+- No-tool fixes in progress: Polish cue words in set_volume/set_brightness/media_control/open_file descriptions, media keywords ("leci", "playing", "utwór"), eval failures now include the reply. Local NPU check: "ścisz trochę" and "a bit quieter" pass, "ciszej proszę" now calls set_volume (value still off). Next: rerun these families locally (`assistantd --eval --url http://127.0.0.1:8002 --model gemma4-it:e2b --only NAME`, ~4 s/prompt on the NPU), then a CI eval of baseline before/after.
+
 ## Idea on hold (owner deciding): super-heavy research
 
 A very long overnight research mode with a big model for a better PDF. AirLLM (layer streaming) is the wrong engine: a dense 70B streamed from the NVMe is ~10 s/token. Instead a big **MoE** via llama.cpp with mmap (CPU + SSD, NPU stays free):

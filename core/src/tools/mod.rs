@@ -320,7 +320,7 @@ video, photos, text editor, pdf, terminal, settings) to open their default app f
                   Safe, apps::open_app, text("name", |n| format!("Open {}", or(n, "an app")))),
         Tool::new("open_url", "Open a web address in the default browser.", obj(json!({"url": {"type": "string"}}), &["url"]),
                   Safe, apps::open_url, text("url", |u| format!("Open {}", or(u, "a link")))),
-        Tool::new("open_file", "Open a file or folder with its default app. Paths can be relative to the home \
+        Tool::new("open_file", "Open (\"otwórz\") a file or folder with its default app, to show it to the user. Paths can be relative to the home \
 folder, start with ~, or start with a folder name like Downloads or Documents.", path(), Safe, files::open_file,
                   text("path", |p| format!("Open {}", or(p, "a file")))),
         Tool::new("show_in_files", "Show a file or folder in the file manager (opens its folder with it selected).",
@@ -462,12 +462,14 @@ copied\", \"the link from before\", \"paste that address\". query keeps only cli
                   onoff("enabled", "dark mode")),
         Tool::new("set_do_not_disturb", "Turn Do Not Disturb (hide notification banners) on or off.", enabled(), Safe,
                   settings::set_do_not_disturb, onoff("enabled", "Do Not Disturb")),
-        Tool::new("set_volume", "Set the output volume in percent (0-100).",
+        Tool::new("set_volume", "Set the output volume in percent (0-100): also for louder or quieter (\"głośniej\", \
+\"ciszej\", \"ścisz\", \"podgłośnij\"), a step of about 15.",
                   obj(json!({"percent": {"type": "integer", "minimum": 0, "maximum": 100}}), &["percent"]), Safe,
                   settings::set_volume, text("percent", |p| format!("Set volume to {p}%"))),
         Tool::new("set_mute", "Mute or unmute the sound output.", obj(json!({"muted": {"type": "boolean"}}), &["muted"]),
                   Safe, settings::set_mute, onoff("muted", "mute")),
-        Tool::new("set_brightness", "Set the screen brightness in percent (1-100).",
+        Tool::new("set_brightness", "Set the screen brightness in percent (1-100): also when the screen is too bright or \
+too dark (\"przyciemnij\", \"rozjaśnij\"), a step of about 20.",
                   obj(json!({"percent": {"type": "integer", "minimum": 1, "maximum": 100}}), &["percent"]), Safe,
                   settings::set_brightness, text("percent", |p| format!("Set brightness to {p}%"))),
         Tool::new("set_power_mode", "Set the power mode: power-saver, balanced or performance.",
@@ -565,7 +567,7 @@ address, or a contact's name (looked up in their contacts).",
                   obj(json!({"name": {"type": "string"}}), &["name"]), Safe, personal::find_contact,
                   text("name", |n| format!("Look up {}", or(n, "a contact")))),
         Tool::new("media_control", "Control music and video players: play, pause, play_pause, next_track (skip this \
-song), previous_track (go back a song), stop, or status (only to say what's playing).", obj(json!({"action": {"type": "string", "enum": ["play", "pause", "play_pause", "next_track",
+song), previous_track (go back a song), stop, or status (only to say what's playing: \"what song is this\", \"co teraz leci\").", obj(json!({"action": {"type": "string", "enum": ["play", "pause", "play_pause", "next_track",
                   "previous_track", "stop", "status"]}, "player": {"type": "string", "description": "Optional, e.g. Spotify"}}), &["action"]),
                   Safe, connect::media_control, text("action", |a| format!("Media: {}", a.replace('_', "/")))),
         Tool::new("run_command", "Run a shell command inside the user's 'zed' toolbox container (Fedora with dev \
