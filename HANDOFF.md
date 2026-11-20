@@ -48,10 +48,9 @@ Released so far: Assistant **0.23.0** (pinned in silverpanda). `main` has more o
 - Step 2 (typed workflows) parked: of Gemma's 14 baseline failures, 8 are "called no tool", only 2 are chains.
 - embed-gemma-300m-FLM is now downloaded on the laptop (routing by meaning was off there before). Lemonade 2026.46 forwards the wrong name for it; `flm.rs` works around it.
 
-## Next step (2026-11-19)
+## Pinned
 
-- **0.30.0 release build was running** (ci run 44498292658) when the session ended: check the release, verify the `.sha256`, pin it in silverpanda (VERSION/SHA256 in files/scripts/panda-assistant.sh), PR, merge after bluebuild passes.
-- silverpanda PR 43 merged: the toolbox image now has git-credential-libsecret (git in a fresh toolbox uses the keyring login).
+- 0.30.0 pinned in silverpanda (PR 44, merged 2026-11-20). silverpanda PR 43: the toolbox image has git-credential-libsecret.
 
 ## Eval state (2026-11-18 evening)
 
