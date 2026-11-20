@@ -405,7 +405,8 @@ steps: short numbered steps.",
         Tool::new("get_status", "Get dark mode, Do Not Disturb, Wi-Fi, volume and brightness state.", obj(json!({}), &[]),
                   Safe, settings::get_status, |_| "Read settings".into()),
         Tool::new("web_search", "Search the web for current information, facts, news, prices or how-tos. \
-Returns titles, links and short snippets. Not for the user's own files, settings or devices: use the tools for those.", obj(json!({"query": {"type": "string", "description": "What to search for"}}), &["query"]),
+Returns titles, links and short snippets. Not for the user's own files, settings or devices: use the tools for those. \
+When the user asks to research or look into something, even quickly, use research instead.", obj(json!({"query": {"type": "string", "description": "What to search for"}}), &["query"]),
                   Safe, web::web_search, text("query", |q| format!("Search the web for “{q}”"))),
         Tool::new("read_web_page", "Read the text of a web page, e.g. a search result, to answer from it.",
                   obj(json!({"url": {"type": "string"}}), &["url"]), Safe, web::read_web_page,
@@ -428,7 +429,7 @@ the text. Empty query: the newest mail.",
                   obj(json!({"id": {"type": "string"}}), &["id"]), Safe, mail::read_mail, |_| "Read a message".into()),
         Tool::new("research", "Research a topic in depth on the web, like a researcher: plans a report, searches and \
 reads up to 14 pages, checks what's still missing and searches for that too (up to 20 sources), and writes a report \
-with sections and cited sources, shown to the user as it is. Takes a few minutes; when the user asks for a quick or short look it reads 5 pages and answers briefly instead. Use \
+with sections and cited sources, shown to the user as it is. Takes a few minutes; for \"quick research\" or a short look it reads 5 pages and answers in under a minute. Use \
 it when the user asks to research, look into, review or compare something. save_as pdf, md or txt saves the report in Documents/Research. For one quick \
 fact, web_search is enough.",
                   obj(json!({"question": {"type": "string", "description": "The full question with any details the user gave, in the user's own language (the report is written in it)"},

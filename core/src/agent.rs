@@ -28,6 +28,8 @@ pub const ASK_USER: &str = "ask_user";
 pub const REPLY: &str = "reply";
 /// The start of a tool result that no retry can fix (see ToolError::cannot).
 pub const FINAL_ERROR: &str = "Error (retrying won't help): ";
+/// Writes research reports when the smarter model doesn't fit in memory.
+const MIDDLE_WRITER: &str = "qwen3.5:4b";
 /// A question asked from the pop-up starts with what was on screen; the window hides it.
 pub const CONTEXT_MARK: &str = "[On screen: ";
 /// A tool result that is the answer itself (research): shown as written, and the turn ends.
@@ -684,6 +686,18 @@ impl Agent {
         self.ctx.smarter_name = smarter.clone();
         self.ctx.model_name = Some(self.model.clone());
         *self.ctx.request.lock().unwrap() = text.to_string();
+        let (client, model) = (self.client.clone(), self.model.clone());
+        self.ctx.free_model = Some(Arc::new(move || client.unload_model(&model)));
+        // shortcut: the middle writer is fixed to Qwen 3.5 4B; pick it from the installed models if more appear.
+        let middle = Some(MIDDLE_WRITER.to_string())
+            .filter(|m| *m != self.model && Some(m) != self.smarter_model.as_ref());
+        self.ctx.middle_name = middle.clone();
+        self.ctx.ask_middle = middle.map(|m| {
+            let client = self.client.clone();
+            Arc::new(move |system: &str, user: &str| {
+                one_shot(&client, &m, system, user).map_err(|e| ToolError(e.message))
+            }) as crate::tool::AskModel
+        });
         self.ctx.ask_smarter = smarter.map(|m| {
             let client = self.client.clone();
             Arc::new(move |system: &str, user: &str| {

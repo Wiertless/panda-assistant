@@ -369,8 +369,18 @@ pub fn search(query: &str) -> Result<(&'static str, Vec<Hit>), ToolError> {
     }
 }
 
-pub fn web_search(_: &Context, args: &Args) -> ToolResult {
+pub fn web_search(ctx: &Context, args: &Args) -> ToolResult {
     let query = arg_str(args, "query").trim().to_string();
+    // "Quick research on…": small models take "quick" for one search; the user asked for research.
+    let request = ctx.request.lock().unwrap().clone();
+    if super::research::asks_research(&request) {
+        let mut a = Args::new();
+        a.insert(
+            "question".into(),
+            serde_json::Value::String(if query.is_empty() { request } else { query }),
+        );
+        return super::research::research(ctx, &a);
+    }
     let (source, hits) = search(&query)?;
     Ok(format_results(&query, source, &hits))
 }

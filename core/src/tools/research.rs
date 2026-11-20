@@ -268,11 +268,8 @@ pub fn research_with(ctx: &Context, question: &str, search: SearchFn, read: Read
         return Err("none of the pages it found had anything on this".into());
     }
 
-    let writer: &AskModel = ctx.ask_smarter.as_ref().unwrap_or(ask);
-    say(&match (&ctx.ask_smarter, &ctx.smarter_name) {
-        (Some(_), Some(m)) => format!("Writing the answer with {m}…"),
-        _ => "Writing the answer…".to_string(),
-    });
+    // Quick means quick: the small model writes, no second model to load.
+    say("Writing the answer…");
     let numbered: Vec<String> = sources
         .iter()
         .enumerate()
@@ -282,14 +279,7 @@ pub fn research_with(ctx: &Context, question: &str, search: SearchFn, read: Read
         "Question: {question}\n\nNotes:\n\n{}",
         numbered.join("\n\n")
     );
-    let answer = writer(WRITE, &user).or_else(|e| {
-        // The smarter model failed to load or answer: the small one writes it.
-        if ctx.ask_smarter.is_some() {
-            ask(WRITE, &user)
-        } else {
-            Err(e)
-        }
-    })?;
+    let answer = ask(WRITE, &user)?;
     Ok(format!(
         "{}{}{}",
         crate::agent::FINAL_ANSWER,
@@ -312,6 +302,55 @@ fn sources_list(answer: &str, sources: &[Source]) -> String {
         .map(|(i, s)| format!("[{}] {} – {}", i + 1, s.title, s.url))
         .collect();
     format!("\n\nSources:\n{}", lines.join("\n"))
+}
+
+/// Who writes an in-depth report.
+#[derive(Debug, PartialEq)]
+enum Writer {
+    Smarter,
+    Middle,
+    Small,
+}
+
+/// Free memory the 9B needs to write without squeezing the desktop (~9.2 GB measured, plus room).
+// shortcut: one figure for the smarter model, measured for qwen3.5:9b; per-model sizes if another is set.
+const SMARTER_NEEDS_MB: u64 = 10_500;
+
+fn pick_writer(available_mb: Option<u64>, smarter: bool, middle: bool) -> Writer {
+    let fits = available_mb.is_none_or(|mb| mb >= SMARTER_NEEDS_MB);
+    match (smarter, middle) {
+        (true, _) if fits => Writer::Smarter,
+        (_, true) => Writer::Middle,
+        (true, false) => Writer::Smarter,
+        _ => Writer::Small,
+    }
+}
+
+/// MemAvailable from /proc/meminfo.
+fn available_mb() -> Option<u64> {
+    std::fs::read_to_string("/proc/meminfo")
+        .ok()?
+        .lines()
+        .find(|l| l.starts_with("MemAvailable:"))?
+        .split_whitespace()
+        .nth(1)?
+        .parse::<u64>()
+        .ok()
+        .map(|kb| kb / 1024)
+}
+
+/// The user's words ask for research ("research", "look into", "zbadaj", "rozeznanie").
+pub fn asks_research(request: &str) -> bool {
+    const ASK: [&str; 6] = [
+        "research",
+        "look into",
+        "zbadaj",
+        "zbadać",
+        "rozezna",
+        "przeanalizuj",
+    ];
+    let r = request.to_lowercase();
+    ASK.iter().any(|w| r.contains(w))
 }
 
 /// "quick research on…", "szybko sprawdź…", "briefly look into…".
@@ -458,10 +497,27 @@ pub fn in_depth(
         return Err("none of the pages it found had anything on this".into());
     }
 
-    let writer: &AskModel = ctx.ask_smarter.as_ref().unwrap_or(ask);
+    // Both models at once nearly fill a 16 GB laptop: the small one's part is done, so free it,
+    // then let the 9B write only if it fits next to what's open, else the 4B.
+    if (ctx.ask_smarter.is_some() || ctx.ask_middle.is_some())
+        && let Some(free) = &ctx.free_model
+    {
+        free();
+    }
+    let (writer, writer_name): (&AskModel, Option<String>) = match pick_writer(
+        available_mb(),
+        ctx.ask_smarter.is_some(),
+        ctx.ask_middle.is_some(),
+    ) {
+        Writer::Smarter => (ctx.ask_smarter.as_ref().unwrap(), ctx.smarter_name.clone()),
+        Writer::Middle => (ctx.ask_middle.as_ref().unwrap(), ctx.middle_name.clone()),
+        Writer::Small => (ask, None),
+    };
+    let fell_back = std::cell::Cell::new(false);
     let write = |system: &str, user: &str| {
         writer(system, user).or_else(|e| {
-            if ctx.ask_smarter.is_some() {
+            if writer_name.is_some() {
+                fell_back.set(true);
                 ask(system, user)
             } else {
                 Err(e)
@@ -479,9 +535,9 @@ pub fn in_depth(
         if notes.is_empty() {
             continue;
         }
-        say(&match &ctx.smarter_name {
-            Some(m) if ctx.ask_smarter.is_some() => format!("Writing “{head}” with {m}…"),
-            _ => format!("Writing “{head}”…"),
+        say(&match &writer_name {
+            Some(m) => format!("Writing “{head}” with {m}…"),
+            None => format!("Writing “{head}”…"),
         });
         let user = format!(
             "Question: {question}\nSection: {head}\n\nNotes:\n\n{}",
@@ -511,9 +567,10 @@ pub fn in_depth(
         .model_name
         .clone()
         .unwrap_or_else(|| "the assistant's model".into());
-    let author = match (&ctx.smarter_name, ctx.ask_smarter.is_some()) {
-        (Some(m), true) => m.clone(),
-        _ => reader.clone(),
+    let author = match (&writer_name, fell_back.get()) {
+        (Some(m), false) => m.clone(),
+        (Some(m), true) => format!("{m} and {reader}"),
+        (None, _) => reader.clone(),
     };
     let by = if polish {
         format!("Źródła przeczytał i opisał {reader}, raport napisał {author}.")
@@ -819,7 +876,7 @@ mod tests {
     }
 
     #[test]
-    fn small_model_takes_notes_smarter_one_writes_with_citations() {
+    fn quick_research_notes_and_writes_with_the_small_model() {
         let calls: Arc<Mutex<Vec<(String, String)>>> = Arc::default();
         let small_calls = calls.clone();
         let small: AskModel = Arc::new(move |system: &str, user: &str| {
@@ -827,7 +884,14 @@ mod tests {
                 .lock()
                 .unwrap()
                 .push(("small".into(), system[..12].to_string()));
-            Ok(if system == PLAN {
+            Ok(if system == WRITE {
+                assert!(
+                    user.contains("[1] Specs") && user.contains("[2] Review"),
+                    "{user}"
+                );
+                assert!(!user.contains("Spam"), "pages without notes are left out");
+                "About 11 hours [2], with a 50 TOPS NPU [1].".into()
+            } else if system == PLAN {
                 "1. npu laptop battery\n2. \"ryzen ai 340 review\"\nThese should help:".into()
             } else if user.contains("Spam page") {
                 "NONE".into()
@@ -895,13 +959,14 @@ mod tests {
             "{answer}"
         );
         let calls = calls.lock().unwrap();
-        assert_eq!(calls.iter().filter(|c| c.0 == "big").count(), 1);
-        assert_eq!(calls.last().unwrap().0, "big");
+        assert_eq!(
+            calls.iter().filter(|c| c.0 == "big").count(),
+            0,
+            "quick never loads the 9B"
+        );
         let notices = notices.lock().unwrap();
         assert!(
-            notices
-                .iter()
-                .any(|n| n == "Writing the answer with qwen3.5:9b…"),
+            notices.iter().any(|n| n == "Writing the answer…"),
             "{notices:?}"
         );
     }
@@ -915,6 +980,22 @@ mod tests {
         };
         let e = research_with(&ctx, "q", &|_| Ok(vec![]), &|_| Err("x".into())).unwrap_err();
         assert!(e.0.contains("found nothing"));
+    }
+
+    #[test]
+    fn the_9b_writes_only_when_it_fits() {
+        assert_eq!(pick_writer(Some(11_000), true, true), Writer::Smarter);
+        assert_eq!(pick_writer(Some(6_000), true, true), Writer::Middle);
+        assert_eq!(pick_writer(Some(6_000), false, false), Writer::Small);
+        assert_eq!(pick_writer(None, true, true), Writer::Smarter);
+        assert_eq!(pick_writer(Some(6_000), true, false), Writer::Smarter); // nothing smaller to use
+    }
+
+    #[test]
+    fn research_words() {
+        assert!(asks_research("do a quick research on samsung knox"));
+        assert!(asks_research("zbadaj szybko, czym jest Knox"));
+        assert!(!asks_research("who won the match yesterday?"));
     }
 
     #[test]

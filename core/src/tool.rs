@@ -76,6 +76,11 @@ pub struct Context {
     pub smarter_name: Option<String>,
     /// The model answering this chat (research says it read the sources).
     pub model_name: Option<String>,
+    /// A mid-sized writer (Qwen 3.5 4B) for when the smarter model doesn't fit in memory.
+    pub ask_middle: Option<AskModel>,
+    pub middle_name: Option<String>,
+    /// Unload the chat model (research does before the smarter model writes).
+    pub free_model: Option<Hook>,
     /// The user's message this turn, for tools that follow its wording (research depth).
     pub request: Arc<Mutex<String>>,
     /// A line for the window about a long tool's progress ("Reading 3 pages…").
