@@ -48,9 +48,11 @@ Released so far: Assistant **0.23.0** (pinned in silverpanda). `main` has more o
 - Step 2 (typed workflows) parked: of Gemma's 14 baseline failures, 8 are "called no tool", only 2 are chains.
 - embed-gemma-300m-FLM is now downloaded on the laptop (routing by meaning was off there before). Lemonade 2026.46 forwards the wrong name for it; `flm.rs` works around it.
 
-## Pinned
+## Pinned / releasing
 
-- 0.30.0 pinned in silverpanda (PR 44, merged 2026-11-20). silverpanda PR 43: the toolbox image has git-credential-libsecret.
+- 0.30.0 pinned (silverpanda PR 44). silverpanda PR 45 merged: lemond MemoryHigh=10G, MemoryMax=11G.
+- **0.31.0 release build running** (2026-11-20): research in depth by default + gap round + "quick" from the user's words, writer by free memory (9B only with >= 10.5 GB available, else qwen3.5:4b), write_file to .pdf, "what's playing" names the app, unload after 15 min. The owner pins it in silverpanda himself (VERSION/SHA256 in files/scripts/panda-assistant.sh).
+- Open: embedding model on or off by default (owner tried 0.30 with it); "ciszej proszę" volume value; English replies to Polish math.
 
 ## Eval state (2026-11-18 evening)
 
