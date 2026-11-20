@@ -23,6 +23,8 @@ use crate::tool::Context;
 use crate::{activity, paths, store, tools};
 
 pub const BUS_NAME: &str = "io.github.wiertless.PandaAssistant.Core";
+/// Minutes unused before the model is unloaded, unless the user chose otherwise.
+pub const DEFAULT_UNLOAD_MINUTES: u64 = 15;
 pub const OBJECT_PATH: &str = "/io/github/wiertless/PandaAssistant/Core";
 pub const INTERFACE: &str = "io.github.wiertless.PandaAssistant.Core1";
 /// A bigger model (hand-off, pictures) is swapped out this soon after use.
@@ -118,7 +120,10 @@ impl Config {
             web_search: raw["web_search"].as_bool().unwrap_or(true),
             memory: raw["memory"].as_bool().unwrap_or(true),
             smarter_model: raw["smarter_model"].as_str().unwrap_or("auto").to_string(),
-            unload_after_minutes: raw["unload_after_minutes"].as_u64().unwrap_or(0) as u32,
+            // ~5 GB of the laptop's RAM is the model: free it after a quarter hour unused.
+            unload_after_minutes: raw["unload_after_minutes"]
+                .as_u64()
+                .unwrap_or(DEFAULT_UNLOAD_MINUTES) as u32,
             always_allow: raw["always_allow"]
                 .as_array()
                 .into_iter()

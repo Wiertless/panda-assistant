@@ -335,7 +335,11 @@ impl Window {
                 text_scale: cfg["text_scale"].as_f64().unwrap_or(1.0),
                 smarter_choice: config::str_or(&cfg, "smarter_model", "auto"),
                 ctx_len: config::int_or(&cfg, "ctx_len", 8192),
-                unload_after: config::int_or(&cfg, "unload_after_minutes", 0),
+                unload_after: config::int_or(
+                    &cfg,
+                    "unload_after_minutes",
+                    assistant_core::service::DEFAULT_UNLOAD_MINUTES as i64,
+                ),
                 web_enabled: config::bool_or(&cfg, "web_search", true),
                 memory_enabled: config::bool_or(&cfg, "memory", true),
                 messages: vec![],
