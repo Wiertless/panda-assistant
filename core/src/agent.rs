@@ -682,6 +682,7 @@ impl Agent {
         // Research hands its notes to the smarter model, when there is one.
         let smarter = self.smarter_model.clone().filter(|m| *m != self.model);
         self.ctx.smarter_name = smarter.clone();
+        self.ctx.model_name = Some(self.model.clone());
         self.ctx.ask_smarter = smarter.map(|m| {
             let client = self.client.clone();
             Arc::new(move |system: &str, user: &str| {

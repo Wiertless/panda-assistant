@@ -353,8 +353,9 @@ question about a long document, ask_document is better.",
                   obj(json!({"path": {"type": "string"},
                              "from_line": {"type": "integer", "description": "First line to read (default 1)"}}), &["path"]), Safe,
                   files::read_file, text("path", |p| format!("Read {}", or(p, "a file")))),
-        Tool::new("write_file", "Create a text file (a note, list, script, letter…) with the given content. To change \
-an existing file use edit_file; overwrite true replaces a whole existing file.",
+        Tool::new("write_file", "Create a text file (a note, list, script, letter…) with the given content; a path \
+ending in .pdf makes a PDF from Markdown content (\"put that into a PDF\"). To change an existing file use edit_file; \
+overwrite true replaces a whole existing file.",
                   obj(json!({"path": {"type": "string", "description": "e.g. Documents/shopping.txt"},
                              "content": {"type": "string"},
                              "overwrite": {"type": "boolean"}}), &["path", "content"]), Confirm,
@@ -425,13 +426,12 @@ the text. Empty query: the newest mail.",
                   Safe, mail::search_mail, text("query", |q| format!("Search mail for “{q}”"))),
         Tool::new("read_mail", "Read a whole message that search_mail found, by its id in brackets.",
                   obj(json!({"id": {"type": "string"}}), &["id"]), Safe, mail::read_mail, |_| "Read a message".into()),
-        Tool::new("research", "Research a topic on the web: plans a report, searches and reads up to 12 pages, and \
-writes an in-depth report with sections and cited sources, shown to the user as it is. Use it when the user asks to \
-research, look into, review or compare something, or for a question that needs several sources. depth quick gives a \
-short answer from 5 pages. save_as pdf, md or txt saves the report in Documents/Research. For one quick fact, \
-web_search is enough.",
+        Tool::new("research", "Research a topic in depth on the web, like a researcher: plans a report, searches and \
+reads up to 14 pages, checks what's still missing and searches for that too (up to 20 sources), and writes a report \
+with sections and cited sources, shown to the user as it is. Takes a few minutes. Use it when the user asks to research, \
+look into, review or compare something. save_as pdf, md or txt saves the report in Documents/Research. For one quick \
+fact, web_search is enough.",
                   obj(json!({"question": {"type": "string", "description": "The full question with any details the user gave, in the user's own language (the report is written in it)"},
-                             "depth": {"type": "string", "enum": ["in_depth", "quick"]},
                              "save_as": {"type": "string", "enum": ["pdf", "md", "txt"], "description": "Only when the user asks for a file"}}), &["question"]),
                   Safe, research::research, text("question", |q| format!("Research “{q}”"))).with_progress(),
         Tool::new("copy_to_clipboard", "Copy text to the clipboard.", obj(json!({"text": {"type": "string"}}), &["text"]),

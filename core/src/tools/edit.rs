@@ -77,6 +77,39 @@ pub fn write_file(ctx: &Context, args: &Args) -> ToolResult {
     }
     let content = arg_str(args, "content");
     let exists = path.exists();
+    // "Put that into a PDF": Markdown laid out like a research report.
+    if path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("pdf"))
+    {
+        if exists && !flag(args, "overwrite") {
+            return Err(format!(
+                "{} already exists; call again with overwrite true to replace it",
+                short(&path)
+            )
+            .into());
+        }
+        let before = fs::read(&path).ok();
+        if let Some(dir) = path.parent() {
+            fs::create_dir_all(dir).map_err(|e| ToolError(e.to_string()))?;
+        }
+        let pages = super::research::write_pdf(&path, &content)
+            .map_err(|e| ToolError(format!("couldn't make the PDF: {e}")))?;
+        let p = path.clone();
+        ctx.can_undo(&format!("Write {}", short(&path)), move || match &before {
+            Some(old) => fs::write(&p, old)
+                .map(|_| format!("{} is back as it was.", short(&p)))
+                .map_err(|e| ToolError(e.to_string())),
+            None => fs::remove_file(&p)
+                .map(|_| format!("Removed {} again.", short(&p)))
+                .map_err(|e| ToolError(e.to_string())),
+        });
+        return Ok(format!(
+            "{} {} ({pages} pages).",
+            if exists { "Replaced" } else { "Created" },
+            short(&path)
+        ));
+    }
     if exists && !flag(args, "overwrite") {
         return Err(format!(
             "{} already exists; to replace it, call again with overwrite true, or use edit_file to change part of it",
