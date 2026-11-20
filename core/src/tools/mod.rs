@@ -428,8 +428,8 @@ the text. Empty query: the newest mail.",
                   obj(json!({"id": {"type": "string"}}), &["id"]), Safe, mail::read_mail, |_| "Read a message".into()),
         Tool::new("research", "Research a topic in depth on the web, like a researcher: plans a report, searches and \
 reads up to 14 pages, checks what's still missing and searches for that too (up to 20 sources), and writes a report \
-with sections and cited sources, shown to the user as it is. Takes a few minutes. Use it when the user asks to research, \
-look into, review or compare something. save_as pdf, md or txt saves the report in Documents/Research. For one quick \
+with sections and cited sources, shown to the user as it is. Takes a few minutes; when the user asks for a quick or short look it reads 5 pages and answers briefly instead. Use \
+it when the user asks to research, look into, review or compare something. save_as pdf, md or txt saves the report in Documents/Research. For one quick \
 fact, web_search is enough.",
                   obj(json!({"question": {"type": "string", "description": "The full question with any details the user gave, in the user's own language (the report is written in it)"},
                              "save_as": {"type": "string", "enum": ["pdf", "md", "txt"], "description": "Only when the user asks for a file"}}), &["question"]),

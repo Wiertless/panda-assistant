@@ -45,11 +45,27 @@ pub fn research(ctx: &Context, args: &crate::tool::Args) -> ToolResult {
     }
     let save = arg_str(args, "save_as").trim().to_lowercase();
     let search = |q: &str| web::search(q).map(|(_, hits)| hits);
+    // In depth unless the user's own words ask for a quick look: the model alone chose "quick" too often.
+    let request = ctx.request.lock().unwrap().clone();
+    if save.is_empty() && wants_quick(&request) {
+        return research_with(ctx, &question, &search, &|url| {
+            web::read_page(url, PAGE_CHARS)
+        });
+    }
     let report = in_depth(ctx, &question, &search, &|url| {
         web::read_page(url, DEEP_PAGE_CHARS)
     })?;
     deliver(&question, &report, &save)
 }
+
+const MAX_PAGES: usize = 5;
+/// Of each page, what the note taker reads (about 2K tokens: fits an 8K context).
+const PAGE_CHARS: usize = 7000;
+const WRITE: &str = "You are a careful researcher. Answer the question from the numbered notes only. Start with \
+the answer itself in one or two sentences, then the details that support it. Put the note number in brackets \
+after each claim, like [2]. If the notes disagree, say so; if they don't answer part of the question, say what's \
+missing instead of guessing. Be concise. Plain text with short paragraphs or \"- \" lists, no headings. Answer in \
+the question's language.";
 
 // In depth: an outline of sections, more pages, a section at a time.
 const MAX_SECTIONS: usize = 6;
@@ -174,6 +190,147 @@ fn parse_outline(text: &str) -> Vec<(String, Vec<String>)> {
     }
     out.truncate(MAX_SECTIONS);
     out
+}
+
+pub fn research_with(ctx: &Context, question: &str, search: SearchFn, read: ReadFn) -> ToolResult {
+    let ask = ctx
+        .ask_model
+        .as_ref()
+        .ok_or_else(|| ToolError::from("the model isn't available"))?;
+    let say = |s: &str| {
+        if let Some(p) = &ctx.progress {
+            p(s)
+        }
+    };
+
+    say("Planning the searches…");
+    let queries = plan(ask, question);
+    say(&format!("Searching: {}", queries.join(" · ")));
+    let mut ranked: Vec<Vec<Hit>> = vec![];
+    let mut errors = vec![];
+    for q in &queries {
+        match search(q) {
+            Ok(h) => ranked.push(h),
+            Err(e) => errors.push(e.0),
+        }
+    }
+    let hits = pick(&ranked, MAX_PAGES);
+    if hits.is_empty() {
+        return Err(format!(
+            "the searches found nothing{}",
+            if errors.is_empty() {
+                String::new()
+            } else {
+                format!(" ({})", errors.join("; "))
+            }
+        )
+        .into());
+    }
+
+    // Fetch the pages at once (the network is the slow part), then take notes one by one
+    // (the model serves one request at a time).
+    say(&format!("Reading {} pages…", hits.len()));
+    let pages: Vec<Result<(String, String), ToolError>> = std::thread::scope(|s| {
+        let handles: Vec<_> = hits.iter().map(|h| s.spawn(move || read(&h.url))).collect();
+        handles
+            .into_iter()
+            .map(|t| t.join().unwrap_or_else(|_| Err("reading failed".into())))
+            .collect()
+    });
+    let mut sources = vec![];
+    for (hit, page) in hits.iter().zip(pages) {
+        let (title, text) = match page {
+            Ok((t, text)) if !text.trim().is_empty() => {
+                (if t.is_empty() { hit.title.clone() } else { t }, text)
+            }
+            // Unreadable: the search snippet is still something.
+            _ if !hit.snippet.is_empty() => (hit.title.clone(), hit.snippet.clone()),
+            _ => continue,
+        };
+        say(&format!("Taking notes: {}", short(&title, 60)));
+        let user = format!(
+            "Question: {question}\n\nPage: {title}\n{}\n\n{text}",
+            hit.url
+        );
+        let Ok(notes) = ask(NOTES, &user) else {
+            continue;
+        };
+        let notes = clean_notes(&notes);
+        if !notes.is_empty() {
+            sources.push(Source {
+                title,
+                url: hit.url.clone(),
+                notes,
+            });
+        }
+    }
+    if sources.is_empty() {
+        return Err("none of the pages it found had anything on this".into());
+    }
+
+    let writer: &AskModel = ctx.ask_smarter.as_ref().unwrap_or(ask);
+    say(&match (&ctx.ask_smarter, &ctx.smarter_name) {
+        (Some(_), Some(m)) => format!("Writing the answer with {m}…"),
+        _ => "Writing the answer…".to_string(),
+    });
+    let numbered: Vec<String> = sources
+        .iter()
+        .enumerate()
+        .map(|(i, s)| format!("[{}] {} ({})\n{}", i + 1, s.title, s.url, s.notes))
+        .collect();
+    let user = format!(
+        "Question: {question}\n\nNotes:\n\n{}",
+        numbered.join("\n\n")
+    );
+    let answer = writer(WRITE, &user).or_else(|e| {
+        // The smarter model failed to load or answer: the small one writes it.
+        if ctx.ask_smarter.is_some() {
+            ask(WRITE, &user)
+        } else {
+            Err(e)
+        }
+    })?;
+    Ok(format!(
+        "{}{}{}",
+        crate::agent::FINAL_ANSWER,
+        answer.trim(),
+        sources_list(&answer, &sources)
+    ))
+}
+
+/// "Sources:" with the notes the answer cited, or all of them if it cited none.
+fn sources_list(answer: &str, sources: &[Source]) -> String {
+    static CITE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[(\d+)\]").unwrap());
+    let cited: HashSet<usize> = CITE
+        .captures_iter(answer)
+        .filter_map(|c| c[1].parse().ok())
+        .collect();
+    let lines: Vec<String> = sources
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| cited.is_empty() || cited.contains(&(i + 1)))
+        .map(|(i, s)| format!("[{}] {} – {}", i + 1, s.title, s.url))
+        .collect();
+    format!("\n\nSources:\n{}", lines.join("\n"))
+}
+
+/// "quick research on…", "szybko sprawdź…", "briefly look into…".
+fn wants_quick(request: &str) -> bool {
+    const QUICK: [&str; 11] = [
+        "quick",
+        "briefly",
+        "in short",
+        "in a nutshell",
+        "szybk",
+        "krótk",
+        "krotk",
+        "pobieżn",
+        "pobiezn",
+        "zwięźl",
+        "w skrócie",
+    ];
+    let r = request.to_lowercase();
+    QUICK.iter().any(|w| r.contains(w))
 }
 
 pub fn in_depth(
@@ -604,7 +761,7 @@ fn short(s: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
     fn hit(url: &str, title: &str) -> Hit {
         Hit {
@@ -659,6 +816,117 @@ mod tests {
             o[0].1,
             ["framework 13 battery test", "ryzen ai 340 battery"]
         );
+    }
+
+    #[test]
+    fn small_model_takes_notes_smarter_one_writes_with_citations() {
+        let calls: Arc<Mutex<Vec<(String, String)>>> = Arc::default();
+        let small_calls = calls.clone();
+        let small: AskModel = Arc::new(move |system: &str, user: &str| {
+            small_calls
+                .lock()
+                .unwrap()
+                .push(("small".into(), system[..12].to_string()));
+            Ok(if system == PLAN {
+                "1. npu laptop battery\n2. \"ryzen ai 340 review\"\nThese should help:".into()
+            } else if user.contains("Spam page") {
+                "NONE".into()
+            } else if user.contains("Review") {
+                "- Battery lasts 11 hours in the review".into()
+            } else {
+                "- The NPU does 50 TOPS".into()
+            })
+        });
+        let big_calls = calls.clone();
+        let big: AskModel = Arc::new(move |system: &str, user: &str| {
+            big_calls
+                .lock()
+                .unwrap()
+                .push(("big".into(), system[..12].to_string()));
+            assert!(
+                user.contains("[1] Specs") && user.contains("[2] Review"),
+                "{user}"
+            );
+            assert!(!user.contains("Spam"), "pages without notes are left out");
+            Ok("About 11 hours [2], with a 50 TOPS NPU [1].".into())
+        });
+        let notices: Arc<Mutex<Vec<String>>> = Arc::default();
+        let n = notices.clone();
+        let ctx = Context {
+            ask_model: Some(small),
+            ask_smarter: Some(big),
+            smarter_name: Some("qwen3.5:9b".into()),
+            progress: Some(Arc::new(move |s: &str| {
+                n.lock().unwrap().push(s.to_string())
+            })),
+            ..Default::default()
+        };
+        let searched: Arc<Mutex<Vec<String>>> = Arc::default();
+        let s2 = searched.clone();
+        let search = move |q: &str| {
+            s2.lock().unwrap().push(q.to_string());
+            Ok(if q.contains("review") {
+                vec![
+                    hit("https://rev.example/r", "Review"),
+                    hit("https://spam.example", "Spam"),
+                ]
+            } else {
+                vec![hit("https://specs.example/s", "Specs")]
+            })
+        };
+        let read = |url: &str| -> Result<(String, String), ToolError> {
+            Ok(match url {
+                "https://spam.example" => ("Spam page".into(), "buy now".into()),
+                "https://rev.example/r" => ("Review".into(), "battery 11 h".into()),
+                _ => ("Specs".into(), "50 TOPS".into()),
+            })
+        };
+        let out = research_with(&ctx, "how long does the battery last?", &search, &read).unwrap();
+        assert_eq!(
+            *searched.lock().unwrap(),
+            ["npu laptop battery", "ryzen ai 340 review"]
+        );
+        let answer = out.strip_prefix(crate::agent::FINAL_ANSWER).unwrap();
+        assert!(answer.starts_with("About 11 hours [2]"), "{answer}");
+        assert!(
+            answer.ends_with(
+                "Sources:\n[1] Specs – https://specs.example/s\n[2] Review – https://rev.example/r"
+            ),
+            "{answer}"
+        );
+        let calls = calls.lock().unwrap();
+        assert_eq!(calls.iter().filter(|c| c.0 == "big").count(), 1);
+        assert_eq!(calls.last().unwrap().0, "big");
+        let notices = notices.lock().unwrap();
+        assert!(
+            notices
+                .iter()
+                .any(|n| n == "Writing the answer with qwen3.5:9b…"),
+            "{notices:?}"
+        );
+    }
+
+    #[test]
+    fn without_results_it_says_so() {
+        let small: AskModel = Arc::new(|_: &str, _: &str| Ok("weather".into()));
+        let ctx = Context {
+            ask_model: Some(small),
+            ..Default::default()
+        };
+        let e = research_with(&ctx, "q", &|_| Ok(vec![]), &|_| Err("x".into())).unwrap_err();
+        assert!(e.0.contains("found nothing"));
+    }
+
+    #[test]
+    fn quick_only_when_asked() {
+        assert!(wants_quick("do a quick research on samsung knox"));
+        assert!(wants_quick("zbadaj szybko, czy warto"));
+        assert!(wants_quick("w skrócie: co to jest knox?"));
+        assert!(!wants_quick("research samsung knox for me"));
+        assert!(!wants_quick("zbadaj dokładnie rynek czytników"));
+        assert!(!wants_quick(
+            "research fast chargers and short-throw projectors"
+        ));
     }
 
     #[test]

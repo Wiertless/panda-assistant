@@ -76,6 +76,8 @@ pub struct Context {
     pub smarter_name: Option<String>,
     /// The model answering this chat (research says it read the sources).
     pub model_name: Option<String>,
+    /// The user's message this turn, for tools that follow its wording (research depth).
+    pub request: Arc<Mutex<String>>,
     /// A line for the window about a long tool's progress ("Reading 3 pages…").
     /// Set while a tool that reports progress runs.
     pub progress: Option<Progress>,
