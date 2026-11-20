@@ -641,21 +641,31 @@ pub fn choose_player(players: &[MediaPlayer], name: &str) -> Result<MediaPlayer,
         .clone())
 }
 
+fn capitalize(s: &str) -> String {
+    let mut c = s.chars();
+    c.next()
+        .map(|f| f.to_uppercase().chain(c).collect())
+        .unwrap_or_default()
+}
+
 pub fn describe(p: &MediaPlayer) -> String {
     let what: Vec<&str> = [p.artist.as_str(), p.title.as_str()]
         .into_iter()
         .filter(|s| !s.is_empty())
         .collect();
-    format!(
-        "{}: {}, {}",
-        p.name,
-        p.status.to_lowercase(),
-        if what.is_empty() {
-            "nothing".into()
-        } else {
+    // A sentence, not "Helium: playing, …": small models took the app for a header
+    // and named the music player they remembered instead.
+    let status = p.status.to_lowercase();
+    if what.is_empty() {
+        format!("{}: {status}, nothing", p.name)
+    } else {
+        format!(
+            "{} in {}: “{}”",
+            capitalize(&status),
+            p.name,
             what.join(" – ")
-        }
-    )
+        )
+    }
 }
 
 pub fn media_control(_: &Context, args: &Args) -> ToolResult {
@@ -817,6 +827,6 @@ mod tests {
         assert_eq!(choose_player(&list, "").unwrap().name, "Spotify");
         assert_eq!(choose_player(&list, "vlc").unwrap().name, "VLC");
         assert!(choose_player(&[], "").is_err());
-        assert_eq!(describe(&list[1]), "Spotify: playing, Band – Song");
+        assert_eq!(describe(&list[1]), "Playing in Spotify: “Band – Song”");
     }
 }
