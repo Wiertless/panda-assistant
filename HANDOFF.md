@@ -1,7 +1,16 @@
-# Handoff: where the work stands (2026-11-17)
+# Handoff: where the work stands (updated 2026-11-21 evening)
 
 Read this first, then `README.md`. The redesign plan lived in the cloud session's scratchpad and is gone; its decisions are summarized below.
 Delete this file once the work below is done.
+
+## Now: waiting for the owner's image update (2026-11-21 evening)
+
+The owner is updating to the next silverpanda image (built from main after PR 49 merged), which brings **Assistant 0.32.0** and the **light sensor reconnect after sleep**. Auto Brightness is already in their image. When they're on it:
+1. `rpm-ostree status` shows the new image; `/usr/libexec/panda-assistant/assistantd --version` says 0.32.0.
+2. Speed: `~/.local/state/panda-assistant/rounds.jsonl` after some real use: round-0 `cached_tokens` should be ~7.4K and `first_ms` ~1.3 s (was 4.3 s median, mostly cold). Config already has `ctx_len: 16384`. No `--embed` on `flm serve`.
+3. After a real suspend/resume: `journalctl -b -u silverpanda-als-after-sleep` ran, the sensor reads > 0 (`gdbus call --system -d net.hadess.SensorProxy -o /net/hadess/SensorProxy -m org.freedesktop.DBus.Properties.Get net.hadess.SensorProxy LightLevel`), the screen follows the room.
+
+Still open after that: "ciszej proszę" volume value; English replies to Polish math; super-heavy research (owner deciding); FastFlowLM merged-LoRA PR.
 
 ## The two repositories
 
@@ -15,7 +24,7 @@ Delete this file once the work below is done.
 3. Check the tarball (core-bin/assistantd, core-bin/panda-assistant, the clipboard extension, Reminders.desktop) and its sha256 against the release's `.sha256`.
 4. In silverpanda: branch `claude/great-ride-v90usy` from origin/main, bump VERSION/SHA256, PR, wait for `bluebuild`, check its log shows `assistantd X` / `Assistant X`, merge. The owner allows merging these pin PRs without asking.
 
-Released so far: Assistant **0.23.0** (pinned in silverpanda). `main` has more on top, unreleased (below).
+Released so far: see "Pinned / releasing" (latest **0.32.0**, pinned). `main` has more on top, unreleased (below).
 
 ## The owner's wishes (keep to them)
 
@@ -56,7 +65,7 @@ Released so far: Assistant **0.23.0** (pinned in silverpanda). `main` has more o
 
 - silverpanda PR 46 merged: the nightly restart counts only apps with a visible launcher (was skipped for the DiskUtilityNotify helper; missed D-Bus-started apps like Ptyxis). Tested as root on the laptop. Takes effect with the image after 45.20261120.4.
 
-## Speed work (2026-11-21): eval done, implemented, not released
+## Speed work (2026-11-21): released in 0.32.0, pinned
 
 Measured: first round cold (median 4.3 s) because routing changed the tool list each question and FLM only reuses an exact instructions+tools block. **Eval 44920114036** (Gemma E2B, repeat 3): all-tools 91.3% vs baseline 91.1% (+0.4, 95% −1.6..+2.3), 98% vs 90% of the prompt reused; all-tools-short no gain (not shipped). On the NPU: all tools 7.5K tokens read once in 6.4 s (done at load by `Agent::warm()`), then 0.65 s per question; 16K = same memory as 8K.
 
