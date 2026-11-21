@@ -65,7 +65,7 @@ Measured on the laptop (rounds.jsonl, 145 rounds): first round of a question col
 
 ## Auto Brightness (silverpanda PR 47, 2026-11-21)
 
-Extension `auto-brightness@silverpanda.wiertless.github.io`: overrides `Main.brightnessManager.autoBrightnessTarget` while Settings → Power → Automatic Screen Brightness is on (gsd-power rarely moved it); log-lux curve + glide, prefs with live graph. **Tested by the owner: works.** They set full brightness at 3500 lux, speed 3.5 s (sensor peaks ~3355 lux; default now 3000). Next: wait for `bluebuild` on PR 47, merge with the owner's OK, and once the image has it delete the test copy `~/.local/share/gnome-shell/extensions/auto-brightness@silverpanda.wiertless.github.io` (it shadows the image's).
+Extension `auto-brightness@silverpanda.wiertless.github.io`: overrides `Main.brightnessManager.autoBrightnessTarget` while Settings → Power → Automatic Screen Brightness is on (gsd-power rarely moved it); log-lux curve + glide, prefs with live graph. **Tested by the owner: works.** They set full brightness at 3500 lux, speed 3.5 s (sensor peaks ~3355 lux; default now 3000). Keyboard backlight added (b664924, own switch `keyboard`, on below 70% of `keyboard-off-lux` 80, off above; a change while on becomes `keyboard-level`): **untested, needs a relog**. Next: owner tests the keyboard part, then wait for `bluebuild` on PR 47, merge with the owner's OK, and once the image has it delete the test copy `~/.local/share/gnome-shell/extensions/auto-brightness@silverpanda.wiertless.github.io` (it shadows the image's).
 
 ## Eval state (2026-11-18 evening)
 
