@@ -1,7 +1,16 @@
-# Handoff: where the work stands (2026-11-17)
+# Handoff: where the work stands (updated 2026-11-21 evening)
 
 Read this first, then `README.md`. The redesign plan lived in the cloud session's scratchpad and is gone; its decisions are summarized below.
 Delete this file once the work below is done.
+
+## Now: waiting for the owner's image update (2026-11-21 evening)
+
+The owner is updating to the next silverpanda image (built from main after PR 49 merged), which brings **Assistant 0.32.0** and the **light sensor reconnect after sleep**. Auto Brightness is already in their image. When they're on it:
+1. `rpm-ostree status` shows the new image; `/usr/libexec/panda-assistant/assistantd --version` says 0.32.0.
+2. Speed: `~/.local/state/panda-assistant/rounds.jsonl` after some real use: round-0 `cached_tokens` should be ~7.4K and `first_ms` ~1.3 s (was 4.3 s median, mostly cold). Config already has `ctx_len: 16384`. No `--embed` on `flm serve`.
+3. After a real suspend/resume: `journalctl -b -u silverpanda-als-after-sleep` ran, the sensor reads > 0 (`gdbus call --system -d net.hadess.SensorProxy -o /net/hadess/SensorProxy -m org.freedesktop.DBus.Properties.Get net.hadess.SensorProxy LightLevel`), the screen follows the room.
+
+Still open after that: "ciszej proszę" volume value; English replies to Polish math; super-heavy research (owner deciding); FastFlowLM merged-LoRA PR.
 
 ## The two repositories
 
@@ -15,7 +24,7 @@ Delete this file once the work below is done.
 3. Check the tarball (core-bin/assistantd, core-bin/panda-assistant, the clipboard extension, Reminders.desktop) and its sha256 against the release's `.sha256`.
 4. In silverpanda: branch `claude/great-ride-v90usy` from origin/main, bump VERSION/SHA256, PR, wait for `bluebuild`, check its log shows `assistantd X` / `Assistant X`, merge. The owner allows merging these pin PRs without asking.
 
-Released so far: Assistant **0.23.0** (pinned in silverpanda). `main` has more on top, unreleased (below).
+Released so far: see "Pinned / releasing" (latest **0.32.0**, pinned; nothing unreleased on main).
 
 ## The owner's wishes (keep to them)
 
@@ -51,16 +60,30 @@ Released so far: Assistant **0.23.0** (pinned in silverpanda). `main` has more o
 ## Pinned / releasing
 
 - 0.30.0 pinned (silverpanda PR 44). silverpanda PR 45 merged: lemond MemoryHigh=10G, MemoryMax=11G.
-- **0.31.0 released and pinned** (owner pinned it; SHA matches): research in depth by default + gap round + "quick" from the user's words, writer by free memory (9B only with >= 10.5 GB available, else qwen3.5:4b), write_file to .pdf, "what's playing" names the app, unload after 15 min. The owner pins it in silverpanda himself (VERSION/SHA256 in files/scripts/panda-assistant.sh).
+- 0.31.0 released and pinned (owner pinned it; SHA matches): research in depth by default + gap round + "quick" from the user's words, writer by free memory (9B only with >= 10.5 GB available, else qwen3.5:4b), write_file to .pdf, "what's playing" names the app, unload after 15 min. The owner pins it in silverpanda himself (VERSION/SHA256 in files/scripts/panda-assistant.sh).
 - Open: embedding model on or off by default (owner tried 0.30 with it); "ciszej proszę" volume value; English replies to Polish math.
 
 - silverpanda PR 46 merged: the nightly restart counts only apps with a visible launcher (was skipped for the DiskUtilityNotify helper; missed D-Bus-started apps like Ptyxis). Tested as root on the laptop. Takes effect with the image after 45.20261120.4.
 
-## Speed work (2026-11-21): eval done, implemented, not released
+## Speed work (2026-11-21): released in 0.32.0, pinned
 
 Measured: first round cold (median 4.3 s) because routing changed the tool list each question and FLM only reuses an exact instructions+tools block. **Eval 44920114036** (Gemma E2B, repeat 3): all-tools 91.3% vs baseline 91.1% (+0.4, 95% −1.6..+2.3), 98% vs 90% of the prompt reused; all-tools-short no gain (not shipped). On the NPU: all tools 7.5K tokens read once in 6.4 s (done at load by `Agent::warm()`), then 0.65 s per question; 16K = same memory as 8K.
 
-On claude/great-ride-v90usy (790eb64, on top of c60a873): `route_tools = ctx_len < ALL_TOOLS_CTX_LEN (16384)`, embedding model only loaded when routing, default context 16K, Gemma 4 E2B default model, warm-up after load. Tests + clippy pass. **Live-tested on the NPU (owner's OK):** the warm-up first missed because the machine context had free memory and battery charge in it (changed between chats → whole prompt re-read). 41cda23 keeps only stable values (get_system_info/get_battery give the current ones). After that: warm-up + three new chats, all 7469 tokens reused, 1.3 s to the first tool call (6 s before), 2.2 s for a whole reply; follow-up rounds 0.6–0.75 s. The owner's config is now `ctx_len: 16384` (backup of the old one was in the session scratchpad). Next: release 0.32.0 (ff main, ci.yml dispatch), owner pins.
+On claude/great-ride-v90usy (790eb64, on top of c60a873): `route_tools = ctx_len < ALL_TOOLS_CTX_LEN (16384)`, embedding model only loaded when routing, default context 16K, Gemma 4 E2B default model, warm-up after load. Tests + clippy pass. **Live-tested on the NPU (owner's OK):** the warm-up first missed because the machine context had free memory and battery charge in it (changed between chats → whole prompt re-read). 41cda23 keeps only stable values (get_system_info/get_battery give the current ones). After that: warm-up + three new chats, all 7469 tokens reused, 1.3 s to the first tool call (6 s before), 2.2 s for a whole reply; follow-up rounds 0.6–0.75 s. The owner's config is now `ctx_len: 16384` (backup of the old one was in the session scratchpad). **0.32.0 released** (f4aa643, release run 44933885668, SHA256 7b2575b9cac39fd0a08676b8732f1e83a1b34ad2bcc3deb451b75389affb1997, tarball checked). **Pinned: silverpanda PR 48 merged 2026-11-21** (bluebuild green, log shows assistantd/Assistant 0.32.0). Then after the owner's next image: check rounds.jsonl for first-round times.
+
+## Smarter model keeps the chat (2026-11-22, bd49bf9 on claude/great-ride-v90usy, not released)
+
+Owner's Kinect chat: after a hand-off to qwen3.5:9b the follow-up went back to Gemma, which answered shallowly and wrongly. Now after `ask_smarter_model` (or a take-over when Gemma is stuck) `helper_holds` is set; each follow-up is weighed by the smarter model with a short one-shot (`HOLD_DECIDE`, last Q/A + new message → BIG/SMALL, a few seconds); BIG → it answers with the full chat (`hold_turn`), SMALL → Gemma answers and holds the chat again. A held turn starts with the smarter model loaded (service `attempt`), no compaction on held turns: Lemonade keeps one model, and loading Gemma evicted the 9B and its prompt cache. Held: big model idle unload 10 min. The hand-off note now says "You are the smarter model…" (it used to deny having one when the user wrote "ask the smarter model"). In memory only.
+
+Live-tested (owner asked to keep going until it works): deeper follow-ups 56 s / 52 s, first token 2.3 s with 8.3–8.7K tokens reused (before: 269 s / 110 s, 40 s cold each); "thanks" → SMALL → Gemma, 20 s; two model swaps in the whole chat. A first try with a `hand_back` tool failed (the 9B never called it, once wrote "hand_back" as its reply) and was removed. Next: release as 0.33.0 when the owner wants. Also seen earlier: the 9B once called `use_skill` first and started its answer with "that wasn't actually a saved skill" — not looked into.
+
+## Screen flicker while changing brightness (2026-11-21): owner chose to live with it
+
+Flicker when dragging the brightness slider (mouse or scroll), also before Auto Brightness. Ruled out: the extension, GNOME (a direct logind ramp flickers too), ABM (`panel_power_savings` 0 still flickers; tuned sets 3 in powersave, 1 balanced-battery), PSR/Panel Replay (both inactive). Evidence points at DCN 3.5 idle power states (IPS): debugfs backlight PWM reads 0 except right after each write, and a `dc_dmub_srv_apply_idle_power_optimizations` WARNING in the kernel log. Untested options (each needs a karg + reboot): `amdgpu.dcdebugmask=0x1000` (IPS only when displays are off), `0x800` (IPS off, may hurt s0ix), `0x40000` (custom brightness curve off). Owner declined for now. Also parked: silverpanda branch `claude/brightness-no-flicker` (one backlight write per slider step with Auto Brightness on), unmerged, untested.
+
+## Light sensor after sleep (silverpanda PR 49, 2026-11-21)
+
+After an s2idle suspend the sensor read 0 for good; restarting iio-sensor-proxy didn't help, unbind/bind of `i2c-FRMW0005:00` (i2c_hid_acpi) did (0 → 21 lux) and Auto Brightness re-claimed by itself. PR 49 adds `silverpanda-als-after-sleep.service` (after every sleep) + `als-after-sleep.sh`. Owner ran the script as-is: works (21 lux). **Merged 2026-11-21.** Next: after the next image and a real suspend, check `journalctl -b -u silverpanda-als-after-sleep` and that the sensor reads > 0.
 
 ## Auto Brightness (silverpanda PR 47, 2026-11-21) — tested, works
 

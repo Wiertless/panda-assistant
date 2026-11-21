@@ -29,6 +29,8 @@ pub const OBJECT_PATH: &str = "/io/github/wiertless/PandaAssistant/Core";
 pub const INTERFACE: &str = "io.github.wiertless.PandaAssistant.Core1";
 /// A bigger model (hand-off, pictures) is swapped out this soon after use.
 const BIG_MODEL_IDLE: Duration = Duration::from_secs(60);
+/// ...unless it holds the chat (follow-ups go to it): reading its answer takes a while.
+const HELD_MODEL_IDLE: Duration = Duration::from_secs(10 * 60);
 /// With no model loaded and nothing to do, the service exits after this long
 /// (D-Bus starts it again on the next call).
 const EXIT_WHEN_IDLE: Duration = Duration::from_secs(600);
@@ -766,9 +768,17 @@ impl Service {
             let first_round = agent.stats.len();
             let started = std::time::Instant::now();
             let attempt = |agent: &mut Agent| {
+                // A chat the smarter model holds starts with it (it weighs the follow-up):
+                // loading the default model first would push it out of Lemonade, and with it
+                // the prompt it already read.
+                let first = agent
+                    .smarter_model
+                    .clone()
+                    .filter(|_| agent.helper_holds)
+                    .unwrap_or_else(|| agent.model.clone());
                 shared
                     .client
-                    .ensure_server(&agent.model, Some(cfg.ctx_len), Duration::from_secs(300))
+                    .ensure_server(&first, Some(cfg.ctx_len), Duration::from_secs(300))
                     .and_then(|_| {
                         me.set_state("Loaded");
                         if agent.use_tools {
@@ -941,7 +951,16 @@ impl Service {
             return;
         }
         let minutes = self.shared.config.lock().unwrap().unload_after_minutes;
-        let delay = if self.shared.big_model_loaded() {
+        let held = self
+            .shared
+            .agent
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|a| a.helper_holds);
+        let delay = if self.shared.big_model_loaded() && held {
+            HELD_MODEL_IDLE
+        } else if self.shared.big_model_loaded() {
             BIG_MODEL_IDLE
         } else if minutes > 0 && self.shared.client.owns_server() {
             Duration::from_secs(minutes as u64 * 60)

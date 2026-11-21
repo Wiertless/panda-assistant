@@ -128,6 +128,13 @@ Include relevant context and results when escalating.
 "#;
 
 pub const ESCALATE: &str = "ask_smarter_model";
+/// Holding a chat, the smarter model weighs each follow-up with this short question first
+/// (a few hundred tokens, seconds), rather than reading the whole chat to decide.
+const HOLD_DECIDE: &str = "You are the bigger, slower model in a chat with a small, fast assistant. You \
+answered the user's last hard question. Decide who should answer their new message. BIG: it builds on the \
+hard topic, asks for more depth or detail, corrects or challenges your answer, or needs careful reasoning. \
+SMALL: thanks or small talk, a quick action on the computer, or a short fact unrelated to the hard topic. \
+Reply with one word: BIG or SMALL.";
 pub const REPLY_RESERVE: usize = 1024;
 /// Most a reply may run to, thinking included: a model that rambles stops
 /// here instead of filling the context (minutes on the NPU, half an hour on a CPU).
@@ -279,6 +286,9 @@ pub struct Agent {
     /// Compaction: messages before `compacted` are replaced by `summary`.
     pub summary: String,
     pub compacted: usize,
+    /// The smarter model answered the last hard question: it weighs each follow-up
+    /// and answers those that need it, until one doesn't.
+    pub helper_holds: bool,
     /// Tool routing: only core tools plus these groups go with a request (see
     /// tools::groups). Off for the bigger hand-off model, which gets everything.
     pub route_tools: bool,
@@ -353,6 +363,7 @@ impl Agent {
             ctx_tokens: 8192,
             summary: String::new(),
             compacted: 0,
+            helper_holds: false,
             route_tools: true,
             keywords: true,
             route_by_examples: false,
@@ -699,6 +710,7 @@ impl Agent {
         h.reply_tool = false;
         h.think_with_tools = None; // the bigger model gets to think: that's why it was asked
         h.max_rounds = HELPER_ROUNDS; // it gets the long, many-step jobs
+        h.helper_holds = false;
         h
     }
 
@@ -753,6 +765,13 @@ impl Agent {
                 self.model
             ));
             images.clear();
+        }
+        if self.helper_holds
+            && images.is_empty()
+            && self.can_escalate()
+            && self.hold_turn(text, cb)?
+        {
+            return Ok(());
         }
         let mut wanted: Vec<&str> = if self.keywords {
             groups::groups_for(text)
@@ -1123,10 +1142,12 @@ impl Agent {
             request,
             &format!("It tried and got stuck: {notes}"),
             turn_start,
+            false,
             cb,
         )?;
         self.messages
             .push(json!({"role": "assistant", "content": answer}));
+        self.helper_holds = !self.cancelled();
         Ok(())
     }
 
@@ -1237,22 +1258,65 @@ impl Agent {
             .unwrap_or_default();
         let model = self.smarter_model.clone().unwrap();
         let end = self.messages.len().saturating_sub(2);
-        let answer = self.helper_answer(&model, request, &task, end, cb)?;
+        let answer = self.helper_answer(&model, request, &task, end, false, cb)?;
         self.messages.push(json!({"role": "tool", "tool_call_id": call.id,
                                   "content": format!("{model} answered the user directly:\n{answer}")}));
         self.messages
             .push(json!({"role": "assistant", "content": answer}));
+        // The follow-ups likely build on it: the smarter model weighs them (hold_turn).
+        self.helper_holds = !self.cancelled();
         Ok(())
     }
 
+    /// A follow-up in a chat the smarter model holds: it decides whether it needs to answer
+    /// it. False when it doesn't: the small model answers this one and the rest of the chat.
+    fn hold_turn(&mut self, text: &str, cb: &dyn Callbacks) -> Result<bool, FlmError> {
+        let model = self.smarter_model.clone().unwrap();
+        if !self.helper_wants(&model, text) {
+            self.helper_holds = false;
+            return Ok(false);
+        }
+        let end = self.messages.len();
+        self.messages.push(json!({"role": "user", "content": text}));
+        let answer = self.helper_answer(&model, text, "", end, true, cb)?;
+        // No summary now: that's the small model's job, and loading it would push the
+        // smarter one (and the prompt it read) out. It's made when the chat gets full.
+        self.messages
+            .push(json!({"role": "assistant", "content": answer}));
+        Ok(true)
+    }
+
+    /// Whether the smarter model should answer this follow-up, by its own short judgement
+    /// on the last exchange. If it can't be asked, the small model goes on.
+    fn helper_wants(&self, model: &str, text: &str) -> bool {
+        let last = |role: &str, n: usize| -> String {
+            self.messages
+                .iter()
+                .rev()
+                .find(|m| m["role"] == role && m["content"].as_str().is_some_and(|c| !c.is_empty()))
+                .map(|m| store::plain_text(&m["content"]).chars().take(n).collect())
+                .unwrap_or_default()
+        };
+        let user = format!(
+            "Their last question: {}\n\nYour answer began: {}\n\nTheir new message: {text}",
+            last("user", 600),
+            last("assistant", 800)
+        );
+        one_shot(&self.client, model, HOLD_DECIDE, &user)
+            .map(|r| !r.to_uppercase().contains("SMALL") || r.to_uppercase().contains("BIG"))
+            .unwrap_or(false)
+    }
+
     /// The smarter model answers `request` with the chat up to `end` and the
-    /// smaller model's notes; its answer is returned.
+    /// smaller model's notes (`hold`: a follow-up it chose to answer); its answer
+    /// is returned.
     fn helper_answer(
         &mut self,
         model: &str,
         request: &str,
         notes: &str,
         end: usize,
+        hold: bool,
         cb: &dyn Callbacks,
     ) -> Result<String, FlmError> {
         cb.handoff(model);
@@ -1276,10 +1340,16 @@ impl Agent {
         } else {
             format!(" Already done, don't repeat: {}.", done.join("; "))
         };
-        let note = if notes.is_empty() && done.is_empty() {
+        // Its own words may say "ask the smarter model": that's this one.
+        let note = if hold {
             String::new()
+        } else if notes.is_empty() && done.is_empty() {
+            "\n\n(You are the smarter model a smaller assistant handed this to: answer it yourself.)".to_string()
         } else {
-            format!("\n\n(A smaller assistant handed this to you. Its notes: {notes}{done})")
+            format!(
+                "\n\n(You are the smarter model a smaller assistant handed this to: answer it yourself. \
+Its notes: {notes}{done})"
+            )
         };
         helper.ask(&format!("{request}{note}"), cb, &[])?;
         Ok(last_answer(&helper.messages))
@@ -1973,6 +2043,69 @@ mod tests {
                 .lock()
                 .unwrap()
                 .contains(&"handoff:big:9b".to_string())
+        );
+    }
+
+    #[test]
+    fn the_smarter_model_weighs_follow_ups_and_gives_simple_ones_back() {
+        let _h = temp_home();
+        let flm = FakeFlm::start(vec![
+            (
+                200,
+                tool_reply(ESCALATE, r#"{"task": "explain point clouds"}"#, "c1"),
+            ),
+            (200, text_reply("Long answer.")),
+            (200, text_reply("BIG")),
+            (200, text_reply("Deeper answer.")),
+            (200, text_reply("SMALL")),
+            (200, text_reply("You're welcome.")),
+        ]);
+        let mut a = agent(&flm);
+        a.smarter_model = Some("big:9b".into());
+        let rec = Rec::default();
+        a.ask(
+            "Ask the smarter model: how would a 3D face map work",
+            &rec,
+            &[],
+        )
+        .unwrap();
+        let reqs = flm.requests();
+        // Told it's the model that was asked, so "ask the smarter model" doesn't confuse it.
+        assert!(
+            reqs[1]["messages"].as_array().unwrap().last().unwrap()["content"]
+                .as_str()
+                .unwrap()
+                .contains("You are the smarter model")
+        );
+        assert!(a.helper_holds);
+
+        // A follow-up: the smarter model weighs it on the last exchange, then answers it.
+        a.ask("and how would I store the template", &rec, &[])
+            .unwrap();
+        let reqs = flm.requests();
+        assert_eq!(reqs[2]["model"], "big:9b");
+        assert!(reqs[2].get("tools").is_none());
+        let ask = reqs[2]["messages"][1]["content"].as_str().unwrap();
+        assert!(ask.contains("Long answer.") && ask.contains("how would I store the template"));
+        assert_eq!(reqs[3]["model"], "big:9b");
+        let msgs = reqs[3]["messages"].as_array().unwrap();
+        assert!(msgs.iter().any(|m| m["content"] == "Long answer."));
+        assert_eq!(a.messages.last().unwrap()["content"], "Deeper answer.");
+        assert!(a.helper_holds);
+
+        // A simple one it gives back: the small model answers, and holds the chat again.
+        a.ask("thanks!", &rec, &[]).unwrap();
+        let reqs = flm.requests();
+        assert_eq!(reqs[4]["model"], "big:9b");
+        assert_ne!(reqs[5]["model"], "big:9b");
+        assert!(!a.helper_holds);
+        assert_eq!(a.messages.last().unwrap()["content"], "You're welcome.");
+        assert_eq!(
+            a.messages
+                .iter()
+                .filter(|m| m["role"] == "user" && m["content"] == "thanks!")
+                .count(),
+            1
         );
     }
 

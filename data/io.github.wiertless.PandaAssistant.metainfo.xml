@@ -21,6 +21,15 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.33.0" date="2026-11-22">
+      <description>
+        <ul>
+          <li>After a hand-off, the smarter model keeps the conversation: it weighs each follow-up and answers the ones that build on the hard part, and gives simple ones (thanks, quick actions) back to the fast model</li>
+          <li>Follow-ups to the smarter model start in seconds: it stays loaded while it holds the chat and reuses what it already read</li>
+          <li>Asking for "the smarter model" in your own words no longer confuses it</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.32.0" date="2026-11-21">
       <description>
         <ul>
