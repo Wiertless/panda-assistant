@@ -768,9 +768,17 @@ impl Service {
             let first_round = agent.stats.len();
             let started = std::time::Instant::now();
             let attempt = |agent: &mut Agent| {
+                // A chat the smarter model holds starts with it (it weighs the follow-up):
+                // loading the default model first would push it out of Lemonade, and with it
+                // the prompt it already read.
+                let first = agent
+                    .smarter_model
+                    .clone()
+                    .filter(|_| agent.helper_holds)
+                    .unwrap_or_else(|| agent.model.clone());
                 shared
                     .client
-                    .ensure_server(&agent.model, Some(cfg.ctx_len), Duration::from_secs(300))
+                    .ensure_server(&first, Some(cfg.ctx_len), Duration::from_secs(300))
                     .and_then(|_| {
                         me.set_state("Loaded");
                         if agent.use_tools {
