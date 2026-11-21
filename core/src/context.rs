@@ -54,13 +54,11 @@ pub fn system_context() -> String {
         .map(|n| format!(" ({n} threads)"))
         .unwrap_or_default();
     lines.push(format!("CPU: {}{threads}", cpu_name()));
+    // Only what stays put: this text is part of the prompt FastFlowLM reuses, and
+    // one changed digit (free memory, battery charge) makes it read it all again.
+    // get_system_info and get_battery tell the current values.
     if let Some(total) = meminfo_kib("MemTotal") {
-        let avail = meminfo_kib("MemAvailable").unwrap_or(0);
-        lines.push(format!(
-            "Memory: {:.0} GiB total, {:.1} GiB free right now",
-            total as f64 / 1048576.0,
-            avail as f64 / 1048576.0
-        ));
+        lines.push(format!("Memory: {:.0} GiB", total as f64 / 1048576.0));
     }
     if Path::new("/dev/accel/accel0").exists() {
         lines.push("NPU: AMD XDNA (you are running on it through FastFlowLM)".into());
@@ -71,13 +69,8 @@ pub fn system_context() -> String {
         kernel(),
         std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_else(|_| "?".into())
     ));
-    if let Some(bat) = crate::tools::system::battery_dir() {
-        let b = bat.to_string_lossy();
-        lines.push(format!(
-            "Battery: {}% ({})",
-            read(&format!("{b}/capacity")),
-            read(&format!("{b}/status")).to_lowercase()
-        ));
+    if crate::tools::system::battery_dir().is_some() {
+        lines.push("Battery: yes (get_battery tells the charge)".into());
     }
     let home = crate::paths::home();
     let folders: Vec<String> = crate::tools::files::user_dirs()
