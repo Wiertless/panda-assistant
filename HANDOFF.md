@@ -64,7 +64,7 @@ On claude/great-ride-v90usy (790eb64, on top of c60a873): `route_tools = ctx_len
 
 ## Light sensor after sleep (silverpanda PR 49, 2026-11-21)
 
-After an s2idle suspend the sensor read 0 for good; restarting iio-sensor-proxy didn't help, unbind/bind of `i2c-FRMW0005:00` (i2c_hid_acpi) did (0 → 21 lux) and Auto Brightness re-claimed by itself. PR 49 adds `silverpanda-als-after-sleep.service` (after every sleep) + `als-after-sleep.sh`. Script not yet run as-is on the laptop. Next: owner tests it (`sudo /path/als-after-sleep.sh`), bluebuild green, merge with the owner's OK; then check it after a real suspend.
+After an s2idle suspend the sensor read 0 for good; restarting iio-sensor-proxy didn't help, unbind/bind of `i2c-FRMW0005:00` (i2c_hid_acpi) did (0 → 21 lux) and Auto Brightness re-claimed by itself. PR 49 adds `silverpanda-als-after-sleep.service` (after every sleep) + `als-after-sleep.sh`. Owner ran the script as-is: works (21 lux). **Merged 2026-11-21.** Next: after the next image and a real suspend, check `journalctl -b -u silverpanda-als-after-sleep` and that the sensor reads > 0.
 
 ## Auto Brightness (silverpanda PR 47, 2026-11-21) — tested, works
 
