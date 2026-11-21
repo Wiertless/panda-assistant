@@ -334,7 +334,11 @@ impl Window {
                 reply: None,
                 text_scale: cfg["text_scale"].as_f64().unwrap_or(1.0),
                 smarter_choice: config::str_or(&cfg, "smarter_model", "auto"),
-                ctx_len: config::int_or(&cfg, "ctx_len", 8192),
+                ctx_len: config::int_or(
+                    &cfg,
+                    "ctx_len",
+                    assistant_core::flm::DEFAULT_CHAT_CTX_LEN as i64,
+                ),
                 unload_after: config::int_or(
                     &cfg,
                     "unload_after_minutes",

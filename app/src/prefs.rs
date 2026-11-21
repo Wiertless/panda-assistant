@@ -235,11 +235,11 @@ model is unloaded.")
     let ctx_labels: Vec<&str> = CTX_CHOICES.iter().map(|(_, l)| *l).collect();
     let ctx_row = adw::ComboRow::builder()
         .title("Context Length")
-        .subtitle("Longer conversations need more memory")
+        .subtitle("16K and more: every tool goes with every question, so answers start sooner")
         .model(&gtk::StringList::new(&ctx_labels))
         .build();
     let ctx = win.st.borrow().ctx_len;
-    ctx_row.set_selected(CTX_CHOICES.iter().position(|(v, _)| *v == ctx).unwrap_or(1) as u32);
+    ctx_row.set_selected(CTX_CHOICES.iter().position(|(v, _)| *v == ctx).unwrap_or(2) as u32);
     let w = win.weak();
     ctx_row.connect_selected_notify(move |row| {
         if let Some(w) = w.upgrade() {

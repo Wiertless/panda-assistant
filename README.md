@@ -63,8 +63,9 @@ Shown simply as **Assistant** on the desktop. A local AI assistant for GNOME tha
   - Errors that retrying can't fix (no music player running, an app or service that isn't installed) end the turn at once with the reason, instead of the model trying the same call again.
   - Older FastFlowLM versions that reject `think`, `tool_choice`, `--embed` or the prefix-cache flags get the request again without them.
   - Tool groups unused for two turns drop out of the request, so the tool list doesn't only grow.
-  - With FastFlowLM's embed-gemma:300m installed, it runs next to the chat model and tool groups are also picked by meaning, not only by keywords.
-- **Tool routing:** every tool's description costs context on every message (all of them: about 3.6K tokens of an 8K context). So a core set always goes along (about 1.2K tokens) and the other groups (settings, files, devices, calendar, apps, web, commands…) join when your message mentions them, in English or Polish, or when the model asks for them with `more_tools`. A group that joined stays for the rest of the chat. The bigger model on a handoff gets every tool.
+  - With FastFlowLM's embed-gemma:300m installed and a context under 16K, it runs next to the chat model and tool groups are also picked by meaning, not only by keywords. At 16K and more it isn't loaded: there's nothing to route.
+- **Every tool, every time (16K context and more, the default):** all tools go with every question, always in the same order, so FastFlowLM reuses the instructions and tools it already read: the first answer starts in about 0.65 s instead of 4.3 s, with the same accuracy as routing (eval: 91.3% vs 91.1%). When the model loads (the window or pop-up opening), the service has it read them right away, while you type.
+- **Tool routing (under 16K):** every tool's description costs context on every message (all of them: about 6.5K tokens). So a core set always goes along (about 1.2K tokens) and the other groups (settings, files, devices, calendar, apps, web, commands…) join when your message mentions them, in English or Polish, or when the model asks for them with `more_tools`. A group that joined stays for the rest of the chat. The bigger model on a handoff gets every tool.
 - **Knows the computer:** each chat's system prompt names the laptop, CPU, memory (total and free), NPU, OS, battery and date, so it doesn't need a tool call for those. Like Home Assistant's list of a home's devices, it also names your paired Bluetooth devices, your other devices on Tailscale and your saved networks, so "my headphones", "my phone" or "the office Wi-Fi" resolve without a lookup.
 
 ## Memory, skills and history
@@ -116,7 +117,7 @@ The model only takes memory while it's loaded, which the window subtitle shows (
 
 - **Load on demand:** typing in the message field starts `flm serve` in the background, so it's usually ready by the time you press Enter.
 - **Keep the small model, drop the big one:** the default model stays loaded so answers start right away (set **Unload Model** in Preferences to free it after 1–30 idle minutes). A bigger model loaded for a hand-off or a picture is dropped a minute after it's done: FastFlowLM restarts with just the default model, which frees the bigger model's weights and context. **Unload Model** in the main menu frees everything immediately.
-- **Short context:** the server starts with an 8K-token context (4K–32K in Preferences) instead of the model's default (64K for Gemma 4). FLM sizes its buffers for the context length, so this is the biggest saving.
+- **Context:** the server starts with a 16K-token context (4K–32K in Preferences) instead of the model's default (64K for Gemma 4). On the NPU, 16K measured no more memory than 8K with Gemma 4 E2B.
 - **Prefix cache:** for Qwen 3.5/3.6, the prompt cache is capped at 1 GiB instead of FLM's 4 GiB.
 
 A server you started yourself is used as it is and never stopped. Set `PANDA_FLM_URL` to use another address.

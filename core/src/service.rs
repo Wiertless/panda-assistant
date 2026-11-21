@@ -116,7 +116,7 @@ impl Config {
             model_chosen: raw["model"].as_str().is_some(),
             ctx_len: raw["ctx_len"]
                 .as_u64()
-                .unwrap_or(flm::DEFAULT_CTX_LEN as u64) as u32,
+                .unwrap_or(flm::DEFAULT_CHAT_CTX_LEN as u64) as u32,
             web_search: raw["web_search"].as_bool().unwrap_or(true),
             memory: raw["memory"].as_bool().unwrap_or(true),
             smarter_model: raw["smarter_model"].as_str().unwrap_or("auto").to_string(),
@@ -377,6 +377,7 @@ impl Shared {
         agent.web_enabled = cfg.web_search;
         agent.memory_enabled = cfg.memory;
         agent.ctx_tokens = cfg.ctx_len as usize;
+        agent.route_tools = cfg.ctx_len < flm::ALL_TOOLS_CTX_LEN;
         agent.always_allow = self.always_allow.clone();
         agent.embedder = self.embedder.lock().unwrap().clone();
         agent.machine_source = Arc::new(crate::context::system_context);
@@ -406,8 +407,13 @@ impl Shared {
             return;
         };
         let installed: Vec<Model> = models.into_iter().filter(|m| m.installed).collect();
-        // The embedding model, when installed, runs next to the chat model for routing.
-        if installed.iter().any(|m| m.name == flm::EMBED_MODEL) {
+        // The embedding model, when installed, runs next to the chat model for routing;
+        // with every tool sent there's nothing to route, so it stays unloaded.
+        let routes = self.config.lock().unwrap().ctx_len < flm::ALL_TOOLS_CTX_LEN;
+        if !routes {
+            *self.client.embed_model.lock().unwrap() = None;
+            *self.embedder.lock().unwrap() = None;
+        } else if installed.iter().any(|m| m.name == flm::EMBED_MODEL) {
             *self.client.embed_model.lock().unwrap() = Some(flm::EMBED_MODEL.into());
             self.embedder.lock().unwrap().get_or_insert_with(|| {
                 Arc::new(tools::groups::Embedder::new(

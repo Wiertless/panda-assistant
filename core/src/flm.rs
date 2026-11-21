@@ -92,6 +92,14 @@ pub fn parse_lemonade_models(
     out
 }
 pub const DEFAULT_CTX_LEN: u32 = 8192;
+/// The chat model's context until the user picks one: room for every tool.
+pub const DEFAULT_CHAT_CTX_LEN: u32 = 16384;
+/// From this context on, every tool goes with every request, in the same order:
+/// FLM then reuses the instructions and tools it already read (0.65 s to the
+/// first token instead of 4.3 s on the laptop), with the same accuracy as
+/// routing (eval 44920114036: 91.3% vs 91.1%). Below it, tools are routed and
+/// the embedding model helps choose them.
+pub const ALL_TOOLS_CTX_LEN: u32 = 16384;
 /// Qwen 3.5/3.6 keep earlier prompts in a host-memory prefix cache (FLM's
 /// default limit is 4 GiB); the assistant's prompts are short.
 const PREFIX_CACHE_MB: u32 = 1024;
