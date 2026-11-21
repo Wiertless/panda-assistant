@@ -620,6 +620,10 @@ impl Service {
                 .ensure_server(&cfg.model, Some(cfg.ctx_len), Duration::from_secs(300))
                 .is_ok();
             me.set_state(if ok { "Loaded" } else { "Not loaded" });
+            if ok && !me.shared.busy.load(Ordering::SeqCst) {
+                // Read the instructions and tools now, while the question is typed.
+                me.shared.make_agent().warm();
+            }
             me.loading.store(false, Ordering::SeqCst);
             let me2 = me.clone();
             glib::MainContext::default().invoke(move || me2.schedule_idle());

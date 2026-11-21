@@ -94,5 +94,27 @@
       "media_control": "Control music and video players: play, pause, play_pause, next_track (skip this song), previous_track (go back a song), stop, or status (only to say what's playing).",
       "open_file": "Open a file or folder with its default app. Paths can be relative to the home folder, start with ~, or start with a folder name like Downloads or Documents."
     }
+  },
+  "all-tools": {
+    "about": "Every tool with every request, in the same order (no routing, no embedding model), 16K context: the server reuses the prompt it read for the next question.",
+    "route_tools": false,
+    "ctx_tokens": 16384
+  },
+  "all-tools-short": {
+    "about": "Like all-tools, with shorter descriptions for the ten longest tools.",
+    "route_tools": false,
+    "ctx_tokens": 16384,
+    "descriptions": {
+      "research": "Research a topic in depth on the web and write a report with sections and cited sources, shown as it is (a few minutes; \"quick research\" reads 5 pages, under a minute). Use it when the user asks to research, look into, review or compare something; for one quick fact use web_search. save_as pdf, md or txt saves it in Documents/Research.",
+      "rewrite_selection": "Rewrite the text the user selected in any app (proofread, shorten, make formal, translate); the result goes to the clipboard. Use it for \"this\", \"the selected text\", \"popraw to\". It reads the selection itself, so don't ask for the text.",
+      "search_everything": "Search all the user's own things at once (calendar, mail, file names and contents, contacts) when you can't tell where the answer is (\"when's my flight?\", \"what did the landlord say?\"). query: key words, not a sentence.",
+      "write_file": "Create a text file (note, list, script, letter…) with the given content; a path ending in .pdf makes a PDF from Markdown. To change an existing file use edit_file; overwrite true replaces a whole file.",
+      "open_app": "Open an app. If the user names one ('Firefox', 'Zed'), pass that exact name, even if misspelled; otherwise pass the kind (browser, email, files, calendar, music, video, photos, text editor, pdf, terminal, settings) for their default.",
+      "send_text": "Send a text note (an answer, list, address, link) to one of the user's devices with Taildrop; for the last answer, pass its text. For files use send_file.",
+      "read_file": "Read any file's text (notes, code, CSV, PDF, Word, Excel, PowerPoint, LibreOffice, EPUB, e-mail…). Long files come in parts: pass from_line to read on. For a question about a long document, use ask_document.",
+      "web_search": "Search the web for current facts, news, prices or how-tos; returns titles, links and snippets. Not for the user's own files, settings or devices. To research or look into something, use research.",
+      "search_mail": "Search the user's mail (all accounts, any mail app) by sender, subject or topic; returns the newest matches with sender, subject, date and the start of the text. Empty query: the newest mail.",
+      "find_files": "Find the user's files and folders by part of their name, newest first. Use it whenever they mention one of their documents (\"my lease\", \"the invoice\", \"my CV\") to read or send it."
+    }
   }
 }

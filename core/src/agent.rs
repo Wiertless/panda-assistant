@@ -595,6 +595,39 @@ impl Agent {
         out
     }
 
+    /// Have the server read the start of the prompt (instructions and tools) ahead of a
+    /// question, exactly as the first round sends it, so the first answer only waits for
+    /// the question itself. FLM keeps that part and reuses it for any question that
+    /// follows (measured: 7.5K tokens, 6.4 s once, then 0.65 s to the first token).
+    pub fn warm(&mut self) {
+        let mut schemas = self.tool_schemas();
+        let required = self.required_rounds && schemas.is_some();
+        if let Some(s) = schemas.as_mut() {
+            if required {
+                s.push(final_reply_schema());
+                s.push(ask_user_schema());
+            } else if self.reply_tool {
+                s.push(final_reply_schema());
+            }
+        }
+        let force = schemas.is_some() && (required || self.reply_tool);
+        let mut conversation = self.conversation();
+        conversation.push(json!({"role": "user", "content": "."}));
+        let opts = ChatOptions {
+            temperature: schemas.as_ref().and(self.tool_temperature),
+            max_tokens: Some(1),
+            tool_choice: force.then(|| json!("required")),
+            think: schemas.as_ref().and(self.think_with_tools),
+            parallel_tool_calls: required.then_some(false),
+        };
+        if let Ok(stream) =
+            self.client
+                .chat_stream(&self.model, &conversation, schemas.as_deref(), &opts)
+        {
+            stream.for_each(drop);
+        }
+    }
+
     /// Summarize the oldest turns once the chat fills more than `at` of the context.
     fn maybe_compact(&mut self, cb: &dyn Callbacks, at: f64) {
         let head = self.system_message();

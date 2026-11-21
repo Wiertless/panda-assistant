@@ -42,6 +42,11 @@ pub struct Variant {
     pub embed: Option<bool>,
     /// Keyword routing on (default yes).
     pub keywords: Option<bool>,
+    /// false: every tool goes along with every request, in the same order, so the
+    /// server can reuse the prompt it already read (default: routed).
+    pub route_tools: Option<bool>,
+    /// The agent's context budget in tokens (default 8192).
+    pub ctx_tokens: Option<usize>,
     /// Route by the nearest example requests instead of the group descriptions.
     pub route_by_examples: Option<bool>,
     /// Offer only the tool the examples clearly agree on, first.
@@ -345,6 +350,8 @@ pub fn run(
     agent.system_prompt = v.system_prompt.clone();
     agent.required_rounds = v.required_rounds.unwrap_or(agent.required_rounds);
     agent.keywords = v.keywords.unwrap_or(agent.keywords);
+    agent.route_tools = v.route_tools.unwrap_or(agent.route_tools);
+    agent.ctx_tokens = v.ctx_tokens.unwrap_or(agent.ctx_tokens);
     agent.route_by_examples = v.route_by_examples.unwrap_or(agent.route_by_examples);
     agent.force_proposal = v.force_proposal.unwrap_or(agent.force_proposal);
     let embedder = embedder.filter(|_| v.embed.unwrap_or(true));

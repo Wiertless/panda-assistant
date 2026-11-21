@@ -105,7 +105,7 @@ jobs:
         if: steps.pick.outputs.run == 'true'
         run: |
           docker run -d --name llama -p 8080:8080 -v "$PWD/models:/models" ghcr.io/ggml-org/llama.cpp:server \
-            -m /models/model.gguf --jinja -c 8192 -np 1 --host 0.0.0.0 --port 8080
+            -m /models/model.gguf --jinja -c 16384 -np 1 --host 0.0.0.0 --port 8080
           for i in $(seq 1 120); do curl -sf localhost:8080/health && break; sleep 5; done
           curl -sf localhost:8080/health || { docker logs llama; exit 1; }
       # Routing by meaning, as on the laptop with FastFlowLM's embed-gemma:300m. If the

@@ -120,16 +120,13 @@ impl std::fmt::Display for FlmError {
 
 impl std::error::Error for FlmError {}
 
-/// The model used until the user picks one: the best-scoring small model in
-/// the eval that keeps up on the NPU, then the others in order, whichever is
-/// installed first.
-pub const DEFAULT_MODEL: &str = "qwen3.5:4b";
-pub const PREFERRED_MODELS: [&str; 4] = [
-    DEFAULT_MODEL,
-    "gemma4-it:e4b",
-    "gemma4-it:e2b",
-    "qwen3.5:2b",
-];
+/// The model used until the user picks one: the fastest small model that
+/// does well in the eval (Gemma 4 E2B reads prompts ~3.5x faster than Qwen 3.5
+/// 4B on the NPU and reuses what it read), then the others in order, whichever
+/// is installed first.
+pub const DEFAULT_MODEL: &str = "gemma4-it:e2b";
+pub const PREFERRED_MODELS: [&str; 4] =
+    [DEFAULT_MODEL, "gemma4-it:e4b", "qwen3.5:4b", "qwen3.5:2b"];
 
 /// The default for this machine: the first preferred model that's installed,
 /// else any installed one that can call tools, else Gemma 4 E2B (the small default).
@@ -1900,16 +1897,19 @@ mod tests {
     #[test]
     fn list_labels_and_think() {
         let installed = vec![
-            Model::new("gemma4-it:e2b", true, &[]),
-            Model::new("qwen3.5:4b", false, &[]),
+            Model::new("gemma4-it:e2b", false, &[]),
+            Model::new("qwen3.5:4b", true, &[]),
         ];
         assert_eq!(
             default_model(&installed),
-            "gemma4-it:e2b",
+            "qwen3.5:4b",
             "the preferred one isn't downloaded"
         );
         assert_eq!(
-            default_model(&[Model::new("qwen3.5:4b", true, &[])]),
+            default_model(&[
+                Model::new("qwen3.5:4b", true, &[]),
+                Model::new("gemma4-it:e2b", true, &[]),
+            ]),
             DEFAULT_MODEL
         );
         assert_eq!(
