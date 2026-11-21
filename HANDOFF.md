@@ -56,6 +56,17 @@ Released so far: Assistant **0.23.0** (pinned in silverpanda). `main` has more o
 
 - silverpanda PR 46 merged: the nightly restart counts only apps with a visible launcher (was skipped for the DiskUtilityNotify helper; missed D-Bus-started apps like Ptyxis). Tested as root on the laptop. Takes effect with the image after 45.20261120.4.
 
+## Speed work (2026-11-21), in progress
+
+Measured on the laptop (rounds.jsonl, 145 rounds): first round of a question cold (median 4.3 s, ~4K prompt tokens at ~930 tok/s), later rounds 0.75 s. FLM reuses a prompt only when the **whole** instructions+tools block matches a saved snapshot (probe: adding one tool -> cached 0), so routing (a different tool list per question) made 46 of 59 loaded-model questions cold. All 64 tools = 7.5K tokens: 6.4 s once, then 0.65 s per question; 16K context costs no extra memory. `--pmode turbo`: ~5%, not worth it. Qwen 3.5 4B on FLM reads ~260 tok/s and never reused a prompt.
+
+- Pushed on claude/great-ride-v90usy (c60a873), not released: `Agent::warm()` after preload (reads the first round's prompt while the question is typed), default model Gemma 4 E2B, eval fields `route_tools`/`ctx_tokens`, variants `all-tools` and `all-tools-short` (10 shorter descriptions, only ~180 tokens), eval llama.cpp at `-c 16384`.
+- **Eval run 44920114036** (Gemma E2B, repeat 3, 6 shards): baseline vs all-tools vs all-tools-short. If all-tools holds up: in `make_agent` set `route_tools = false` and `ctx_len` 16384, stop loading `--embed` (only routing used it), use short descriptions only if they're not worse, release 0.32.0, then check rounds.jsonl for the first-round time. If it's worse: keep routing; warm-up then only covers core-only questions.
+
+## Auto Brightness (silverpanda, 2026-11-21)
+
+The light sensor works (0–3355 lux, ~1 s updates); gsd-power just rarely moves GNOME Shell's auto-brightness target. New extension `auto-brightness@silverpanda.wiertless.github.io` (silverpanda branch `claude/auto-brightness`, commit d2de19f, **not pushed**): overrides `Main.brightnessManager.autoBrightnessTarget` while Settings → Power → Automatic Screen Brightness is on, log-lux curve + glide, prefs with live graph. `files/scripts/auto-brightness.sh` compiles its schema and enables it next to the clipboard extension. Test copy in `~/.local/share/gnome-shell/extensions/` (enabled in the owner's list), **untested**: owner relogs to load it. Next: check it follows room light, `journalctl --user -b | grep auto-brightness`, then push + PR; delete the test copy once the image has it.
+
 ## Eval state (2026-11-18 evening)
 
 - 160 families (345 prompts), `eval_verdict.py` heads every summary (sign test per family). `--shard K/N`, workflow input `shards` = 3, 4 or 6.
