@@ -56,12 +56,11 @@ Released so far: Assistant **0.23.0** (pinned in silverpanda). `main` has more o
 
 - silverpanda PR 46 merged: the nightly restart counts only apps with a visible launcher (was skipped for the DiskUtilityNotify helper; missed D-Bus-started apps like Ptyxis). Tested as root on the laptop. Takes effect with the image after 45.20261120.4.
 
-## Speed work (2026-11-21), in progress
+## Speed work (2026-11-21): eval done, implemented, not released
 
-Measured on the laptop (rounds.jsonl, 145 rounds): first round of a question cold (median 4.3 s, ~4K prompt tokens at ~930 tok/s), later rounds 0.75 s. FLM reuses a prompt only when the **whole** instructions+tools block matches a saved snapshot (probe: adding one tool -> cached 0), so routing (a different tool list per question) made 46 of 59 loaded-model questions cold. All 64 tools = 7.5K tokens: 6.4 s once, then 0.65 s per question; 16K context costs no extra memory. `--pmode turbo`: ~5%, not worth it. Qwen 3.5 4B on FLM reads ~260 tok/s and never reused a prompt.
+Measured: first round cold (median 4.3 s) because routing changed the tool list each question and FLM only reuses an exact instructions+tools block. **Eval 44920114036** (Gemma E2B, repeat 3): all-tools 91.3% vs baseline 91.1% (+0.4, 95% −1.6..+2.3), 98% vs 90% of the prompt reused; all-tools-short no gain (not shipped). On the NPU: all tools 7.5K tokens read once in 6.4 s (done at load by `Agent::warm()`), then 0.65 s per question; 16K = same memory as 8K.
 
-- Pushed on claude/great-ride-v90usy (c60a873), not released: `Agent::warm()` after preload (reads the first round's prompt while the question is typed), default model Gemma 4 E2B, eval fields `route_tools`/`ctx_tokens`, variants `all-tools` and `all-tools-short` (10 shorter descriptions, only ~180 tokens), eval llama.cpp at `-c 16384`.
-- **Eval run 44920114036** (Gemma E2B, repeat 3, 6 shards): baseline vs all-tools vs all-tools-short. If all-tools holds up: in `make_agent` set `route_tools = false` and `ctx_len` 16384, stop loading `--embed` (only routing used it), use short descriptions only if they're not worse, release 0.32.0, then check rounds.jsonl for the first-round time. If it's worse: keep routing; warm-up then only covers core-only questions.
+On claude/great-ride-v90usy (790eb64, on top of c60a873): `route_tools = ctx_len < ALL_TOOLS_CTX_LEN (16384)`, embedding model only loaded when routing, default context 16K, Gemma 4 E2B default model, warm-up after load. Tests + clippy pass. **Not live-tested** (stopping the running assistantd needs the owner's OK). The owner's config has `ctx_len: 8192` saved, so they need Preferences → Context Length → 16K to get it. Next: live test, then release 0.32.0 (ff main, ci.yml dispatch), owner pins.
 
 ## Auto Brightness (silverpanda PR 47, 2026-11-21) — tested, works
 
