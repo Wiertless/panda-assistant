@@ -128,6 +128,13 @@ Include relevant context and results when escalating.
 "#;
 
 pub const ESCALATE: &str = "ask_smarter_model";
+/// The smarter model, holding a chat, gives a simple follow-up back to the small model.
+pub const HAND_BACK: &str = "hand_back";
+/// What the smarter model is told when a follow-up comes straight to it.
+const HOLD_NOTE: &str = "\n\n(You answered the last hard question in this chat, so this follow-up came \
+straight to you. If it's simple for a small, fast model (a quick action on the computer, a short fact, small \
+talk), call hand_back instead of answering. If it builds on the hard part or needs careful thought, answer it \
+yourself.)";
 pub const REPLY_RESERVE: usize = 1024;
 /// Most a reply may run to, thinking included: a model that rambles stops
 /// here instead of filling the context (minutes on the NPU, half an hour on a CPU).
@@ -240,6 +247,14 @@ pub fn render_transcript(messages: &[Value], limit: usize) -> String {
     }
 }
 
+fn hand_back_schema() -> Value {
+    json!({"type": "function", "function": {
+        "name": HAND_BACK,
+        "description": "Give this message back to the small, fast assistant instead of answering it, when it \
+doesn't need you (a quick action, a short fact, small talk). It answers from here on, until it asks you again.",
+        "parameters": {"type": "object", "properties": {}}}})
+}
+
 fn escalate_schema(model: &str) -> Value {
     json!({"type": "function", "function": {
         "name": ESCALATE,
@@ -279,6 +294,13 @@ pub struct Agent {
     /// Compaction: messages before `compacted` are replaced by `summary`.
     pub summary: String,
     pub compacted: usize,
+    /// The smarter model answered the last hard question: follow-ups go straight to it
+    /// until it hands one back.
+    pub helper_holds: bool,
+    /// This (smarter) model may give the message back with hand_back.
+    pub offer_hand_back: bool,
+    /// It did, this turn.
+    pub handed_back: bool,
     /// Tool routing: only core tools plus these groups go with a request (see
     /// tools::groups). Off for the bigger hand-off model, which gets everything.
     pub route_tools: bool,
@@ -353,6 +375,9 @@ impl Agent {
             ctx_tokens: 8192,
             summary: String::new(),
             compacted: 0,
+            helper_holds: false,
+            offer_hand_back: false,
+            handed_back: false,
             route_tools: true,
             keywords: true,
             route_by_examples: false,
@@ -548,6 +573,9 @@ impl Agent {
         if self.can_escalate() {
             schemas.push(escalate_schema(self.smarter_model.as_deref().unwrap()));
         }
+        if self.offer_hand_back {
+            schemas.push(hand_back_schema());
+        }
         Some(schemas)
     }
 
@@ -699,6 +727,9 @@ impl Agent {
         h.reply_tool = false;
         h.think_with_tools = None; // the bigger model gets to think: that's why it was asked
         h.max_rounds = HELPER_ROUNDS; // it gets the long, many-step jobs
+        h.helper_holds = false;
+        h.offer_hand_back = false;
+        h.handed_back = false;
         h
     }
 
@@ -753,6 +784,13 @@ impl Agent {
                 self.model
             ));
             images.clear();
+        }
+        if self.helper_holds
+            && images.is_empty()
+            && self.can_escalate()
+            && self.hold_turn(text, cb)?
+        {
+            return Ok(());
         }
         let mut wanted: Vec<&str> = if self.keywords {
             groups::groups_for(text)
@@ -968,6 +1006,12 @@ impl Agent {
             if calls.is_empty() || self.cancelled() {
                 return Ok(());
             }
+            if self.offer_hand_back && calls.iter().any(|c| c.name == HAND_BACK) {
+                cb.retract(); // anything it wrote before giving the message back
+                self.messages.pop();
+                self.handed_back = true;
+                return Ok(());
+            }
             if self.can_escalate()
                 && let Some(call) = calls.iter().find(|c| c.name == ESCALATE)
             {
@@ -1118,15 +1162,17 @@ impl Agent {
         } else {
             errors.join("; ")
         };
-        let answer = self.helper_answer(
+        let (answer, _) = self.helper_answer(
             &model,
             request,
             &format!("It tried and got stuck: {notes}"),
             turn_start,
+            false,
             cb,
         )?;
         self.messages
             .push(json!({"role": "assistant", "content": answer}));
+        self.helper_holds = !self.cancelled();
         Ok(())
     }
 
@@ -1237,26 +1283,51 @@ impl Agent {
             .unwrap_or_default();
         let model = self.smarter_model.clone().unwrap();
         let end = self.messages.len().saturating_sub(2);
-        let answer = self.helper_answer(&model, request, &task, end, cb)?;
+        let (answer, _) = self.helper_answer(&model, request, &task, end, false, cb)?;
         self.messages.push(json!({"role": "tool", "tool_call_id": call.id,
                                   "content": format!("{model} answered the user directly:\n{answer}")}));
         self.messages
             .push(json!({"role": "assistant", "content": answer}));
+        // The follow-ups likely build on it: they go to the smarter model, which can hand them back.
+        self.helper_holds = !self.cancelled();
         Ok(())
     }
 
+    /// A follow-up in a chat the smarter model holds goes straight to it. False when it
+    /// handed the message back: the small model answers it (and the rest of the chat).
+    fn hold_turn(&mut self, text: &str, cb: &dyn Callbacks) -> Result<bool, FlmError> {
+        let model = self.smarter_model.clone().unwrap();
+        let end = self.messages.len();
+        self.messages.push(json!({"role": "user", "content": text}));
+        let (answer, handed_back) = self.helper_answer(&model, text, "", end, true, cb)?;
+        if handed_back {
+            self.messages.pop();
+            self.helper_holds = false;
+            return Ok(false);
+        }
+        self.messages
+            .push(json!({"role": "assistant", "content": answer}));
+        if !self.cancelled() {
+            self.maybe_compact(cb, COMPACT_AT);
+        }
+        Ok(true)
+    }
+
     /// The smarter model answers `request` with the chat up to `end` and the
-    /// smaller model's notes; its answer is returned.
+    /// smaller model's notes; its answer is returned, and whether it gave the
+    /// message back instead (`hold`: a follow-up that came straight to it).
     fn helper_answer(
         &mut self,
         model: &str,
         request: &str,
         notes: &str,
         end: usize,
+        hold: bool,
         cb: &dyn Callbacks,
-    ) -> Result<String, FlmError> {
+    ) -> Result<(String, bool), FlmError> {
         cb.handoff(model);
         let mut helper = self.helper(model);
+        helper.offer_hand_back = hold;
         helper.messages = self.messages[self.compacted.min(end)..end]
             .iter()
             .filter(|m| matches!(m["role"].as_str(), Some("user" | "assistant")))
@@ -1276,13 +1347,18 @@ impl Agent {
         } else {
             format!(" Already done, don't repeat: {}.", done.join("; "))
         };
-        let note = if notes.is_empty() && done.is_empty() {
+        let note = if hold {
+            HOLD_NOTE.to_string()
+        } else if notes.is_empty() && done.is_empty() {
             String::new()
         } else {
             format!("\n\n(A smaller assistant handed this to you. Its notes: {notes}{done})")
         };
         helper.ask(&format!("{request}{note}"), cb, &[])?;
-        Ok(last_answer(&helper.messages))
+        if helper.handed_back {
+            return Ok((String::new(), true));
+        }
+        Ok((last_answer(&helper.messages), false))
     }
 
     /// This model is blind: the vision model answers this turn.
@@ -1973,6 +2049,63 @@ mod tests {
                 .lock()
                 .unwrap()
                 .contains(&"handoff:big:9b".to_string())
+        );
+    }
+
+    #[test]
+    fn the_smarter_model_keeps_the_chat_until_it_hands_a_follow_up_back() {
+        let _h = temp_home();
+        let flm = FakeFlm::start(vec![
+            (
+                200,
+                tool_reply(ESCALATE, r#"{"task": "explain point clouds"}"#, "c1"),
+            ),
+            (200, text_reply("Long answer.")),
+            (200, text_reply("Deeper answer.")),
+            (200, tool_reply(HAND_BACK, "{}", "c2")),
+            (200, text_reply("You're welcome.")),
+        ]);
+        let mut a = agent(&flm);
+        a.smarter_model = Some("big:9b".into());
+        let rec = Rec::default();
+        a.ask("how would a 3D face map work", &rec, &[]).unwrap();
+        assert!(a.helper_holds);
+
+        // A follow-up goes straight to the smarter model, with the chat so far and hand_back.
+        a.ask("and how would I store the template", &rec, &[])
+            .unwrap();
+        let reqs = flm.requests();
+        assert_eq!(reqs.len(), 3);
+        assert_eq!(reqs[2]["model"], "big:9b");
+        assert!(
+            reqs[2]["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|t| t["function"]["name"] == HAND_BACK)
+        );
+        let msgs = reqs[2]["messages"].as_array().unwrap();
+        assert!(msgs.iter().any(|m| m["content"] == "Long answer."));
+        assert!(
+            msgs.last().unwrap()["content"]
+                .as_str()
+                .unwrap()
+                .contains("came straight to you")
+        );
+        assert_eq!(a.messages.last().unwrap()["content"], "Deeper answer.");
+        assert!(a.helper_holds);
+
+        // A simple one it gives back: the small model answers, and holds the chat again.
+        a.ask("thanks!", &rec, &[]).unwrap();
+        let reqs = flm.requests();
+        assert_eq!(reqs[3]["model"], "big:9b");
+        assert_ne!(reqs[4]["model"], "big:9b");
+        assert!(!a.helper_holds);
+        assert_eq!(a.messages.last().unwrap()["content"], "You're welcome.");
+        assert!(
+            a.messages
+                .iter()
+                .all(|m| !m.to_string().contains(HAND_BACK))
         );
     }
 
