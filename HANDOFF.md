@@ -51,8 +51,10 @@ Released so far: Assistant **0.23.0** (pinned in silverpanda). `main` has more o
 ## Pinned / releasing
 
 - 0.30.0 pinned (silverpanda PR 44). silverpanda PR 45 merged: lemond MemoryHigh=10G, MemoryMax=11G.
-- **0.31.0 release build running** (2026-11-20): research in depth by default + gap round + "quick" from the user's words, writer by free memory (9B only with >= 10.5 GB available, else qwen3.5:4b), write_file to .pdf, "what's playing" names the app, unload after 15 min. The owner pins it in silverpanda himself (VERSION/SHA256 in files/scripts/panda-assistant.sh).
+- **0.31.0 released and pinned** (owner pinned it; SHA matches): research in depth by default + gap round + "quick" from the user's words, writer by free memory (9B only with >= 10.5 GB available, else qwen3.5:4b), write_file to .pdf, "what's playing" names the app, unload after 15 min. The owner pins it in silverpanda himself (VERSION/SHA256 in files/scripts/panda-assistant.sh).
 - Open: embedding model on or off by default (owner tried 0.30 with it); "ciszej proszę" volume value; English replies to Polish math.
+
+- silverpanda PR 46 merged: the nightly restart counts only apps with a visible launcher (was skipped for the DiskUtilityNotify helper; missed D-Bus-started apps like Ptyxis). Tested as root on the laptop. Takes effect with the image after 45.20261120.4.
 
 ## Eval state (2026-11-18 evening)
 
