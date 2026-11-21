@@ -24,7 +24,7 @@ Still open after that: "ciszej proszę" volume value; English replies to Polish 
 3. Check the tarball (core-bin/assistantd, core-bin/panda-assistant, the clipboard extension, Reminders.desktop) and its sha256 against the release's `.sha256`.
 4. In silverpanda: branch `claude/great-ride-v90usy` from origin/main, bump VERSION/SHA256, PR, wait for `bluebuild`, check its log shows `assistantd X` / `Assistant X`, merge. The owner allows merging these pin PRs without asking.
 
-Released so far: see "Pinned / releasing" (latest **0.32.0**, pinned). `main` has more on top, unreleased (below).
+Released so far: see "Pinned / releasing" (latest **0.32.0**, pinned; nothing unreleased on main).
 
 ## The owner's wishes (keep to them)
 
