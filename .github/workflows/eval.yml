@@ -45,6 +45,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The models to score: all of them, or the ones the run asked for. Unwanted
+  # models get no jobs at all (they used to start and skip, and queue the rest).
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      models: ${{ steps.pick.outputs.models }}
+    steps:
+      - id: pick
+        env:
+          WANT: ${{ inputs.models }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          all = [
+              {"model": "gemma4-it:e2b", "search": "gemma-4-E2B-it"},
+              {"model": "gemma4-it:e4b", "search": "gemma-4-E4B-it"},
+              {"model": "qwen3.5:2b", "search": "Qwen3.5-2B"},
+              {"model": "qwen3.5:4b", "search": "Qwen3.5-4B"},
+              {"model": "qwen3-it:4b", "search": "Qwen3-4B-Instruct-2507"},
+          ]
+          want = [w.strip() for w in os.environ["WANT"].split(",") if w.strip()]
+          picked = [m for m in all if not want or m["model"] in want]
+          missing = [w for w in want if w not in [m["model"] for m in all]]
+          if missing or not picked:
+              raise SystemExit(f"unknown models: {missing}; known: {[m['model'] for m in all]}")
+          print("models=" + json.dumps(picked))
+          PY
+
   build:
     runs-on: ubuntu-24.04
     steps:
@@ -59,7 +87,7 @@ jobs:
           path: target/release/assistantd
 
   eval:
-    needs: build
+    needs: [plan, build]
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     strategy:
@@ -68,32 +96,14 @@ jobs:
         variant: ${{ fromJSON(inputs.variants || '["baseline"]') }}
         # 160 families take ~3.5 h on one runner: three in parallel stay under the 3 h job limit.
         shard: ${{ fromJSON(format('[{0}]', inputs.shards == '6' && '0,1,2,3,4,5' || inputs.shards == '4' && '0,1,2,3' || '0,1,2')) }}
-        m:
-          - { model: "gemma4-it:e2b", search: "gemma-4-E2B-it" }
-          - { model: "gemma4-it:e4b", search: "gemma-4-E4B-it" }
-          - { model: "qwen3.5:2b", search: "Qwen3.5-2B" }
-          - { model: "qwen3.5:4b", search: "Qwen3.5-4B" }
-          - { model: "qwen3-it:4b", search: "Qwen3-4B-Instruct-2507" }
+        m: ${{ fromJSON(needs.plan.outputs.models) }}
     name: eval (${{ matrix.m.model }}, ${{ matrix.variant }}, ${{ matrix.shard }}/${{ inputs.shards || '3' }})
     steps:
-      - name: Is this model wanted?
-        id: pick
-        run: |
-          want="${{ inputs.models }}"
-          if [ -z "$want" ] || [[ ",${want// /}," == *",${{ matrix.m.model }},"* ]]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "Skipped: not in ${want}"
-          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: steps.pick.outputs.run == 'true'
       - uses: actions/download-artifact@v4
-        if: steps.pick.outputs.run == 'true'
         with:
           name: assistantd
       - name: Find and download the GGUF
-        if: steps.pick.outputs.run == 'true'
         id: gguf
         run: |
           read -r repo file < <(python3 .github/scripts/find_gguf.py "${{ matrix.m.search }}")
@@ -102,19 +112,20 @@ jobs:
           mkdir -p models
           curl -sSfL --retry 3 -o models/model.gguf "https://huggingface.co/$repo/resolve/main/$file"
       - name: Start llama.cpp
-        if: steps.pick.outputs.run == 'true'
         run: |
           docker run -d --name llama -p 8080:8080 -v "$PWD/models:/models" ghcr.io/ggml-org/llama.cpp:server \
             -m /models/model.gguf --jinja -c 16384 -np 1 --host 0.0.0.0 --port 8080
           for i in $(seq 1 120); do curl -sf localhost:8080/health && break; sleep 5; done
           curl -sf localhost:8080/health || { docker logs llama; exit 1; }
-      # Routing by meaning, as on the laptop with FastFlowLM's embed-gemma:300m. If the
-      # model can't be found or won't start, the eval runs with keywords only.
+      # Routing by meaning, as on the laptop with FastFlowLM's embed-gemma:300m, for the
+      # variants that route (below 16K context); the shipped setup sends every tool. If
+      # the model can't be found or won't start, the eval runs with keywords only.
       - name: Start the embedding model
-        if: steps.pick.outputs.run == 'true'
         id: embed
         continue-on-error: true
         run: |
+          python3 -c 'import json,sys; sys.exit(0 if json.load(open("core/eval/variants.json"))[sys.argv[1]].get("route_tools") else 1)' \
+            "${{ matrix.variant }}" || { echo "Doesn't route: no embedding model."; exit 0; }
           read -r repo file < <(python3 .github/scripts/find_gguf.py "embeddinggemma-300m" Q8_0)
           echo "Using $repo / $file"
           curl -sSfL --retry 3 -o models/embed.gguf "https://huggingface.co/$repo/resolve/main/$file"
@@ -124,7 +135,6 @@ jobs:
           curl -sf localhost:8081/health || { docker logs embed; exit 1; }
           echo "url=http://127.0.0.1:8081" >> "$GITHUB_OUTPUT"
       - name: Run the scenarios
-        if: steps.pick.outputs.run == 'true'
         run: |
           chmod +x assistantd
           only=()
@@ -135,14 +145,14 @@ jobs:
             --variant "${{ matrix.variant }}" --repeat "${{ inputs.repeat || '1' }}" --json report.json "${only[@]}" \
             --shard "${{ matrix.shard }}/${{ inputs.shards || '3' }}"
       - name: Summary
-        if: always() && steps.pick.outputs.run == 'true'
+        if: always()
         run: |
           [ -f report.json ] || exit 0
           { echo "### ${{ matrix.m.model }} · ${{ matrix.variant }} (${{ steps.gguf.outputs.source }})"
             python3 .github/scripts/eval_table.py report.json; } >> "$GITHUB_STEP_SUMMARY"
           cp report.json "report-$(echo '${{ matrix.m.model }}-${{ matrix.variant }}-${{ matrix.shard }}' | tr ':' '_').json"
       - uses: actions/upload-artifact@v4
-        if: always() && steps.pick.outputs.run == 'true'
+        if: always()
         with:
           name: report-${{ strategy.job-index }}
           path: report-*.json

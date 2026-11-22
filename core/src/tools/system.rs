@@ -120,3 +120,133 @@ pub fn get_datetime(_: &Context, _: &Args) -> ToolResult {
         .map(|s| s.to_string())
         .map_err(|_| "couldn't read the clock".into())
 }
+
+/// What some local servers are, by program name (the port alone can change).
+const KNOWN_SERVERS: [(&str, &str); 4] = [
+    (
+        "lemond",
+        "Lemonade Server; its OpenAI-compatible API is at /api/v1 on its main port, 13305 by default",
+    ),
+    (
+        "flm",
+        "FastFlowLM, serving a model on the NPU; OpenAI-compatible API at /v1",
+    ),
+    ("ollama", "Ollama; its API is at /api on this port"),
+    ("assistantd", "this assistant's own service"),
+];
+
+/// A /proc/net address ("0100007F" or 32 hex digits) as text.
+fn proc_net_addr(hex: &str) -> String {
+    if hex.len() == 8 {
+        let n = u32::from_str_radix(hex, 16).unwrap_or(0);
+        return std::net::Ipv4Addr::from(n.swap_bytes()).to_string();
+    }
+    let mut bytes = [0u8; 16];
+    for (i, chunk) in hex.as_bytes().chunks(8).take(4).enumerate() {
+        let word = u32::from_str_radix(std::str::from_utf8(chunk).unwrap_or("0"), 16).unwrap_or(0);
+        bytes[i * 4..i * 4 + 4].copy_from_slice(&word.to_le_bytes());
+    }
+    let a = std::net::Ipv6Addr::from(bytes);
+    match a.to_ipv4_mapped() {
+        Some(v4) => v4.to_string(),
+        None => format!("[{a}]"),
+    }
+}
+
+/// Listening TCP sockets as (inode, "address:port").
+fn listening() -> Vec<(u64, String)> {
+    let mut out = vec![];
+    for file in ["/proc/net/tcp", "/proc/net/tcp6"] {
+        let Ok(table) = fs::read_to_string(file) else {
+            continue;
+        };
+        for line in table.lines().skip(1) {
+            let f: Vec<&str> = line.split_whitespace().collect();
+            // 0A: LISTEN
+            if f.len() < 10 || f[3] != "0A" {
+                continue;
+            }
+            let Some((addr, port)) = f[1].split_once(':') else {
+                continue;
+            };
+            let port = u16::from_str_radix(port, 16).unwrap_or(0);
+            out.push((
+                f[9].parse().unwrap_or(0),
+                format!("{}:{port}", proc_net_addr(addr)),
+            ));
+        }
+    }
+    out
+}
+
+/// Which program owns each socket inode (only the user's own programs are readable).
+fn socket_owners() -> std::collections::HashMap<u64, String> {
+    let mut owners = std::collections::HashMap::new();
+    let Ok(procs) = fs::read_dir("/proc") else {
+        return owners;
+    };
+    for p in procs.flatten() {
+        let dir = p.path();
+        let Ok(fds) = fs::read_dir(dir.join("fd")) else {
+            continue;
+        };
+        let name = fs::read_to_string(dir.join("comm")).unwrap_or_default();
+        for fd in fds.flatten() {
+            let Ok(link) = fs::read_link(fd.path()) else {
+                continue;
+            };
+            let link = link.to_string_lossy();
+            if let Some(inode) = link
+                .strip_prefix("socket:[")
+                .and_then(|s| s.strip_suffix(']'))
+                .and_then(|s| s.parse().ok())
+            {
+                owners.insert(inode, name.trim().to_string());
+            }
+        }
+    }
+    owners
+}
+
+/// Local servers: which programs listen on which address and port.
+pub fn list_servers(_: &Context, _: &Args) -> ToolResult {
+    let owners = socket_owners();
+    let mut lines: Vec<String> = listening()
+        .into_iter()
+        .map(|(inode, addr)| {
+            let name = owners
+                .get(&inode)
+                .cloned()
+                .unwrap_or_else(|| "a system service".into());
+            let what = KNOWN_SERVERS
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map(|(_, w)| format!(" ({w})"))
+                .unwrap_or_default();
+            format!("- {name}: {addr}{what}")
+        })
+        .collect();
+    lines.sort();
+    lines.dedup();
+    if lines.is_empty() {
+        return Ok("No program is listening for connections.".into());
+    }
+    Ok(format!(
+        "Programs listening for connections (127.0.0.1 and [::1]: only this computer; 0.0.0.0 and [::]: \
+the network too; use http://localhost:PORT from here):\n{}",
+        lines.join("\n")
+    ))
+}
+
+#[cfg(test)]
+mod server_tests {
+    use super::*;
+
+    #[test]
+    fn proc_net_addresses() {
+        assert_eq!(proc_net_addr("0100007F"), "127.0.0.1");
+        assert_eq!(proc_net_addr("00000000"), "0.0.0.0");
+        assert_eq!(proc_net_addr("00000000000000000000000001000000"), "[::1]");
+        assert_eq!(proc_net_addr("00000000000000000000000000000000"), "[::]");
+    }
+}

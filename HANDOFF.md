@@ -24,7 +24,7 @@ Still open after that: "ciszej proszę" volume value; English replies to Polish 
 3. Check the tarball (core-bin/assistantd, core-bin/panda-assistant, the clipboard extension, Reminders.desktop) and its sha256 against the release's `.sha256`.
 4. In silverpanda: branch `claude/great-ride-v90usy` from origin/main, bump VERSION/SHA256, PR, wait for `bluebuild`, check its log shows `assistantd X` / `Assistant X`, merge. The owner allows merging these pin PRs without asking.
 
-Released so far: see "Pinned / releasing" (latest **0.32.0**, pinned; nothing unreleased on main).
+Released so far: see "Pinned / releasing" (latest **0.33.0**, pinned; nothing unreleased on main).
 
 ## The owner's wishes (keep to them)
 
@@ -71,11 +71,17 @@ Measured: first round cold (median 4.3 s) because routing changed the tool list 
 
 On claude/great-ride-v90usy (790eb64, on top of c60a873): `route_tools = ctx_len < ALL_TOOLS_CTX_LEN (16384)`, embedding model only loaded when routing, default context 16K, Gemma 4 E2B default model, warm-up after load. Tests + clippy pass. **Live-tested on the NPU (owner's OK):** the warm-up first missed because the machine context had free memory and battery charge in it (changed between chats → whole prompt re-read). 41cda23 keeps only stable values (get_system_info/get_battery give the current ones). After that: warm-up + three new chats, all 7469 tokens reused, 1.3 s to the first tool call (6 s before), 2.2 s for a whole reply; follow-up rounds 0.6–0.75 s. The owner's config is now `ctx_len: 16384` (backup of the old one was in the session scratchpad). **0.32.0 released** (f4aa643, release run 44933885668, SHA256 7b2575b9cac39fd0a08676b8732f1e83a1b34ad2bcc3deb451b75389affb1997, tarball checked). **Pinned: silverpanda PR 48 merged 2026-11-21** (bluebuild green, log shows assistantd/Assistant 0.32.0). Then after the owner's next image: check rounds.jsonl for first-round times.
 
-## Smarter model keeps the chat (2026-11-22, bd49bf9 on claude/great-ride-v90usy, not released)
+## Smarter model keeps the chat (2026-11-22): released in 0.33.0 (panda-assistant PR 1), pinned (silverpanda PR 50)
 
 Owner's Kinect chat: after a hand-off to qwen3.5:9b the follow-up went back to Gemma, which answered shallowly and wrongly. Now after `ask_smarter_model` (or a take-over when Gemma is stuck) `helper_holds` is set; each follow-up is weighed by the smarter model with a short one-shot (`HOLD_DECIDE`, last Q/A + new message → BIG/SMALL, a few seconds); BIG → it answers with the full chat (`hold_turn`), SMALL → Gemma answers and holds the chat again. A held turn starts with the smarter model loaded (service `attempt`), no compaction on held turns: Lemonade keeps one model, and loading Gemma evicted the 9B and its prompt cache. Held: big model idle unload 10 min. The hand-off note now says "You are the smarter model…" (it used to deny having one when the user wrote "ask the smarter model"). In memory only.
 
-Live-tested (owner asked to keep going until it works): deeper follow-ups 56 s / 52 s, first token 2.3 s with 8.3–8.7K tokens reused (before: 269 s / 110 s, 40 s cold each); "thanks" → SMALL → Gemma, 20 s; two model swaps in the whole chat. A first try with a `hand_back` tool failed (the 9B never called it, once wrote "hand_back" as its reply) and was removed. Next: release as 0.33.0 when the owner wants. Also seen earlier: the 9B once called `use_skill` first and started its answer with "that wasn't actually a saved skill" — not looked into.
+Live-tested (owner asked to keep going until it works): deeper follow-ups 56 s / 52 s, first token 2.3 s with 8.3–8.7K tokens reused (before: 269 s / 110 s, 40 s cold each); "thanks" → SMALL → Gemma, 20 s; two model swaps in the whole chat. A first try with a `hand_back` tool failed (the 9B never called it, once wrote "hand_back" as its reply) and was removed. Also seen earlier: the 9B once called `use_skill` first and started its answer with "that wasn't actually a saved skill" — not looked into.
+
+## Oblivious to questions about its own setup (2026-11-22, 41d4ae6, eval running)
+
+Owner's pop-up chat: "what api does lemonade advertise" with a link selected in the terminal → Gemma rewrote the selection, then read_window("Terminal") found nothing ("No window is focused"). Built, all behind switches off by default: `list_servers` tool (/proc listening sockets + owner names, Lemonade/FLM/Ollama described), `self_info` line after the machine description (Lemonade at http://localhost:13305/api/v1), `context_rule` (screen context only when the question refers to it). read_window now also matches GNOME's app name via desktop ids (always on; live: "Terminal" finds Ptyxis). Eval baseline is now as shipped (all tools, 16K). Six new scenarios (lemonade address ×2 incl. a selected link, is ollama running, dev server port, two selection controls).
+
+**Eval 44965080030** (Gemma E2B, repeat 3, 6 shards): baseline vs self-aware vs local-servers vs self-aware-servers. Read the verdict on the new families and check nothing nearby (selection scenarios) got worse; then turn the winners on in `make_agent` (self_info from the client: Lemonade URL in Lemonade mode, FLM's in plain mode), release 0.34.0, pin.
 
 ## Screen flicker while changing brightness (2026-11-21): owner chose to live with it
 
@@ -96,6 +102,12 @@ Extension `auto-brightness@silverpanda.wiertless.github.io`: computes GNOME Shel
 - **Cue-words verdict (44403890158):** overall +1.0 (undecided), but on the target families ciszej 8/9 vs 3/9, "co teraz leci" 4/6 vs 0/6, nothing nearby worse, 18% faster → kept, released in 0.30.0. Was: cue-words eval 44403890158 (repeat 3, 6 shards): `baseline` = new descriptions with Polish cues, `pre-cues` = old ones. pre-cues WORSE → keep the cues and release 0.30.0; no difference → revert them.
 - Run over 160: `examples` +1.9 points vs baseline, UNDECIDED (p 0.24), same direction as the 48-family run. **Decisive run 44372794027** (repeat 3, 6 shards, made before the description fixes below): if BETTER, make `route_by_examples` the default and release 0.30.0.
 - No-tool fixes in progress: Polish cue words in set_volume/set_brightness/media_control/open_file descriptions, media keywords ("leci", "playing", "utwór"), eval failures now include the reply. Local NPU check: "ścisz trochę" and "a bit quieter" pass, "ciszej proszę" now calls set_volume (value still off). Next: rerun these families locally (`assistantd --eval --url http://127.0.0.1:8002 --model gemma4-it:e2b --only NAME`, ~4 s/prompt on the NPU), then a CI eval of baseline before/after.
+
+## Parked (owner, 2026-11-22): a bigger squeezed model on the iGPU as the smarter model
+
+Prompted by github.com/ShinMegamiBoson/lookatmyquant (importance-based 1–4-bit "quantization compiler"; MLX/Apple-only, quantizer needs H100/B200, no GGUF published). Same idea available as Unsloth Dynamic GGUFs. The iGPU (Radeon 840M, gfx1152) can use at most ~7.4 GB (Lemonade system-info: 0.5 GB VRAM + 7.4 GB GTT), so 27B at 2 bits (7.2 GB) doesn't fit. Pick when resumed: `unsloth/gemma-4-12b-it-GGUF:gemma-4-12b-it-UD-Q3_K_XL.gguf` (6.02 GB, has an MTP draft head; Lemonade lists a Gemma-4-12B MTP recipe), alt. UD-IQ3_XXS 4.64 GB. Plan: pull as `user.` model (Lemonade keeps downloading after the client disconnects; restart lemond to cancel), measure load/memory/prefill/decode vs qwen3.5:9b on the NPU, then CI eval of both. A started download was cancelled and cleaned up.
+
+NPU alternatives checked (2026-11-22): FastFlowLM (ROCm project since 1.0; orchestration MIT, NPU kernels closed binaries) is the only practical runtime; Ryzen AI Software 1.8 has a Linux guide (OGA) but NPU LLMs on Linux unconfirmed; IRON/MLIR-AIE open toolchain (Llama 3.2 1B example, research up to Qwen3-4B); FastFlow-SDK (early access) = IRON tooling for NPU programs. Custom weights on FLM: NPU-Forge (HF LJTSG/npu-forge) reports LoRA-tuned Llama-3.2-1B converted to Q4NX; installed FLM has `--model-extension` manifests — relevant to the merged-LoRA idea.
 
 ## Idea on hold (owner deciding): super-heavy research
 

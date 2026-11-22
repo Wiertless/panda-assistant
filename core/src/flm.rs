@@ -35,6 +35,22 @@ pub enum Backend {
     Lemonade,
 }
 
+/// One line on what the assistant runs on, for questions about it ("what API
+/// does Lemonade advertise?").
+pub fn self_info(backend: Backend, url: &str) -> String {
+    let url = url.replace("127.0.0.1", "localhost");
+    match backend {
+        Backend::Lemonade => format!(
+            "You run locally through Lemonade Server (OpenAI-compatible API at {url}/api/v1); \
+             FastFlowLM runs the models on the NPU."
+        ),
+        Backend::Flm => format!(
+            "You run locally on FastFlowLM, which runs the models on the NPU \
+             (OpenAI-compatible API at {url}/v1)."
+        ),
+    }
+}
+
 /// Lemonade's name for an FLM model: "gemma4-it:e2b" -> "gemma4-it-e2b-FLM".
 pub fn lemonade_flm_name(tag: &str) -> String {
     format!("{}-FLM", tag.replace(':', "-"))
@@ -163,8 +179,6 @@ pub struct ChatOptions {
     /// FLM's per-request thinking switch: false answers (and calls tools) without
     /// reasoning first, the biggest cost between tool calls on Qwen 3.5.
     pub think: Option<bool>,
-    /// false: at most one call per answer (with "required": exactly one).
-    pub parallel_tool_calls: Option<bool>,
 }
 
 /// The embedding model FLM serves next to the chat model, when installed.
@@ -1079,7 +1093,6 @@ sudo modprobe -r amdxdna && sudo modprobe amdxdna"
                     tools,
                     &ChatOptions {
                         tool_choice: None,
-                        parallel_tool_calls: None,
                         think: None,
                         ..opts.clone()
                     },
@@ -1133,12 +1146,6 @@ sudo modprobe -r amdxdna && sudo modprobe amdxdna"
             .filter(|_| self.supports("tool_choice"))
         {
             body["tool_choice"] = c.clone();
-        }
-        if let Some(p) = opts
-            .parallel_tool_calls
-            .filter(|_| self.supports("tool_choice"))
-        {
-            body["parallel_tool_calls"] = json!(p);
         }
         if let Some(t) = opts.think.filter(|_| self.supports("think")) {
             body["think"] = json!(t);
@@ -1640,6 +1647,20 @@ fn new_session(cmd: &mut Command) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn self_info_names_the_backend_and_its_address() {
+        let l = self_info(Backend::Lemonade, LEMONADE_URL);
+        assert!(
+            l.contains("Lemonade Server") && l.contains("http://localhost:13305/api/v1"),
+            "{l}"
+        );
+        let f = self_info(Backend::Flm, DEFAULT_URL);
+        assert!(
+            f.contains("FastFlowLM") && f.contains("http://localhost:52625/v1"),
+            "{f}"
+        );
+    }
 
     #[test]
     fn lemonade_backend_for_embeddings() {

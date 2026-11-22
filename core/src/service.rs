@@ -380,6 +380,8 @@ impl Shared {
         agent.memory_enabled = cfg.memory;
         agent.ctx_tokens = cfg.ctx_len as usize;
         agent.route_tools = cfg.ctx_len < flm::ALL_TOOLS_CTX_LEN;
+        agent.self_info = flm::self_info(self.client.backend(), &self.client.url());
+        agent.context_rule = true;
         agent.always_allow = self.always_allow.clone();
         agent.embedder = self.embedder.lock().unwrap().clone();
         agent.machine_source = Arc::new(crate::context::system_context);
@@ -391,6 +393,10 @@ impl Shared {
             "auto" => flm::pick_smarter_model(&models, &cfg.model, None),
             other => Some(other.to_string()),
         };
+        agent.middle_writer = models
+            .iter()
+            .any(|m| m.name == crate::agent::MIDDLE_WRITER)
+            .then(|| crate::agent::MIDDLE_WRITER.to_string());
         if let Some(m) = models
             .iter()
             .find(|m| m.name == cfg.model)

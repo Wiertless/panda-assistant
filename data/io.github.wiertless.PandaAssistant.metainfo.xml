@@ -21,6 +21,15 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.34.0" date="2026-11-22">
+      <description>
+        <ul>
+          <li>The assistant knows what it runs on: ask for Lemonade's or FastFlowLM's address and it answers</li>
+          <li>Selected text and window context are used only when your question is about them</li>
+          <li>Research reports no longer reach for a writer model that isn't installed</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.33.0" date="2026-11-22">
       <description>
         <ul>
