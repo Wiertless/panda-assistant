@@ -24,7 +24,7 @@ Still open after that: "ciszej proszę" volume value; English replies to Polish 
 3. Check the tarball (core-bin/assistantd, core-bin/panda-assistant, the clipboard extension, Reminders.desktop) and its sha256 against the release's `.sha256`.
 4. In silverpanda: branch `claude/great-ride-v90usy` from origin/main, bump VERSION/SHA256, PR, wait for `bluebuild`, check its log shows `assistantd X` / `Assistant X`, merge. The owner allows merging these pin PRs without asking.
 
-Released so far: see "Pinned / releasing" (latest **0.33.0**, pinned; nothing unreleased on main).
+Released so far: see "Pinned / releasing" (latest **0.34.0**, pin PR silverpanda 51; nothing unreleased on main).
 
 ## The owner's wishes (keep to them)
 
@@ -77,11 +77,13 @@ Owner's Kinect chat: after a hand-off to qwen3.5:9b the follow-up went back to G
 
 Live-tested (owner asked to keep going until it works): deeper follow-ups 56 s / 52 s, first token 2.3 s with 8.3–8.7K tokens reused (before: 269 s / 110 s, 40 s cold each); "thanks" → SMALL → Gemma, 20 s; two model swaps in the whole chat. A first try with a `hand_back` tool failed (the 9B never called it, once wrote "hand_back" as its reply) and was removed. Also seen earlier: the 9B once called `use_skill` first and started its answer with "that wasn't actually a saved skill" — not looked into.
 
-## Oblivious to questions about its own setup (2026-11-22, 41d4ae6, eval running)
+## Knows its own setup (2026-11-22): released in 0.34.0 (panda-assistant PR 2), pin PR silverpanda 51
 
 Owner's pop-up chat: "what api does lemonade advertise" with a link selected in the terminal → Gemma rewrote the selection, then read_window("Terminal") found nothing ("No window is focused"). Built, all behind switches off by default: `list_servers` tool (/proc listening sockets + owner names, Lemonade/FLM/Ollama described), `self_info` line after the machine description (Lemonade at http://localhost:13305/api/v1), `context_rule` (screen context only when the question refers to it). read_window now also matches GNOME's app name via desktop ids (always on; live: "Terminal" finds Ptyxis). Eval baseline is now as shipped (all tools, 16K). Six new scenarios (lemonade address ×2 incl. a selected link, is ollama running, dev server port, two selection controls).
 
-**Eval 44965080030** (Gemma E2B, repeat 3, 6 shards): baseline vs self-aware vs local-servers vs self-aware-servers. Read the verdict on the new families and check nothing nearby (selection scenarios) got worse; then turn the winners on in `make_agent` (self_info from the client: Lemonade URL in Lemonade mode, FLM's in plain mode), release 0.34.0, pin.
+**Eval 44965080030** verdict (Gemma E2B, repeat 3): all three UNDECIDED overall (+1.0/+1.4/+1.7). self-aware (self_info + context_rule): lemonade address 0/3 → 3/3 wordings, 12 fixed / 7 broke, no time cost → **on by default** (`flm::self_info` from the client's backend + URL; context_rule true). local-servers: only variant that answers dev-server port / is-ollama-running, but proofread/translate selection dropped to 1–2/3 and self-aware-servers is +15% time → **off**, kept as variant `local-servers` (rerun on selection families before turning on). Check run 45035798333 with the new defaults: lemonade 4/5 (the "link selected ~2" wording still answers with the link's port 443).
+
+Streamlined in the same release (~1,300 lines): removed required rounds, compact tool set + `Tool::resolve` forwarding, route_by_examples/force_proposal + `requests.tsv`, `parallel_tool_calls`; variants pruned (refuted or = baseline), added `routed` (8K, routing + embeddings) and `no-self-aware`. eval.yml: `plan` job builds the model matrix (no more skipped jobs), embedding server only for variants with route_tools. Research middle writer (qwen3.5:4b) only when installed — **the owner removed qwen3.5:4b from the laptop on 2026-11-22** and switched config to gemma4-it:e2b (measured on the NPU: Gemma 18–21 tok/s decode, ~1,800 tok/s prefill vs Qwen 4B 12 and ~500).
 
 ## Screen flicker while changing brightness (2026-11-21): owner chose to live with it
 
