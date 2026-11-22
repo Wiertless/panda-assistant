@@ -33,11 +33,7 @@ pub struct Variant {
     pub nudge: Option<bool>,
     pub force_completion: Option<bool>,
     pub reply_tool: Option<bool>,
-    /// "compact": the ~28 broad tools, all sent with every request (no routing).
-    pub tool_set: Option<String>,
     pub system_prompt: Option<String>,
-    /// Every round must call exactly one tool (reply and ask_user always offered).
-    pub required_rounds: Option<bool>,
     /// Route by meaning too, when the eval has an embedding server (default yes).
     pub embed: Option<bool>,
     /// Keyword routing on (default yes).
@@ -47,16 +43,13 @@ pub struct Variant {
     pub route_tools: Option<bool>,
     /// The agent's context budget in tokens (default 16384, as shipped).
     pub ctx_tokens: Option<usize>,
-    /// A line on what the assistant runs on, after the machine description.
+    /// A line on what the assistant runs on, after the machine description
+    /// (default: as on Lemonade; "" leaves it out).
     pub self_info: Option<String>,
     /// Screen context only when the question refers to it.
     pub context_rule: Option<bool>,
     /// The list_servers tool.
     pub local_servers: Option<bool>,
-    /// Route by the nearest example requests instead of the group descriptions.
-    pub route_by_examples: Option<bool>,
-    /// Offer only the tool the examples clearly agree on, first.
-    pub force_proposal: Option<bool>,
     /// Stand-ins for the prompt fragments: web, memory, escalate, nudge.
     #[serde(default)]
     pub prompt_parts: std::collections::HashMap<String, String>,
@@ -317,9 +310,8 @@ pub fn run(
         Arc::new(s.stubs.clone()),
         Arc::new(v.descriptions.clone()),
     );
-    let compact = v.tool_set.as_deref() == Some("compact");
     let source = Arc::new(move || {
-        let narrow: Vec<Tool> = crate::tools::all()
+        crate::tools::all()
             .into_iter()
             .map(|t| {
                 let (log, stubs, name) = (log.clone(), stubs.clone(), t.name.clone());
@@ -336,13 +328,7 @@ pub fn run(
                     ..t
                 }
             })
-            .collect();
-        // The broad tools forward to the narrow stand-ins, so the judging stays the same.
-        if compact {
-            crate::tools::compact::compact(narrow)
-        } else {
-            narrow
-        }
+            .collect()
     });
     let mut agent = Agent::new(client.clone(), model, source);
     if let Some(t) = v.tool_temperature {
@@ -354,24 +340,20 @@ pub fn run(
     agent.force_completion = v.force_completion.unwrap_or(agent.force_completion);
     agent.reply_tool = v.reply_tool.unwrap_or(agent.reply_tool);
     agent.system_prompt = v.system_prompt.clone();
-    agent.required_rounds = v.required_rounds.unwrap_or(agent.required_rounds);
     agent.keywords = v.keywords.unwrap_or(agent.keywords);
-    // As shipped since 0.32: every tool with every request, 16K context.
+    // As shipped: every tool with every request, 16K context (0.32), the line on
+    // what it runs on and the screen-context rule (0.34), as on Lemonade.
     agent.route_tools = v.route_tools.unwrap_or(false);
     agent.ctx_tokens = v.ctx_tokens.unwrap_or(16384);
-    agent.self_info = v.self_info.clone().unwrap_or_default();
-    agent.context_rule = v.context_rule.unwrap_or(false);
+    agent.self_info = v.self_info.clone().unwrap_or_else(|| {
+        crate::flm::self_info(crate::flm::Backend::Lemonade, crate::flm::LEMONADE_URL)
+    });
+    agent.context_rule = v.context_rule.unwrap_or(true);
     agent.local_servers = v.local_servers.unwrap_or(false);
-    agent.route_by_examples = v.route_by_examples.unwrap_or(agent.route_by_examples);
-    agent.force_proposal = v.force_proposal.unwrap_or(agent.force_proposal);
     let embedder = embedder.filter(|_| v.embed.unwrap_or(true));
     agent.embedder = embedder.cloned();
     agent.log_rounds = false;
     agent.prompt_parts = v.prompt_parts.clone();
-    if compact {
-        agent.route_tools = false; // everything goes along
-        agent.examples = false; // they name the narrow tools
-    }
     let known = s.known.as_deref().unwrap_or(KNOWN);
     agent.machine = Some(if v.known.unwrap_or(true) {
         format!("{MACHINE}\n{known}")

@@ -581,71 +581,6 @@ pub fn example_for(group: &str) -> Option<&'static str> {
     EXAMPLES.iter().find(|(g, _)| *g == group).map(|(_, e)| *e)
 }
 
-/// Example requests (tool, request); "-" is one answered without tools.
-pub fn requests() -> Vec<(&'static str, &'static str)> {
-    include_str!("requests.tsv")
-        .lines()
-        .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
-        .filter_map(|l| l.split_once('\t'))
-        .collect()
-}
-
-/// How many nearest examples vote.
-const K: usize = 5;
-
-/// What the nearest examples say: the tool most of them name, how close the
-/// closest of those is, and the share of the vote it got.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Proposal {
-    pub tool: &'static str,
-    pub similarity: f32,
-    pub share: f32,
-    /// The groups of the tools the near examples name (at most two, most votes first).
-    pub groups: Vec<&'static str>,
-}
-
-/// The near examples' vote this proposal is sure enough of to send only that tool.
-pub const FORCE_SIMILARITY: f32 = 0.5;
-pub const FORCE_SHARE: f32 = 0.5;
-
-/// Weighted vote of the K nearest examples (`sims` in `requests()` order).
-pub fn vote(sims: &[f32], bank: &[(&'static str, &'static str)]) -> Option<Proposal> {
-    let mut near: Vec<(f32, &'static str)> =
-        sims.iter().zip(bank).map(|(s, (t, _))| (*s, *t)).collect();
-    near.sort_by(|a, b| b.0.total_cmp(&a.0));
-    near.truncate(K);
-    let total: f32 = near.iter().map(|(s, _)| s.max(0.0)).sum();
-    let mut tally: Vec<(&'static str, f32, f32)> = vec![]; // tool, votes, best similarity
-    for (sim, tool) in &near {
-        match tally.iter_mut().find(|(t, _, _)| t == tool) {
-            Some(e) => e.1 += sim.max(0.0),
-            None => tally.push((tool, sim.max(0.0), *sim)),
-        }
-    }
-    let mut by_group: Vec<(&'static str, f32)> = vec![];
-    for (t, v, _) in &tally {
-        let g = if *t == "-" { CORE } else { group_of(t) };
-        match by_group.iter_mut().find(|(x, _)| *x == g) {
-            Some(e) => e.1 += v,
-            None => by_group.push((g, *v)),
-        }
-    }
-    by_group.sort_by(|a, b| b.1.total_cmp(&a.1));
-    let groups = by_group
-        .iter()
-        .filter(|(g, v)| *g != CORE && total > 0.0 && v / total >= 0.25)
-        .take(2)
-        .map(|(g, _)| *g)
-        .collect();
-    let (tool, votes, best) = tally.into_iter().max_by(|a, b| a.1.total_cmp(&b.1))?;
-    Some(Proposal {
-        tool,
-        similarity: best,
-        share: if total > 0.0 { votes / total } else { 0.0 },
-        groups,
-    })
-}
-
 /// Routing by meaning: the message's embedding against each group's, for
 /// wordings the keyword lists miss. Off (keywords only) when the server has
 /// no embedding model.
@@ -655,8 +590,6 @@ pub struct Embedder {
     /// The groups' vectors once asked for (None when embeddings weren't there,
     /// asked again after a while: the server may restart with them).
     groups: std::sync::Mutex<Option<(std::time::Instant, Option<Vectors>)>>,
-    /// The example requests' vectors, the same way.
-    examples: std::sync::Mutex<Option<(std::time::Instant, Option<Vectors>)>>,
 }
 
 type Vectors = Vec<Vec<f32>>;
@@ -696,44 +629,7 @@ impl Embedder {
             client,
             model: model.into(),
             groups: std::sync::Mutex::new(None),
-            examples: std::sync::Mutex::new(None),
         }
-    }
-
-    /// The tool the nearest example requests point to (None without embeddings).
-    pub fn propose(&self, text: &str) -> Option<Proposal> {
-        let bank = requests();
-        let mut cache = self.examples.lock().unwrap();
-        let stale = match cache.as_ref() {
-            None => true,
-            Some((when, None)) => when.elapsed() > RETRY_EMBEDDINGS,
-            Some(_) => false,
-        };
-        if stale {
-            // Embedded as queries too: requests compared with requests.
-            let docs: Vec<String> = bank.iter().map(|(_, r)| r.to_string()).collect();
-            let vecs = docs
-                .chunks(64)
-                .map(|c| self.client.embed(&self.model, c, "query"))
-                .collect::<Result<Vec<_>, _>>()
-                .ok()
-                .map(|v| v.concat());
-            *cache = Some((std::time::Instant::now(), vecs));
-        }
-        let Some((_, Some(examples))) = cache.as_ref() else {
-            return None;
-        };
-        let q = self
-            .client
-            .embed(&self.model, &[text.to_string()], "query")
-            .ok()?;
-        vote(
-            &examples
-                .iter()
-                .map(|e| cosine(&q[0], e))
-                .collect::<Vec<_>>(),
-            &bank,
-        )
     }
 
     pub fn groups_for(&self, text: &str) -> Vec<&'static str> {
@@ -896,56 +792,6 @@ mod tests {
         sims[7] = 0.47;
         assert_eq!(nearest(&sims), [GROUPS[2].0, GROUPS[5].0]);
         assert!((cosine(&[1.0, 0.0], &[1.0, 0.0]) - 1.0).abs() < 1e-6);
-    }
-
-    #[test]
-    fn example_requests_name_real_tools_and_stay_out_of_the_eval() {
-        let names: Vec<String> = crate::tools::all().into_iter().map(|t| t.name).collect();
-        let bank = requests();
-        assert!(bank.len() > 150);
-        for (t, r) in &bank {
-            assert!(*t == "-" || names.iter().any(|n| n == t), "{t}: {r}");
-        }
-        let eval: Vec<serde_json::Value> =
-            serde_json::from_str(include_str!("../../eval/scenarios.json")).unwrap();
-        let prompts: Vec<String> = eval
-            .iter()
-            .flat_map(|s| {
-                let mut p = vec![s["prompt"].as_str().unwrap_or("").to_lowercase()];
-                p.extend(
-                    s["paraphrases"]
-                        .as_array()
-                        .into_iter()
-                        .flatten()
-                        .filter_map(|x| x.as_str())
-                        .map(str::to_lowercase),
-                );
-                p
-            })
-            .collect();
-        for (_, r) in &bank {
-            assert!(
-                !prompts.contains(&r.to_lowercase()),
-                "eval prompt in the bank: {r}"
-            );
-        }
-    }
-
-    #[test]
-    fn nearest_examples_vote() {
-        let bank = [
-            ("set_wifi", "a"),
-            ("set_wifi", "b"),
-            ("list_networks", "c"),
-            ("-", "d"),
-            ("set_wifi", "e"),
-            ("x", "f"),
-        ];
-        let p = vote(&[0.9, 0.8, 0.85, 0.1, 0.7, 0.0], &bank).unwrap();
-        assert_eq!(p.tool, "set_wifi");
-        assert!((p.similarity - 0.9).abs() < 1e-6);
-        assert!(p.share > 0.7 && p.share < 0.75, "{}", p.share);
-        assert_eq!(p.groups, ["settings", "devices"]); // wifi on, and the networks list
     }
 
     #[test]

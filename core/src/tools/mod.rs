@@ -11,7 +11,6 @@ use crate::tool::{Args, Risk, Tool, ToolError, arg_str, obj};
 
 pub mod apps;
 pub mod brains;
-pub mod compact;
 pub mod connect;
 pub mod docs;
 pub mod edit;
