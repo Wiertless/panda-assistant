@@ -393,6 +393,10 @@ impl Shared {
             "auto" => flm::pick_smarter_model(&models, &cfg.model, None),
             other => Some(other.to_string()),
         };
+        agent.middle_writer = models
+            .iter()
+            .any(|m| m.name == crate::agent::MIDDLE_WRITER)
+            .then(|| crate::agent::MIDDLE_WRITER.to_string());
         if let Some(m) = models
             .iter()
             .find(|m| m.name == cfg.model)

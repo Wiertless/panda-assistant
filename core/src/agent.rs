@@ -29,7 +29,7 @@ pub const REPLY: &str = "reply";
 /// The start of a tool result that no retry can fix (see ToolError::cannot).
 pub const FINAL_ERROR: &str = "Error (retrying won't help): ";
 /// Writes research reports when the smarter model doesn't fit in memory.
-const MIDDLE_WRITER: &str = "qwen3.5:4b";
+pub const MIDDLE_WRITER: &str = "qwen3.5:4b";
 /// A question asked from the pop-up starts with what was on screen; the window hides it.
 pub const CONTEXT_MARK: &str = "[On screen: ";
 /// A tool result that is the answer itself (research): shown as written, and the turn ends.
@@ -272,6 +272,9 @@ pub struct Agent {
     pub messages: Vec<Value>,
     pub cancel: Arc<AtomicBool>,
     pub smarter_model: Option<String>,
+    /// Writes research reports when the smarter model doesn't fit in memory; only
+    /// when installed (loading a missing one could start a download).
+    pub middle_writer: Option<String>,
     pub web_enabled: bool,
     /// The computer's description, taken once per chat.
     pub machine: Option<String>,
@@ -352,6 +355,7 @@ impl Agent {
             messages: vec![],
             cancel: Arc::new(AtomicBool::new(false)),
             smarter_model: None,
+            middle_writer: None,
             web_enabled: true,
             machine: None,
             machine_source: Arc::new(String::new),
@@ -733,8 +737,9 @@ impl Agent {
         *self.ctx.request.lock().unwrap() = text.to_string();
         let (client, model) = (self.client.clone(), self.model.clone());
         self.ctx.free_model = Some(Arc::new(move || client.unload_model(&model)));
-        // shortcut: the middle writer is fixed to Qwen 3.5 4B; pick it from the installed models if more appear.
-        let middle = Some(MIDDLE_WRITER.to_string())
+        let middle = self
+            .middle_writer
+            .clone()
             .filter(|m| *m != self.model && Some(m) != self.smarter_model.as_ref());
         self.ctx.middle_name = middle.clone();
         self.ctx.ask_middle = middle.map(|m| {
