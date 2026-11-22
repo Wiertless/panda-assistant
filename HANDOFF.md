@@ -85,6 +85,10 @@ Owner's pop-up chat: "what api does lemonade advertise" with a link selected in 
 
 Streamlined in the same release (~1,300 lines): removed required rounds, compact tool set + `Tool::resolve` forwarding, route_by_examples/force_proposal + `requests.tsv`, `parallel_tool_calls`; variants pruned (refuted or = baseline), added `routed` (8K, routing + embeddings) and `no-self-aware`. eval.yml: `plan` job builds the model matrix (no more skipped jobs), embedding server only for variants with route_tools. Research middle writer (qwen3.5:4b) only when installed — **the owner removed qwen3.5:4b from the laptop on 2026-11-22** and switched config to gemma4-it:e2b (measured on the NPU: Gemma 18–21 tok/s decode, ~1,800 tok/s prefill vs Qwen 4B 12 and ~500).
 
+## Nightly update ignores Steam (silverpanda PR 52, merged 2026-11-22)
+
+`nightly-update.sh` skips `steam` / `com.valvesoftware.Steam` like Assistant when deciding whether apps are open (owner doesn't mind it closing). A game launched outside Steam still counts.
+
 ## Screen flicker while changing brightness (2026-11-21): owner chose to live with it
 
 Flicker when dragging the brightness slider (mouse or scroll), also before Auto Brightness. Ruled out: the extension, GNOME (a direct logind ramp flickers too), ABM (`panel_power_savings` 0 still flickers; tuned sets 3 in powersave, 1 balanced-battery), PSR/Panel Replay (both inactive). Evidence points at DCN 3.5 idle power states (IPS): debugfs backlight PWM reads 0 except right after each write, and a `dc_dmub_srv_apply_idle_power_optimizations` WARNING in the kernel log. Untested options (each needs a karg + reboot): `amdgpu.dcdebugmask=0x1000` (IPS only when displays are off), `0x800` (IPS off, may hurt s0ix), `0x40000` (custom brightness curve off). Owner declined for now. Also parked: silverpanda branch `claude/brightness-no-flicker` (one backlight write per slider step with Auto Brightness on), unmerged, untested.
