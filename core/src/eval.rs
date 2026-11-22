@@ -45,8 +45,14 @@ pub struct Variant {
     /// false: every tool goes along with every request, in the same order, so the
     /// server can reuse the prompt it already read (default: routed).
     pub route_tools: Option<bool>,
-    /// The agent's context budget in tokens (default 8192).
+    /// The agent's context budget in tokens (default 16384, as shipped).
     pub ctx_tokens: Option<usize>,
+    /// A line on what the assistant runs on, after the machine description.
+    pub self_info: Option<String>,
+    /// Screen context only when the question refers to it.
+    pub context_rule: Option<bool>,
+    /// The list_servers tool.
+    pub local_servers: Option<bool>,
     /// Route by the nearest example requests instead of the group descriptions.
     pub route_by_examples: Option<bool>,
     /// Offer only the tool the examples clearly agree on, first.
@@ -350,8 +356,12 @@ pub fn run(
     agent.system_prompt = v.system_prompt.clone();
     agent.required_rounds = v.required_rounds.unwrap_or(agent.required_rounds);
     agent.keywords = v.keywords.unwrap_or(agent.keywords);
-    agent.route_tools = v.route_tools.unwrap_or(agent.route_tools);
-    agent.ctx_tokens = v.ctx_tokens.unwrap_or(agent.ctx_tokens);
+    // As shipped since 0.32: every tool with every request, 16K context.
+    agent.route_tools = v.route_tools.unwrap_or(false);
+    agent.ctx_tokens = v.ctx_tokens.unwrap_or(16384);
+    agent.self_info = v.self_info.clone().unwrap_or_default();
+    agent.context_rule = v.context_rule.unwrap_or(false);
+    agent.local_servers = v.local_servers.unwrap_or(false);
     agent.route_by_examples = v.route_by_examples.unwrap_or(agent.route_by_examples);
     agent.force_proposal = v.force_proposal.unwrap_or(agent.force_proposal);
     let embedder = embedder.filter(|_| v.embed.unwrap_or(true));

@@ -116,5 +116,20 @@
       "search_mail": "Search the user's mail (all accounts, any mail app) by sender, subject or topic; returns the newest matches with sender, subject, date and the start of the text. Empty query: the newest mail.",
       "find_files": "Find the user's files and folders by part of their name, newest first. Use it whenever they mention one of their documents (\"my lease\", \"the invoice\", \"my CV\") to read or send it."
     }
+  },
+  "self-aware": {
+    "about": "Like baseline, plus a line on what the assistant runs on (Lemonade's address) and the rule to use screen context only when the question refers to it.",
+    "self_info": "You run locally through Lemonade Server (OpenAI-compatible API at http://localhost:13305/api/v1); FastFlowLM runs the models on the NPU.",
+    "context_rule": true
+  },
+  "local-servers": {
+    "about": "Like baseline, plus the list_servers tool (which programs listen on which ports).",
+    "local_servers": true
+  },
+  "self-aware-servers": {
+    "about": "self-aware and local-servers together.",
+    "self_info": "You run locally through Lemonade Server (OpenAI-compatible API at http://localhost:13305/api/v1); FastFlowLM runs the models on the NPU.",
+    "context_rule": true,
+    "local_servers": true
   }
 }

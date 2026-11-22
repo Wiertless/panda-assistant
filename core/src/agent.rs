@@ -128,6 +128,10 @@ Include relevant context and results when escalating.
 "#;
 
 pub const ESCALATE: &str = "ask_smarter_model";
+/// How to read the screen context the pop-up puts before a question.
+const CONTEXT_RULE: &str = " A message may start with what was on the user's screen ([On screen: …]): \
+use it, and the selected text in it, only when the question refers to it (this, it, the selected text, \
+popraw to); otherwise answer the question itself.";
 /// Holding a chat, the smarter model weighs each follow-up with this short question first
 /// (a few hundred tokens, seconds), rather than reading the whole chat to decide.
 const HOLD_DECIDE: &str = "You are the bigger, slower model in a chat with a small, fast assistant. You \
@@ -289,6 +293,12 @@ pub struct Agent {
     /// The smarter model answered the last hard question: it weighs each follow-up
     /// and answers those that need it, until one doesn't.
     pub helper_holds: bool,
+    /// One line on what the assistant runs on (Lemonade's address…), for questions about it.
+    pub self_info: String,
+    /// Screen context only when the question refers to it (CONTEXT_RULE).
+    pub context_rule: bool,
+    /// The list_servers tool.
+    pub local_servers: bool,
     /// Tool routing: only core tools plus these groups go with a request (see
     /// tools::groups). Off for the bigger hand-off model, which gets everything.
     pub route_tools: bool,
@@ -364,6 +374,9 @@ impl Agent {
             summary: String::new(),
             compacted: 0,
             helper_holds: false,
+            self_info: String::new(),
+            context_rule: false,
+            local_servers: false,
             route_tools: true,
             keywords: true,
             route_by_examples: false,
@@ -468,6 +481,9 @@ impl Agent {
         if self.use_tools {
             system += SKILL_PROMPT;
             system += SCREEN_PROMPT;
+            if self.context_rule {
+                system += CONTEXT_RULE;
+            }
         }
         if self.use_tools && self.sees_now() {
             system += VISION_PROMPT;
@@ -485,6 +501,7 @@ impl Agent {
         let examples = self.examples_text();
         let tail: Vec<&str> = [
             self.machine.as_deref().unwrap_or(""),
+            self.self_info.as_str(),
             self.notes.as_deref().unwrap_or(""),
             &earlier,
             &examples,
@@ -526,6 +543,7 @@ impl Agent {
             .filter(|t| self.web_enabled || !WEB_TOOLS.contains(&t.name.as_str()))
             .filter(|t| self.memory_enabled || !MEMORY_TOOLS.contains(&t.name.as_str()))
             .filter(|t| sees || !VISION_TOOLS.contains(&t.name.as_str()))
+            .filter(|t| self.local_servers || t.name != "list_servers")
             .collect()
     }
 

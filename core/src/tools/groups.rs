@@ -782,7 +782,7 @@ pub fn group_of(tool: &str) -> &'static str {
         | "make_folder"
         | "trash_file"
         | "search_text" => "files",
-        "get_battery" | "get_system_info" => "system",
+        "get_battery" | "get_system_info" | "list_servers" => "system",
         "list_networks"
         | "connect_network"
         | "disconnect_network"

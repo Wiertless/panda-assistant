@@ -3627,5 +3627,132 @@
    "search_mail": "Mail matching, newest first:\n[me@x.pl:41] Ola Kowalska <ola@x.pl> — Lunch on Friday? (Saturday 2026-11-14 18:02)\n  Hej, masz czas na obiad w piątek o 13?\nread_mail with an id in brackets reads the whole message.",
    "search_everything": "## Mail\nMail matching, newest first:\n[me@x.pl:41] Ola Kowalska <ola@x.pl> — Lunch on Friday? (Saturday 2026-11-14 18:02)\n  Hej, masz czas na obiad w piątek o 13?\nread_mail with an id in brackets reads the whole message."
   }
+ },
+ {
+  "name": "lemonade address",
+  "prompt": "what port and URL is Lemonade on?",
+  "tags": [
+   "answer",
+   "local"
+  ],
+  "stubs": {
+   "list_servers": "Programs listening for connections (127.0.0.1 and [::1]: only this computer; 0.0.0.0 and [::]: the network too; use http://localhost:PORT from here):\n- a system service: 127.0.0.1:631\n- flm: 127.0.0.1:8001 (FastFlowLM, serving a model on the NPU; OpenAI-compatible API at /v1)\n- lemond: 127.0.0.1:13305 (Lemonade Server; its OpenAI-compatible API is at /api/v1 on its main port, 13305 by default)\n- lemond: 127.0.0.1:9000 (Lemonade Server; its OpenAI-compatible API is at /api/v1 on its main port, 13305 by default)\n- node: [::1]:5173"
+  },
+  "answer": [
+   "13305"
+  ],
+  "paraphrases": [
+   "na jakim porcie i adresie działa lemonade?",
+   "what URL does Lemonade's API use?"
+  ]
+ },
+ {
+  "name": "lemonade address, link selected",
+  "prompt": "[On screen: Terminal — “~/P/silverpanda”. Selected text: «https://x.com/someone/status/2124167260483035278?s=20»\n[/On screen]\n\nwhat api does lemonade advertise?",
+  "tags": [
+   "answer",
+   "local",
+   "screen"
+  ],
+  "stubs": {
+   "list_servers": "Programs listening for connections (127.0.0.1 and [::1]: only this computer; 0.0.0.0 and [::]: the network too; use http://localhost:PORT from here):\n- a system service: 127.0.0.1:631\n- flm: 127.0.0.1:8001 (FastFlowLM, serving a model on the NPU; OpenAI-compatible API at /v1)\n- lemond: 127.0.0.1:13305 (Lemonade Server; its OpenAI-compatible API is at /api/v1 on its main port, 13305 by default)\n- lemond: 127.0.0.1:9000 (Lemonade Server; its OpenAI-compatible API is at /api/v1 on its main port, 13305 by default)\n- node: [::1]:5173"
+  },
+  "forbid": [
+   "rewrite_selection"
+  ],
+  "answer": [
+   "13305"
+  ],
+  "paraphrases": [
+   "[On screen: Terminal — “~/P/silverpanda”. Selected text: «https://x.com/someone/status/2124167260483035278?s=20»\n[/On screen]\n\nno, what port and url is it on"
+  ]
+ },
+ {
+  "name": "is ollama running",
+  "prompt": "is ollama running?",
+  "tags": [
+   "single",
+   "answer",
+   "local"
+  ],
+  "stubs": {
+   "list_servers": "Programs listening for connections (127.0.0.1 and [::1]: only this computer; 0.0.0.0 and [::]: the network too; use http://localhost:PORT from here):\n- a system service: 127.0.0.1:631\n- flm: 127.0.0.1:8001 (FastFlowLM, serving a model on the NPU; OpenAI-compatible API at /v1)\n- lemond: 127.0.0.1:13305 (Lemonade Server; its OpenAI-compatible API is at /api/v1 on its main port, 13305 by default)\n- lemond: 127.0.0.1:9000 (Lemonade Server; its OpenAI-compatible API is at /api/v1 on its main port, 13305 by default)\n- node: [::1]:5173"
+  },
+  "expect": [
+   {
+    "tool": "list_servers"
+   }
+  ],
+  "answer": [
+   "no|not|isn't|nie "
+  ],
+  "paraphrases": [
+   "czy działa ollama?"
+  ]
+ },
+ {
+  "name": "dev server port",
+  "prompt": "which port is my vite dev server on?",
+  "tags": [
+   "single",
+   "answer",
+   "local"
+  ],
+  "stubs": {
+   "list_servers": "Programs listening for connections (127.0.0.1 and [::1]: only this computer; 0.0.0.0 and [::]: the network too; use http://localhost:PORT from here):\n- a system service: 127.0.0.1:631\n- flm: 127.0.0.1:8001 (FastFlowLM, serving a model on the NPU; OpenAI-compatible API at /v1)\n- lemond: 127.0.0.1:13305 (Lemonade Server; its OpenAI-compatible API is at /api/v1 on its main port, 13305 by default)\n- lemond: 127.0.0.1:9000 (Lemonade Server; its OpenAI-compatible API is at /api/v1 on its main port, 13305 by default)\n- node: [::1]:5173"
+  },
+  "expect": [
+   {
+    "tool": "list_servers"
+   }
+  ],
+  "answer": [
+   "5173"
+  ],
+  "paraphrases": [
+   "na jakim porcie jest mój serwer deweloperski vite?"
+  ]
+ },
+ {
+  "name": "fix selection, from the pop-up",
+  "prompt": "[On screen: Text Editor — “notatki.txt”. Selected text: «jutro bede o piatej w biurze»\n[/On screen]\n\npopraw to",
+  "tags": [
+   "single",
+   "screen",
+   "polish"
+  ],
+  "stubs": {
+   "rewrite_selection": "Copied the result to the clipboard; paste it with Ctrl+V. It reads: Jutro będę o piątej w biurze."
+  },
+  "expect": [
+   {
+    "tool": "rewrite_selection"
+   }
+  ],
+  "paraphrases": [
+   "[On screen: Text Editor — “notes.txt”. Selected text: «i will be their at five»\n[/On screen]\n\nfix the spelling in this"
+  ]
+ },
+ {
+  "name": "selection there, question elsewhere",
+  "prompt": "[On screen: Firefox — “GitHub”. Selected text: «https://github.com/JeyKul/kinect-hello»\n[/On screen]\n\nturn on dark mode",
+  "tags": [
+   "single",
+   "screen"
+  ],
+  "expect": [
+   {
+    "tool": "set_dark_mode",
+    "args": {
+     "enabled": "true"
+    }
+   }
+  ],
+  "forbid": [
+   "rewrite_selection"
+  ],
+  "paraphrases": [
+   "[On screen: Firefox — “GitHub”. Selected text: «https://github.com/JeyKul/kinect-hello»\n[/On screen]\n\nwłącz tryb ciemny"
+  ]
  }
 ]

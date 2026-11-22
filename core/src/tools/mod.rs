@@ -384,6 +384,10 @@ grep: returns file:line: matching line. For PDFs and office documents use search
                   system::get_battery, |_| "Read battery".into()),
         Tool::new("get_system_info", "Get OS, kernel, uptime, memory and disk space.", obj(json!({}), &[]), Safe,
                   system::get_system_info, |_| "Read system info".into()),
+        Tool::new("list_servers", "List the programs on this computer that listen for connections (local \
+servers: Lemonade, FastFlowLM, Ollama, web dev servers, databases) with their address and port. Use it for which \
+port or URL a program or service is on, or whether a server is running.", obj(json!({}), &[]), Safe,
+                  system::list_servers, |_| "List local servers".into()),
         Tool::new("get_datetime", "Get the current local date and time.", obj(json!({}), &[]), Safe,
                   system::get_datetime, |_| "Read the time".into()),
         Tool::new("remember", "Save a lasting fact or preference about the user for future chats \
@@ -650,7 +654,7 @@ mod tests {
     #[test]
     fn same_tools_and_risks_as_the_python_app() {
         let names: Vec<String> = all().into_iter().map(|t| t.name).collect();
-        assert_eq!(names.len(), 76, "{names:?}");
+        assert_eq!(names.len(), 77, "{names:?}");
         let risky: Vec<String> = all()
             .into_iter()
             .filter(|t| t.risk == Risk::Confirm)

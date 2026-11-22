@@ -356,10 +356,20 @@ fn read(app_name: &str, skip_pid: u32) -> ToolResult {
         wins.iter().filter(|w| w.active).collect()
     } else {
         let want = app_name.trim().to_lowercase();
+        // The name GNOME shows (the pop-up's "Terminal") can differ from the program's
+        // ("ptyxis"): the installed apps that answer to it, by their desktop file ids.
+        let ids: Vec<String> = gio::DesktopAppInfo::search(&want)
+            .into_iter()
+            .flatten()
+            .map(|id| id.to_lowercase())
+            .collect();
         wins.sort_by_key(|w| (!w.active, !w.showing));
         wins.iter()
             .filter(|w| {
-                w.app.to_lowercase().contains(&want) || w.title.to_lowercase().contains(&want)
+                let app = w.app.to_lowercase();
+                app.contains(&want)
+                    || w.title.to_lowercase().contains(&want)
+                    || (!app.is_empty() && ids.iter().any(|id| id.contains(&app)))
             })
             .collect()
     };
@@ -370,8 +380,13 @@ fn read(app_name: &str, skip_pid: u32) -> ToolResult {
             .take(15)
             .map(|w| format!("{}: {}", w.app, w.title))
             .collect();
+        let lead = if app_name.trim().is_empty() {
+            "No window is focused.".to_string()
+        } else {
+            format!("No window matches “{}”.", app_name.trim())
+        };
         return Ok(format!(
-            "No window is focused. Ask which one, or call again with app set to one of these:\n{}",
+            "{lead} Ask which one, or call again with app set to one of these:\n{}",
             if names.is_empty() {
                 "none".into()
             } else {
