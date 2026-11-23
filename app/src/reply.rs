@@ -646,6 +646,17 @@ impl Turn for Reply {
                 .selectable(true)
                 .build();
             detail.add_css_class("step-detail");
+            // One line in the title (the details have it all): a wrapping label in an
+            // expander's title gets almost no width and grows tall.
+            if let Some(label) = pill
+                .first_child()
+                .and_then(|c| c.next_sibling())
+                .and_downcast::<gtk::Label>()
+            {
+                label.set_wrap(false);
+                label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                label.set_max_width_chars(60);
+            }
             let step = gtk::Expander::builder()
                 .label_widget(&pill)
                 .child(&detail)

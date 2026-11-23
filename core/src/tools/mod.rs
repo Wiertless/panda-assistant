@@ -393,8 +393,9 @@ port or URL a program or service is on, or whether a server is running.", obj(js
         Tool::new("get_datetime", "Get the current local date and time.", obj(json!({}), &[]), Safe,
                   system::get_datetime, |_| "Read the time".into()),
         Tool::new("calculate", "Work out arithmetic exactly; use it for any sum, percentage, average or \
-conversion instead of working it out yourself. expression: numbers with + - * / ^ and brackets; 15% means 0.15 \
-(\"15% of 240\" is \"15% * 240\").",
+conversion instead of working it out yourself. expression: numbers with + - * / ^ and brackets. A percent of \
+something always has the % sign: \"15% of 240\", \"15 procent z 240\" and \"15 proc z 240\" are all \"15% * 240\", \
+never \"15 * 240\".",
                   obj(json!({"expression": {"type": "string"}}), &["expression"]), Safe,
                   system::calculate, |a| format!("Calculate {}", crate::tool::arg_str(a, "expression"))),
         Tool::new("remember", "Save a lasting fact or preference about the user for future chats \

@@ -733,7 +733,10 @@ impl Agent {
             temperature: schemas.as_ref().and(self.tool_temperature),
             max_tokens: Some(1),
             tool_choice: force.then(|| json!("required")),
-            think: schemas.as_ref().and(self.think_with_tools),
+            think: match self.think_with_tools {
+                Some(true) => Some(true),
+                t => schemas.as_ref().and(t),
+            },
         };
         if let Ok(stream) =
             self.client
@@ -812,7 +815,9 @@ impl Agent {
         h.smarter_model = None;
         h.force_completion = false; // the bigger model doesn't need pushing
         h.reply_tool = false;
-        h.think_with_tools = None; // the bigger model gets to think: that's why it was asked
+        // The bigger model gets to think when it likes (that's why it was asked), or
+        // always with thinking turned on.
+        h.think_with_tools = self.think_with_tools.filter(|t| *t);
         h.max_rounds = HELPER_ROUNDS; // it gets the long, many-step jobs
         h.helper_holds = false;
         h
@@ -1473,7 +1478,11 @@ Its notes: {notes}{done})"
             temperature: schemas.and(self.tool_temperature),
             max_tokens: Some(MAX_REPLY_TOKENS),
             tool_choice: force.then(|| json!("required")),
-            think: schemas.and(self.think_with_tools),
+            // Thinking turned on: every request, with tools or not.
+            think: match self.think_with_tools {
+                Some(true) => Some(true),
+                t => schemas.and(t),
+            },
         };
         let started = std::time::Instant::now();
         let mut first: Option<std::time::Duration> = None;
@@ -2827,6 +2836,24 @@ mod tests {
             a.messages[0]["content"], "dzięki",
             "the saved chat has the user's words only"
         );
+    }
+
+    #[test]
+    fn thinking_on_asks_for_it_on_every_request() {
+        let _h = temp_home();
+        let flm = FakeFlm::start(vec![
+            (200, tool_reply("get_datetime", "{}", "c1")),
+            (200, text_reply("It's 22:00.")),
+        ]);
+        let mut a = agent(&flm);
+        a.think_with_tools = Some(true);
+        a.ask("what time is it?", &Rec::default(), &[]).unwrap();
+        assert!(flm.requests().iter().all(|r| r["think"] == true));
+        // Off (the default): no thinking before tool calls.
+        let flm = FakeFlm::start(vec![(200, text_reply("Hi!"))]);
+        let mut a = agent(&flm);
+        a.ask("hello", &Rec::default(), &[]).unwrap();
+        assert_eq!(flm.requests()[0]["think"], false);
     }
 
     #[test]

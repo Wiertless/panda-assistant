@@ -98,6 +98,8 @@ pub struct Config {
     pub smarter_model: String, // "auto", "off" or a model
     pub unload_after_minutes: u32,
     pub always_allow: HashSet<String>,
+    /// The models reason before every answer and step (the app shows it); slower.
+    pub thinking: bool,
 }
 
 impl Config {
@@ -132,6 +134,7 @@ impl Config {
                 .flatten()
                 .filter_map(|v| v.as_str().map(String::from))
                 .collect(),
+            thinking: raw["thinking"].as_bool().unwrap_or(false),
         }
     }
 }
@@ -390,6 +393,9 @@ impl Shared {
         agent.memory_enabled = cfg.memory;
         agent.ctx_tokens = cfg.ctx_len as usize;
         agent.route_tools = cfg.ctx_len < flm::ALL_TOOLS_CTX_LEN;
+        if cfg.thinking {
+            agent.think_with_tools = Some(true);
+        }
         agent.self_info = flm::self_info(self.client.backend(), &self.client.url());
         agent.context_rule = true;
         agent.always_allow = self.always_allow.clone();

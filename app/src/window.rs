@@ -143,6 +143,7 @@ pub struct Window {
     scroller: gtk::ScrolledWindow,
     entry: gtk::Entry,
     send_btn: gtk::Button,
+    think_btn: gtk::ToggleButton,
     attach_box: gtk::Box,
     attach_revealer: gtk::Revealer,
     pub split: adw::NavigationSplitView,
@@ -249,8 +250,20 @@ impl Window {
         let send_btn = button("go-up-symbolic", "Send");
         send_btn.add_css_class("suggested-action");
         send_btn.add_css_class("circular");
+        // Thinking on: the models reason before every answer and step (shown above
+        // the answer), slower; off: they answer straight away.
+        let think_btn = gtk::ToggleButton::builder()
+            .icon_name("dialog-information-symbolic")
+            .tooltip_text("Think First (slower, shows its reasoning)")
+            .valign(gtk::Align::Center)
+            .active(config::bool_or(&cfg, "thinking", false))
+            .build();
+        think_btn.add_css_class("flat");
+        think_btn.add_css_class("circular");
+        think_btn.add_css_class("think-toggle");
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         row.append(&entry);
+        row.append(&think_btn);
         row.append(&attach_btn);
         row.append(&send_btn);
         let attach_box = gtk::Box::builder()
@@ -360,6 +373,7 @@ impl Window {
             scroller,
             entry,
             send_btn,
+            think_btn,
             attach_box,
             attach_revealer,
             split,
@@ -430,6 +444,18 @@ impl Window {
             s.send()
         });
         self.send_btn.connect_clicked(move |_| f());
+        let w = weak.clone();
+        self.think_btn.connect_toggled(move |b| {
+            config::update(&[("thinking", json!(b.is_active()))]);
+            if let Some(s) = w() {
+                s.core.reload();
+                s.toast(if b.is_active() {
+                    "Thinking first: slower, and you can see its reasoning"
+                } else {
+                    "Answering straight away"
+                });
+            }
+        });
         let w = weak.clone();
         self.search.connect_search_changed(move |_| {
             if let Some(s) = w() {

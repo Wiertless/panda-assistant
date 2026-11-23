@@ -13,6 +13,25 @@ use crate::tool::{Args, Context, ToolError, ToolResult, arg_str};
 
 const MAX_FILES: usize = 200;
 const FORMATS: [&str; 4] = ["jpg", "png", "webp", "tif"];
+const PICTURES: [&str; 11] = [
+    "jpg", "jpeg", "png", "webp", "tif", "tiff", "gif", "bmp", "heic", "heif", "avif",
+];
+
+/// The pictures among the files a path or pattern names.
+fn pictures(raw: &str) -> Result<Vec<PathBuf>, ToolError> {
+    let all = matching(raw)?;
+    let found: Vec<PathBuf> = all
+        .into_iter()
+        .filter(|p| {
+            p.extension()
+                .is_some_and(|e| PICTURES.contains(&e.to_string_lossy().to_lowercase().as_str()))
+        })
+        .collect();
+    if found.is_empty() {
+        return Err(format!("no pictures in {}", raw.trim()).into());
+    }
+    Ok(found)
+}
 
 /// `*` and `?` in a file name.
 fn wildcard(pattern: &str, name: &str) -> bool {
@@ -49,14 +68,14 @@ pub fn matching(raw: &str) -> Result<Vec<PathBuf>, ToolError> {
         Some((d, n)) => (d, n),
         None => ("", raw),
     };
-    if !name.contains(['*', '?']) {
-        let p = home_path(raw, true)?;
-        return if p.is_file() {
-            Ok(vec![p])
-        } else {
-            Err(format!("{} isn't a file", short(&p)).into())
-        };
-    }
+    // A folder means every file in it (the image tools keep the pictures).
+    let (dir, name) = match home_path(raw, true) {
+        Ok(p) if p.is_dir() => (raw.trim_end_matches('/'), "*"),
+        Ok(p) if p.is_file() => return Ok(vec![p]),
+        Ok(p) => return Err(format!("{} isn't a file", short(&p)).into()),
+        Err(e) if !name.contains(['*', '?']) => return Err(e),
+        Err(_) => (dir, name),
+    };
     if dir.contains(['*', '?']) {
         return Err("* and ? work in the file name only, not in folder names".into());
     }
@@ -175,7 +194,7 @@ fn undo_removes(ctx: &Context, what: &str, made: Vec<PathBuf>) {
 }
 
 pub fn edit_image(ctx: &Context, args: &Args) -> ToolResult {
-    let files = matching(&arg_str(args, "files"))?;
+    let files = pictures(&arg_str(args, "files"))?;
     let resize = resize_arg(&arg_str(args, "resize"))?;
     let format = arg_str(args, "format")
         .trim()
@@ -269,7 +288,7 @@ pub fn edit_image(ctx: &Context, args: &Args) -> ToolResult {
 }
 
 pub fn images_to_pdf(ctx: &Context, args: &Args) -> ToolResult {
-    let files = matching(&arg_str(args, "files"))?;
+    let files = pictures(&arg_str(args, "files"))?;
     let name = arg_str(args, "name");
     let name = name.trim().trim_end_matches(".pdf");
     let stem: String = if name.is_empty() { "pictures" } else { name }
@@ -350,6 +369,14 @@ mod tests {
         assert!(real_home().join("Pictures/Edited/trip.pdf").exists());
         ctx.undo_task().unwrap();
         assert!(!made.exists() && !real_home().join("Pictures/Edited/trip.pdf").exists());
+        let whole: Args =
+            serde_json::from_value(serde_json::json!({"files": "Trip", "rotate": 90})).unwrap();
+        assert!(
+            edit_image(&ctx, &whole)
+                .unwrap()
+                .starts_with("Saved 2 of 2"),
+            "a folder: its pictures only"
+        );
         assert!(matching("Trip/*.gif").is_err());
         assert!(matching("*/a.png").is_err());
     }
