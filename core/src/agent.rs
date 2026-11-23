@@ -452,6 +452,8 @@ pub struct Agent {
     round_no: usize,
     /// This turn's language, when the user's words make it clear.
     reply_language: Option<&'static str>,
+    /// The request lists several actions: the first round is asked to plan them.
+    plan_first: bool,
     /// Offer the plan tool (tasks of several steps get a checklist and a check at the end).
     pub planning: bool,
     /// This turn's plan: each step and whether it's done.
@@ -508,6 +510,7 @@ impl Agent {
             turn_no: 0,
             round_no: 0,
             reply_language: None,
+            plan_first: false,
             planning: true,
             plan: vec![],
             group_seen: std::collections::HashMap::new(),
@@ -737,11 +740,21 @@ impl Agent {
         out.extend(self.recent(budget));
         // The reply's language (from the user's words) goes on the latest user message, in
         // the request only: the start of the prompt stays the same, the saved chat doesn't show it.
-        if let (Some(lang), Some(m)) = (
-            self.reply_language,
+        // A request of several actions, not planned yet: ask for the plan first (a note, not
+        // a forced tool list, which would change the start of the prompt).
+        let plan_note = (self.plan_first && self.plan.is_empty()).then_some(
+            " This is a task of several steps: call plan with them first, then do them in order.",
+        );
+        if let (true, Some(m)) = (
+            self.reply_language.is_some() || plan_note.is_some(),
             out.iter_mut().rev().find(|m| m["role"] == "user"),
         ) {
-            let note = format!("\n\n(Answer in {lang}.)");
+            let lang = self
+                .reply_language
+                .map(|l| format!(" Answer in {l}."))
+                .unwrap_or_default();
+            let note = format!("\n\n({}{})", lang.trim_start(), plan_note.unwrap_or(""));
+            let note = note.replace("( ", "(");
             match &mut m["content"] {
                 Value::String(s) => s.push_str(&note),
                 Value::Array(parts) => parts.push(json!({"type": "text", "text": note})),
@@ -866,6 +879,7 @@ impl Agent {
     ) -> Result<(), FlmError> {
         self.reply_language = language(text);
         self.plan.clear();
+        self.plan_first = self.planning && self.use_tools && actions_in(text) >= 3;
         // Tools that work on long text (documents) ask the model in a fresh context of their own.
         let (client, model) = (self.client.clone(), self.model.clone());
         self.ctx.ask_model = Some(Arc::new(move |system: &str, user: &str| {
@@ -1901,6 +1915,26 @@ impl Turn {
 
 /// A request to do something, not a question ("turn on tap to click", not
 /// "what's my battery?"), in English or Polish.
+/// How many actions a request lists ("find the screenshot, turn it into a PDF and
+/// send it" is 3): the parts between commas, "and", "then", "i", "potem"…
+fn actions_in(text: &str) -> usize {
+    if !asks_for_action(text) {
+        return 0;
+    }
+    let t = format!(" {} ", text.to_lowercase().replace(',', " , "));
+    let joins = [
+        " , ",
+        " and ",
+        " then ",
+        " i ",
+        " oraz ",
+        " potem ",
+        " a następnie ",
+        " następnie ",
+    ];
+    1 + joins.iter().map(|j| t.matches(j).count()).sum::<usize>()
+}
+
 fn asks_for_action(text: &str) -> bool {
     const QUESTION: [&str; 34] = [
         "what", "what's", "whats", "how", "is", "are", "do", "does", "did", "can", "could", "when",
@@ -3045,6 +3079,39 @@ mod tests {
                 .as_str()
                 .is_some_and(|c| c.contains("aren't ticked"))),
             "the check isn't kept in the chat"
+        );
+    }
+
+    #[test]
+    fn several_actions_are_planned_first() {
+        let req = "przeszukaj zdjecia i znajdz screenshota z dzisiejsza data, zmien go na pdf i wyslij na telefon";
+        assert!(actions_in(req) >= 3);
+        assert_eq!(actions_in("turn on dark mode"), 1);
+        assert_eq!(
+            actions_in("what's the weather and the time?"),
+            0,
+            "a question"
+        );
+        let _h = temp_home();
+        let flm = FakeFlm::start(vec![(200, tool_reply(REPLY, r#"{"text": "OK."}"#, "r1"))]);
+        let mut a = agent(&flm);
+        a.ask(
+            "find the screenshot from today, turn it into a pdf and send it to my phone",
+            &Rec::default(),
+            &[],
+        )
+        .unwrap();
+        let sent = flm.requests()[0]["messages"].as_array().unwrap().clone();
+        let last = sent.last().unwrap()["content"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(last.ends_with("(Answer in English. This is a task of several steps: call plan with them first, then do them in order.)"), "{last}");
+        assert!(
+            !a.messages[0]["content"]
+                .as_str()
+                .unwrap()
+                .contains("call plan")
         );
     }
 

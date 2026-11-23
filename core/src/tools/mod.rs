@@ -346,7 +346,8 @@ Characters for emoji, Weather, Settings pages, Files, Contacts and more.",
                   obj(json!({"path": {"type": "string", "description": "e.g. Downloads, Documents/work, ~"}}), &[]),
                   Safe, files::list_folder, text("path", |p| format!("Look in {}", or(p, "your home folder")))),
         Tool::new("find_files", "Find files and folders by part of their name, newest first. Use it whenever the user \
-mentions one of their own documents or files (\"my lease\", \"the invoice\", \"my CV\"), to read or send it.",
+mentions one of their own documents or files (\"my lease\", \"the invoice\", \"my CV\", \"the screenshot from \
+today\"), to read or send it. Each result has its date.",
                   obj(json!({"name": {"type": "string"}, "folder": {"type": "string", "description": "Where to look (optional)"}}), &["name"]),
                   Safe, files::find_files, text("name", |n| format!("Find files named “{n}”"))),
         Tool::new("read_file", "Read any file's text: notes, code, configs, CSV, PDF, Word, Excel, PowerPoint, \
@@ -544,7 +545,8 @@ Turns Bluetooth on if needed.", obj(json!({"device": {"type": "string"}}), &["de
         Tool::new("disconnect_bluetooth", "Disconnect a connected Bluetooth device by name.",
                   obj(json!({"device": {"type": "string"}}), &["device"]), Safe, connect::disconnect_bluetooth,
                   text("device", |d| format!("Disconnect {}", or(d, "a device")))),
-        Tool::new("save_screenshot", "Take a screenshot and save it as a file, to send, share or keep. Returns its path.",
+        Tool::new("save_screenshot", "Take a new screenshot now and save it as a file, to send, share or keep. \
+Returns its path. To find a screenshot taken before (\"the screenshot from today\"), use find_files instead.",
                   obj(json!({}), &[]), Safe, system_actions::save_screenshot, |_| "Take a screenshot".into()),
         Tool::new("look_at_screen", "Take a screenshot to see what's on the user's screen right now. The picture is \
 only for you and isn't kept; use save_screenshot for one to send or keep.", obj(json!({}), &[]),

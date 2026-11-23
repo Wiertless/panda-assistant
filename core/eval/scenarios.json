@@ -3975,5 +3975,43 @@
   "paraphrases": [
    "zmniejsz zdjęcia z Pictures/Trip i wyślij je na telefon"
   ]
+ },
+ {
+  "name": "today's screenshot to pdf to phone",
+  "prompt": "find the screenshot from today in my pictures, turn it into a pdf and send it to my phone",
+  "stubs": {
+   "find_files": "~/Pictures/Screenshots/Screenshot From 2026-11-15 09-12-03.png (1.2 MB, 2026-11-15)\n~/Pictures/Screenshots/Screenshot From 2026-11-12 18-40-11.png (0.9 MB, 2026-11-12)",
+   "images_to_pdf": "Made ~/Pictures/Edited/screenshot.pdf from 1 pictures (180 KB)",
+   "send_file": "Sent screenshot.pdf to jakubs-iphone with Taildrop."
+  },
+  "expect": [
+   {
+    "tool": "find_files|list_folder"
+   },
+   {
+    "tool": "images_to_pdf",
+    "args": {
+     "files": "2026-11-15"
+    }
+   },
+   {
+    "tool": "send_file",
+    "args": {
+     "path": ".pdf"
+    }
+   }
+  ],
+  "forbid": [
+   "save_screenshot"
+  ],
+  "tags": [
+   "chain",
+   "files",
+   "agent",
+   "polish"
+  ],
+  "paraphrases": [
+   "przeszukaj zdjecia i znajdz screenshota z dzisiejsza data, zmien go na pdf i wyslij na telefon"
+  ]
  }
 ]
