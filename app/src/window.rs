@@ -72,7 +72,7 @@ pub fn relative_time(stamp: f64) -> String {
 
 /// How a saved user message reads in the chat: skill runs as /name.
 /// Ends the screen context a pop-up question starts with (see `Window::popup`).
-pub const CONTEXT_END: &str = "\n[/On screen]\n\n";
+pub use assistant_core::agent::CONTEXT_END;
 
 pub fn shown_user_text(content: &str) -> String {
     let content = match content.split_once(CONTEXT_END) {

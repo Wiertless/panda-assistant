@@ -3754,5 +3754,43 @@
   "paraphrases": [
    "[On screen: Firefox — “GitHub”. Selected text: «https://github.com/JeyKul/kinect-hello»\n[/On screen]\n\nwłącz tryb ciemny"
   ]
+ },
+ {
+  "name": "thanks after polish mail",
+  "before": [
+   "whats on my mail"
+  ],
+  "stubs": {
+   "search_mail": "Mail matching “”, newest first:\n[uni:1] noreply@moodle.example.pl — Masz zadania do oddania w ciągu 7 dni (Monday 2026-11-23 01:13, the newest)\n  Drogi użytkowniku, następujące zadania należy oddać do poniedziałku.\n[home:2] Jolanta Markowska — Umowa (Saturday 2026-11-21 17:48)\n  Dzień dobry, w załączniku przesyłam umowę do podpisu."
+  },
+  "prompt": "thanks",
+  "no_tools": true,
+  "answer": [
+   "welcome|glad|anytime|problem|happy|sure|let me know"
+  ],
+  "tags": [
+   "no-tool",
+   "multi-turn",
+   "language"
+  ],
+  "paraphrases": [
+   "thank you"
+  ]
+ },
+ {
+  "name": "percent (pl)",
+  "prompt": "ile to 15% z 240?",
+  "answer": [
+   "36",
+   "wynosi|jest|równa|daje|procent"
+  ],
+  "tags": [
+   "answer",
+   "polish",
+   "language"
+  ],
+  "paraphrases": [
+   "policz 15 procent z 240"
+  ]
  }
 ]

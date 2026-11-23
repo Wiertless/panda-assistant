@@ -32,6 +32,90 @@ pub const FINAL_ERROR: &str = "Error (retrying won't help): ";
 pub const MIDDLE_WRITER: &str = "qwen3.5:4b";
 /// A question asked from the pop-up starts with what was on screen; the window hides it.
 pub const CONTEXT_MARK: &str = "[On screen: ";
+/// Ends the screen context a pop-up question starts with.
+pub const CONTEXT_END: &str = "\n[/On screen]\n\n";
+
+/// The language of the user's own words, when it's clear: Polish by its letters or
+/// common words (also typed without the letters), English by its common words.
+/// The small model slipped both ways ("thanks" answered in Polish after Polish
+/// mail, "ile to 15% z 240?" in English), so each turn names it.
+pub fn language(text: &str) -> Option<&'static str> {
+    const PL: &[&str] = &[
+        "ile",
+        "jak",
+        "jaka",
+        "jaki",
+        "jakie",
+        "czy",
+        "co",
+        "gdzie",
+        "kiedy",
+        "dlaczego",
+        "jest",
+        "sa",
+        "nie",
+        "tak",
+        "mi",
+        "mnie",
+        "sie",
+        "moj",
+        "moja",
+        "moje",
+        "prosze",
+        "dzieki",
+        "dziekuje",
+        "zrob",
+        "pokaz",
+        "otworz",
+        "wlacz",
+        "wylacz",
+        "ustaw",
+        "jutro",
+        "dzis",
+        "dzisiaj",
+        "teraz",
+        "bardzo",
+        "troche",
+        "ciszej",
+        "glosniej",
+        "dla",
+        "przez",
+        "albo",
+        "jestem",
+        "mam",
+        "masz",
+        "czesc",
+        "napisz",
+        "przypomnij",
+        "zadzwon",
+        "poprosze",
+        "znajdz",
+        "wyslij",
+    ];
+    const EN: &[&str] = &[
+        "the", "what", "whats", "how", "is", "are", "thanks", "thank", "please", "my", "me", "you",
+        "can", "could", "open", "set", "turn", "show", "play", "it", "this", "that", "and", "of",
+        "for", "with", "an", "does", "did", "where", "when", "why", "who", "hi", "hello", "find",
+        "send", "write",
+    ];
+    let own = text
+        .split_once(CONTEXT_END)
+        .filter(|(head, _)| head.starts_with(CONTEXT_MARK))
+        .map_or(text, |(_, rest)| rest);
+    if own.chars().any(|c| "ąćęłńóśźżĄĆĘŁŃÓŚŹŻ".contains(c)) {
+        return Some("Polish");
+    }
+    let words: Vec<String> = own
+        .split(|c: char| !c.is_alphanumeric())
+        .map(str::to_lowercase)
+        .collect();
+    let count = |list: &[&str]| words.iter().filter(|w| list.contains(&w.as_str())).count();
+    match (count(PL), count(EN)) {
+        (p, e) if p > e => Some("Polish"),
+        (p, e) if e > p => Some("English"),
+        _ => None,
+    }
+}
 /// A tool result that is the answer itself (research): shown as written, and the turn ends.
 pub const FINAL_ANSWER: &str = "Answer for the user (shown as written): ";
 const ANSWER_NOW: &str = "(Now answer the user from these results, in a sentence or two.)";
@@ -342,6 +426,8 @@ pub struct Agent {
     /// for a while are dropped, so the tool list doesn't only grow.
     pub turn_no: usize,
     round_no: usize,
+    /// This turn's language, when the user's words make it clear.
+    reply_language: Option<&'static str>,
     pub group_seen: std::collections::HashMap<String, usize>,
 }
 
@@ -392,6 +478,7 @@ impl Agent {
             log_rounds: true,
             turn_no: 0,
             round_no: 0,
+            reply_language: None,
             group_seen: std::collections::HashMap::new(),
         }
     }
@@ -614,6 +701,19 @@ impl Agent {
         let budget = self.budget(&head);
         let mut out = vec![head];
         out.extend(self.recent(budget));
+        // The reply's language (from the user's words) goes on the latest user message, in
+        // the request only: the start of the prompt stays the same, the saved chat doesn't show it.
+        if let (Some(lang), Some(m)) = (
+            self.reply_language,
+            out.iter_mut().rev().find(|m| m["role"] == "user"),
+        ) {
+            let note = format!("\n\n(Answer in {lang}.)");
+            match &mut m["content"] {
+                Value::String(s) => s.push_str(&note),
+                Value::Array(parts) => parts.push(json!({"type": "text", "text": note})),
+                _ => {}
+            }
+        }
         out
     }
 
@@ -725,6 +825,7 @@ impl Agent {
         cb: &dyn Callbacks,
         images: &[String],
     ) -> Result<(), FlmError> {
+        self.reply_language = language(text);
         // Tools that work on long text (documents) ask the model in a fresh context of their own.
         let (client, model) = (self.client.clone(), self.model.clone());
         self.ctx.ask_model = Some(Arc::new(move |system: &str, user: &str| {
@@ -2238,7 +2339,7 @@ mod tests {
                 .as_array()
                 .unwrap()
                 .iter()
-                .any(|m| m["content"] == NUDGE)
+                .any(|m| m["content"].as_str().is_some_and(|c| c.starts_with(NUDGE)))
         );
         assert!(
             !a.messages
@@ -2261,7 +2362,9 @@ mod tests {
                 .as_array()
                 .unwrap()
                 .iter()
-                .any(|m| m["content"] == ANSWER_NOW)
+                .any(|m| m["content"]
+                    .as_str()
+                    .is_some_and(|c| c.starts_with(ANSWER_NOW)))
         );
         // Chit-chat that sounds like a claim isn't nudged.
         let flm = FakeFlm::start(vec![(200, text_reply("I've been well, thanks!"))]);
@@ -2692,6 +2795,36 @@ mod tests {
                 .as_str()
                 .unwrap()
                 .contains("Examples:")
+        );
+    }
+
+    #[test]
+    fn the_reply_language_is_named_in_the_request_only() {
+        assert_eq!(language("thanks"), Some("English"));
+        assert_eq!(language("ile to 15% z 240?"), Some("Polish"));
+        assert_eq!(language("ścisz trochę"), Some("Polish"));
+        assert_eq!(language("ok"), None);
+        // Screen context in another language doesn't count, the user's words do.
+        assert_eq!(
+            language(
+                "[On screen: Firefox. Selected text: «co to jest»]\n[/On screen]\n\nwhat is this"
+            ),
+            Some("English")
+        );
+        let _h = temp_home();
+        let flm = FakeFlm::start(vec![(200, text_reply("Proszę bardzo."))]);
+        let mut a = agent(&flm);
+        a.ask("dzięki", &Rec::default(), &[]).unwrap();
+        let sent = flm.requests()[0]["messages"].as_array().unwrap().clone();
+        assert!(
+            sent.last().unwrap()["content"]
+                .as_str()
+                .unwrap()
+                .ends_with("(Answer in Polish.)")
+        );
+        assert_eq!(
+            a.messages[0]["content"], "dzięki",
+            "the saved chat has the user's words only"
         );
     }
 

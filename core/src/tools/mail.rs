@@ -579,15 +579,18 @@ pub fn search_mail(_: &Context, args: &Args) -> ToolResult {
         };
         return Ok(format!("No mail matches “{query}”{tail}."));
     }
+    // The model once called an older mail "the newest" from this list: say which it is.
     let lines: Vec<String> = found
         .iter()
-        .map(|(acct, m)| {
+        .enumerate()
+        .map(|(i, (acct, m))| {
             format!(
-                "[{acct}:{}] {} — {} ({})\n  {}",
+                "[{acct}:{}] {} — {} ({}{})\n  {}",
                 m.uid,
                 m.from,
                 m.subject,
                 m.date,
+                if i == 0 { ", the newest" } else { "" },
                 one_line(&m.text, SNIPPET)
             )
         })
