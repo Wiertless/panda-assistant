@@ -389,6 +389,11 @@ port or URL a program or service is on, or whether a server is running.", obj(js
                   system::list_servers, |_| "List local servers".into()),
         Tool::new("get_datetime", "Get the current local date and time.", obj(json!({}), &[]), Safe,
                   system::get_datetime, |_| "Read the time".into()),
+        Tool::new("calculate", "Work out arithmetic exactly; use it for any sum, percentage, average or \
+conversion instead of working it out yourself. expression: numbers with + - * / ^ and brackets; 15% means 0.15 \
+(\"15% of 240\" is \"15% * 240\").",
+                  obj(json!({"expression": {"type": "string"}}), &["expression"]), Safe,
+                  system::calculate, |a| format!("Calculate {}", crate::tool::arg_str(a, "expression"))),
         Tool::new("remember", "Save a lasting fact or preference about the user for future chats \
 (e.g. 'Prefers metric units'). Only when the user asks or it's clearly useful later.",
                   obj(json!({"fact": {"type": "string"}}), &["fact"]), Safe, brains::remember, |_| "Remember this".into()),
@@ -653,7 +658,7 @@ mod tests {
     #[test]
     fn same_tools_and_risks_as_the_python_app() {
         let names: Vec<String> = all().into_iter().map(|t| t.name).collect();
-        assert_eq!(names.len(), 77, "{names:?}");
+        assert_eq!(names.len(), 78, "{names:?}");
         let risky: Vec<String> = all()
             .into_iter()
             .filter(|t| t.risk == Risk::Confirm)

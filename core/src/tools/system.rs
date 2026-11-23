@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use gio::prelude::*;
 
 use crate::context::{kernel, meminfo_kib, os_name};
-use crate::tool::{Args, Context, ToolResult};
+use crate::tool::{Args, Context, ToolError, ToolResult};
 
 pub fn battery_dir() -> Option<PathBuf> {
     batteries().into_iter().next()
@@ -119,6 +119,127 @@ pub fn get_datetime(_: &Context, _: &Args) -> ToolResult {
         .and_then(|d| d.format("%A %Y-%m-%d %H:%M %Z"))
         .map(|s| s.to_string())
         .map_err(|_| "couldn't read the clock".into())
+}
+
+/// Work out arithmetic exactly: the small model got "15% of 240" wrong in its head.
+pub fn calculate(_: &Context, args: &Args) -> ToolResult {
+    let expr = crate::tool::arg_str(args, "expression");
+    let v = eval_expr(&expr)?;
+    // 12 significant digits, without trailing zeros.
+    let s = format!("{:.12}", v);
+    let s = s.trim_end_matches('0').trim_end_matches('.');
+    Ok(format!(
+        "{} = {}",
+        expr.trim(),
+        if s == "-0" { "0" } else { s }
+    ))
+}
+
+/// Reads numbers, the operators + - * / ^, brackets, and % after a number
+/// (15% = 0.15); also "×", "÷" and a decimal comma.
+pub fn eval_expr(text: &str) -> Result<f64, ToolError> {
+    let t: Vec<char> = text
+        .chars()
+        .map(|c| match c {
+            '×' | 'x' => '*',
+            '÷' | ':' => '/',
+            ',' => '.',
+            c => c,
+        })
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    let mut p = Calc { t, i: 0 };
+    let v = p.sum()?;
+    if p.i < p.t.len() {
+        return Err(format!(
+            "can't read “{}” at “{}”",
+            text.trim(),
+            p.t[p.i..].iter().collect::<String>()
+        )
+        .into());
+    }
+    if !v.is_finite() {
+        return Err("the result isn't a number (division by zero?)".into());
+    }
+    Ok(v)
+}
+
+struct Calc {
+    t: Vec<char>,
+    i: usize,
+}
+
+impl Calc {
+    fn peek(&self) -> Option<char> {
+        self.t.get(self.i).copied()
+    }
+    fn sum(&mut self) -> Result<f64, ToolError> {
+        let mut v = self.product()?;
+        while let Some(op @ ('+' | '-')) = self.peek() {
+            self.i += 1;
+            let r = self.product()?;
+            v = if op == '+' { v + r } else { v - r };
+        }
+        Ok(v)
+    }
+    fn product(&mut self) -> Result<f64, ToolError> {
+        let mut v = self.power()?;
+        while let Some(op @ ('*' | '/')) = self.peek() {
+            self.i += 1;
+            let r = self.power()?;
+            v = if op == '*' { v * r } else { v / r };
+        }
+        Ok(v)
+    }
+    fn power(&mut self) -> Result<f64, ToolError> {
+        let base = self.unary()?;
+        if self.peek() == Some('^') {
+            self.i += 1;
+            return Ok(base.powf(self.power()?)); // right to left: 2^3^2 = 2^9
+        }
+        Ok(base)
+    }
+    fn unary(&mut self) -> Result<f64, ToolError> {
+        match self.peek() {
+            Some('-') => {
+                self.i += 1;
+                Ok(-self.unary()?)
+            }
+            Some('+') => {
+                self.i += 1;
+                self.unary()
+            }
+            _ => self.atom(),
+        }
+    }
+    fn atom(&mut self) -> Result<f64, ToolError> {
+        let mut v = if self.peek() == Some('(') {
+            self.i += 1;
+            let v = self.sum()?;
+            if self.peek() != Some(')') {
+                return Err("a bracket isn't closed".into());
+            }
+            self.i += 1;
+            v
+        } else {
+            let start = self.i;
+            while self.peek().is_some_and(|c| c.is_ascii_digit() || c == '.') {
+                self.i += 1;
+            }
+            let s: String = self.t[start..self.i].iter().collect();
+            s.parse::<f64>().map_err(|_| {
+                ToolError::from(format!(
+                    "expected a number at “{}”",
+                    self.t[start..].iter().collect::<String>()
+                ))
+            })?
+        };
+        if self.peek() == Some('%') {
+            self.i += 1;
+            v /= 100.0;
+        }
+        Ok(v)
+    }
 }
 
 /// What some local servers are, by program name (the port alone can change).
@@ -248,5 +369,31 @@ mod server_tests {
         assert_eq!(proc_net_addr("00000000"), "0.0.0.0");
         assert_eq!(proc_net_addr("00000000000000000000000001000000"), "[::1]");
         assert_eq!(proc_net_addr("00000000000000000000000000000000"), "[::]");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn calculate_is_exact() {
+        let v = |e: &str| eval_expr(e).unwrap();
+        assert_eq!(v("15% * 240"), 36.0);
+        assert_eq!(v("2 + 3 * 4"), 14.0);
+        assert_eq!(v("(2 + 3) * 4"), 20.0);
+        assert_eq!(v("2^3^2"), 512.0);
+        assert_eq!(v("1,5 × 4"), 6.0);
+        assert_eq!(v("10 ÷ 4"), 2.5);
+        assert!(eval_expr("1/0").is_err());
+        assert!(eval_expr("2 +").is_err());
+        assert!(eval_expr("(1 + 2").is_err());
+        assert!(eval_expr("rm -rf").is_err());
+        let a: Args =
+            serde_json::from_value(serde_json::json!({"expression": "0.1 + 0.2"})).unwrap();
+        assert_eq!(
+            calculate(&Context::default(), &a).unwrap(),
+            "0.1 + 0.2 = 0.3"
+        );
     }
 }
