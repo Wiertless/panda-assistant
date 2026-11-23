@@ -672,6 +672,8 @@ pub fn group_of(tool: &str) -> &'static str {
         | "ask_document"
         | "search_file_contents"
         | "look_at_image"
+        | "edit_image"
+        | "images_to_pdf"
         | "write_file"
         | "edit_file"
         | "move_file"

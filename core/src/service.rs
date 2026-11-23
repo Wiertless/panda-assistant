@@ -146,6 +146,9 @@ struct SignalCallbacks {
     /// For the activity log: each tool's summary, and the last Allow/Cancel answer.
     summaries: Mutex<HashMap<String, String>>,
     decision: Mutex<Option<&'static str>>,
+    /// "Allow for this task": the rest of this turn's actions go without asking
+    /// (except the ones always asked, like run_command).
+    task_allowed: std::sync::atomic::AtomicBool,
 }
 
 impl SignalCallbacks {
@@ -212,6 +215,10 @@ impl Callbacks for SignalCallbacks {
     }
     fn confirm(&self, name: &str, summary: &str, detail: &str) -> bool {
         let can_always = !tools::ALWAYS_ASK.contains(&name);
+        if can_always && self.task_allowed.load(Ordering::SeqCst) {
+            *self.decision.lock().unwrap() = Some("allowed for the task");
+            return true;
+        }
         let (id, rx) = self.service.new_request(
             json!({"chat_id": self.chat_id, "name": name, "summary": summary,
                                                        "detail": detail, "can_always": can_always}),
@@ -244,7 +251,10 @@ impl Callbacks for SignalCallbacks {
         if answer == "always" && can_always {
             self.service.allow_always(name);
         }
-        let allowed = answer == "allow" || answer == "always";
+        if answer == "task" && can_always {
+            self.task_allowed.store(true, Ordering::SeqCst);
+        }
+        let allowed = matches!(answer.as_str(), "allow" | "always" | "task");
         *self.decision.lock().unwrap() = Some(if answer == "always" && can_always {
             "always"
         } else if allowed {
@@ -766,6 +776,7 @@ impl Service {
                 background,
                 summaries: Mutex::default(),
                 decision: Mutex::default(),
+                task_allowed: Default::default(),
             };
             if *shared.state.lock().unwrap() != "Loaded" {
                 me.set_state("Loading…");

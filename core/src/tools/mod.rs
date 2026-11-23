@@ -18,6 +18,7 @@ pub mod everything;
 pub mod extract;
 pub mod files;
 pub mod groups;
+pub mod images;
 pub mod intents;
 pub mod localsearch;
 pub mod mail;
@@ -446,7 +447,9 @@ fact, web_search is enough.",
         Tool::new("copy_to_clipboard", "Copy text to the clipboard.", obj(json!({"text": {"type": "string"}}), &["text"]),
                   Safe, settings::copy_to_clipboard, |_| "Copy to clipboard".into()),
         Tool::new("undo", "Undo the last change you made (a setting, the volume, brightness, Wi-Fi, a reminder, \
-something remembered) when the user says undo, revert, change it back or cofnij.", obj(json!({}), &[]), Safe,
+something remembered, a file written, moved, edited or made) when the user says undo, revert, change it back or \
+cofnij. whole_task true undoes everything the last task changed (\"undo all that\", \"cofnij wszystko\").",
+                  obj(json!({"whole_task": {"type": "boolean"}}), &[]), Safe,
                   brains::undo, |_| "Undo the last change".into()),
         Tool::new("set_reminder", "Remind the user of something later, or set a timer (leave text empty). Give \
 in_minutes, or at as HH:MM or YYYY-MM-DD HH:MM in local time (today's date is in the prompt).",
@@ -545,6 +548,18 @@ only for you and isn't kept; use save_screenshot for one to send or keep.", obj(
                   Safe, system_actions::look_at_screen, |_| "Look at the screen".into()),
         Tool::new("look_at_image", "Look at an image file (photo, screenshot, picture).", path(), Safe,
                   system_actions::look_at_image, text("path", |p| format!("Look at {}", or(p, "an image")))),
+        Tool::new("edit_image", "Change pictures: make them smaller (resize: 50% or the longest side in pixels, \
+like 1920), convert (format: jpg, png, webp, tif), compress (quality 1-100), turn them (rotate: 90, 180, 270) or take \
+out the location and camera details (remove_location true). files: one picture, or several with * and ? in the name \
+(Pictures/Trip/*.jpg). The results go to Pictures/Edited; the originals stay as they are.",
+                  obj(json!({"files": {"type": "string"}, "resize": {"type": "string"}, "format": {"type": "string"},
+                             "quality": {"type": "integer"}, "rotate": {"type": "integer"},
+                             "remove_location": {"type": "boolean"}}), &["files"]), Safe,
+                  images::edit_image, text("files", |p| format!("Edit {}", or(p, "pictures")))),
+        Tool::new("images_to_pdf", "Put pictures into one PDF, a page each, in name order. files: one picture or \
+several with * and ? in the name (Pictures/Scans/*.jpg); name: the PDF's name. It goes to Pictures/Edited.",
+                  obj(json!({"files": {"type": "string"}, "name": {"type": "string"}}), &["files"]), Safe,
+                  images::images_to_pdf, text("files", |p| format!("Make a PDF of {}", or(p, "the pictures")))),
         Tool::new("read_window", "Read the text of the focused window (web page, document, email…) and what's selected \
 in it. Use it when the user says this, here, or asks about what they're looking at.",
                   obj(json!({"app": {"type": "string", "description": "Only to pick a window other than the focused one"}}), &[]),
@@ -658,7 +673,7 @@ mod tests {
     #[test]
     fn same_tools_and_risks_as_the_python_app() {
         let names: Vec<String> = all().into_iter().map(|t| t.name).collect();
-        assert_eq!(names.len(), 78, "{names:?}");
+        assert_eq!(names.len(), 80, "{names:?}");
         let risky: Vec<String> = all()
             .into_iter()
             .filter(|t| t.risk == Risk::Confirm)

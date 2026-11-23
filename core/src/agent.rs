@@ -892,6 +892,7 @@ impl Agent {
         }
         let actionable = !wanted.is_empty();
         self.turn_no += 1;
+        self.ctx.turn = self.turn_no;
         let now = self.turn_no;
         // Groups not used in the last two turns go (more_tools or a keyword brings them back).
         let seen = self.group_seen.clone();

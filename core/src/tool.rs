@@ -67,6 +67,8 @@ pub struct Context {
     pub reminders_changed: Option<Hook>,
     /// What the last changes replaced, newest last, so "undo that" can put it back.
     pub undo: Arc<Mutex<Vec<UndoStep>>>,
+    /// The turn the tools run in, so a whole task's changes can be undone together.
+    pub turn: usize,
     /// Ask the model a one-off question in a fresh context (system, user) ->
     /// answer, for tools that work on long text (documents, a selection).
     pub ask_model: Option<AskModel>,
@@ -114,13 +116,32 @@ mod undo_tests {
             "clones share the stack"
         );
         assert_eq!(ctx.undo_last().unwrap(), "Undid “change 23”: 23 back.");
-        for _ in 0..18 {
+        for _ in 0..23 {
             ctx.undo_last().unwrap();
         }
-        assert!(
-            ctx.undo_last().unwrap_err().0.contains("nothing to undo"),
-            "only the last 20 are kept"
+        assert!(ctx.undo_last().unwrap_err().0.contains("nothing to undo"));
+    }
+
+    #[test]
+    fn undo_a_whole_task() {
+        let mut ctx = Context::default();
+        let log = Arc::new(Mutex::new(vec![]));
+        for (turn, i) in [(1, 0), (2, 1), (2, 2), (2, 3)] {
+            ctx.turn = turn;
+            let l = log.clone();
+            ctx.can_undo(&format!("change {i}"), move || {
+                l.lock().unwrap().push(i);
+                Ok("back.".into())
+            });
+        }
+        let out = ctx.undo_task().unwrap();
+        assert_eq!(out.lines().count(), 3, "{out}");
+        assert_eq!(
+            *log.lock().unwrap(),
+            [3, 2, 1],
+            "newest first, only the last task"
         );
+        assert!(ctx.undo_last().unwrap().contains("change 0"));
     }
 }
 
@@ -131,9 +152,11 @@ pub struct UndoStep {
     /// What the change was ("Dark mode on"), for "Undid: …".
     pub what: String,
     pub run: UndoFn,
+    pub turn: usize,
 }
 
-const UNDO_KEEP: usize = 20;
+/// Enough for a task of many steps (renaming a folder's files one by one).
+const UNDO_KEEP: usize = 100;
 
 impl Context {
     /// Record how to reverse a change that just happened.
@@ -146,6 +169,7 @@ impl Context {
         u.push(UndoStep {
             what: what.to_string(),
             run: Arc::new(run),
+            turn: self.turn,
         });
         let extra = u.len().saturating_sub(UNDO_KEEP);
         u.drain(..extra);
@@ -160,6 +184,24 @@ impl Context {
             .pop()
             .ok_or("there's nothing to undo")?;
         (step.run)().map(|done| format!("Undid “{}”: {done}", step.what.trim_end_matches('.')))
+    }
+
+    /// Reverse every change of the last task that made any, newest first.
+    pub fn undo_task(&self) -> Result<String, ToolError> {
+        let steps: Vec<UndoStep> = {
+            let mut u = self.undo.lock().unwrap();
+            let turn = u.last().ok_or("there's nothing to undo")?.turn;
+            let keep = u.iter().rposition(|s| s.turn != turn).map_or(0, |i| i + 1);
+            u.drain(keep..).rev().collect()
+        };
+        let lines: Vec<String> = steps
+            .iter()
+            .map(|s| match (s.run)() {
+                Ok(done) => format!("Undid “{}”: {done}", s.what.trim_end_matches('.')),
+                Err(e) => format!("Couldn't undo “{}”: {}", s.what.trim_end_matches('.'), e.0),
+            })
+            .collect();
+        Ok(lines.join("\n"))
     }
 }
 
