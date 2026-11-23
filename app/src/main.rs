@@ -58,6 +58,12 @@ window.popup { background: none; box-shadow: none; outline: none; border: none; 
 .pill image { color: @accent_color; }
 .pill.failed image { color: @warning_color; }
 .confirm-card { padding: 6px; }
+.thinking > title { opacity: 0.7; font-size: 0.92em; }
+.thinking.live > title { opacity: 0.9; }
+.thinking-text { font-size: 0.92em; opacity: 0.72; padding: 4px 0 2px 12px; margin-left: 6px; border-left: 2px solid alpha(currentColor, 0.15); }
+.step > title { padding: 0; }
+.step-time { opacity: 0.55; font-size: 0.85em; }
+.step-detail { font-family: monospace; font-size: 0.86em; padding: 8px 12px; margin-top: 6px; border-radius: 8px; background: alpha(currentColor, 0.05); }
 .confirm-detail { padding: 8px 12px; border-radius: 8px; background: alpha(currentColor, 0.06); }
 .attachment { border-radius: 10px; }
 .chat-row-time { font-size: 0.85em; }

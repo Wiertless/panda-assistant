@@ -5,6 +5,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
+use std::time::Instant;
 
 use adw::prelude::*;
 use gtk::gio;
@@ -44,7 +45,10 @@ fn tool_icon(name: &str) -> &'static str {
         "use_skill" => "view-list-bullet-symbolic",
         "save_skill" => "document-save-symbolic",
         "look_at_screen" => "camera-photo-symbolic",
-        "look_at_image" => "image-x-generic-symbolic",
+        "look_at_image" | "edit_image" => "image-x-generic-symbolic",
+        "images_to_pdf" => "x-office-document-symbolic",
+        "calculate" => "accessories-calculator-symbolic",
+        "undo" => "edit-undo-symbolic",
         "run_command" => "utilities-terminal-symbolic",
         "send_file" => "send-to-symbolic",
         "list_devices" => "network-workgroup-symbolic",
@@ -89,6 +93,10 @@ struct Inner {
     answer: String,
     failure: String,
     stats: Option<serde_json::Value>,
+    /// The model's reasoning as it streams: the block, its text, when it began.
+    think: Option<(gtk::Expander, gtk::Label, String, Instant)>,
+    /// Steps under way: the row shown while it runs, and when it started.
+    running: HashMap<String, (gtk::Box, Instant)>,
 }
 
 pub struct Reply {
@@ -154,6 +162,8 @@ impl Reply {
                 answer: String::new(),
                 failure: String::new(),
                 stats: None,
+                think: None,
+                running: HashMap::new(),
             }),
         })
     }
@@ -209,6 +219,17 @@ impl Reply {
         pill
     }
 
+    /// The reasoning is over (an answer or a step began): its block says for how long.
+    fn end_thinking(&self) {
+        if let Some((block, _, _, began)) = self.inner.borrow_mut().think.take() {
+            block.set_label(Some(&format!(
+                "Thought for {:.1} s",
+                began.elapsed().as_secs_f64()
+            )));
+            block.remove_css_class("live");
+        }
+    }
+
     pub fn error(&self, text: &str) {
         self.inner.borrow_mut().failure = text.into();
         let label = gtk::Label::builder()
@@ -222,6 +243,7 @@ impl Reply {
     }
 
     pub fn finish(&self, notify: bool) {
+        self.end_thinking();
         if self.spin.parent().is_some() {
             self.bx.remove(&self.spin);
         }
@@ -342,6 +364,12 @@ impl Reply {
             buttons.append(&b);
             b
         });
+        let task = can_always.then(|| {
+            let b = gtk::Button::with_mnemonic("Allow for This _Task");
+            b.set_tooltip_text(Some("Don't ask again until this task is done"));
+            buttons.append(&b);
+            b
+        });
         buttons.append(&allow);
         card.append(&head);
         if !detail.is_empty() {
@@ -378,10 +406,10 @@ impl Reply {
                 title.remove_css_class("heading");
                 title.set_label(&format!(
                     "{summary}: {}",
-                    if answer == "deny" {
-                        "cancelled"
-                    } else {
-                        "allowed"
+                    match answer {
+                        "deny" => "cancelled",
+                        "task" => "allowed for this task",
+                        _ => "allowed",
                     }
                 ));
                 if let Some(w) = me.win.upgrade() {
@@ -393,6 +421,10 @@ impl Reply {
         allow.connect_clicked(move |_| p("allow"));
         let p = pick.clone();
         cancel.connect_clicked(move |_| p("deny"));
+        if let Some(b) = task {
+            let p = pick.clone();
+            b.connect_clicked(move |_| p("task"));
+        }
         if let Some(b) = always {
             b.connect_clicked(move |_| pick("always"));
         }
@@ -450,6 +482,7 @@ impl Turn for Reply {
     }
 
     fn on_text(&self, s: &str) {
+        self.end_thinking();
         self.spin_label.set_label("Writing…");
         let mut i = self.inner.borrow_mut();
         if i.label.is_none() {
@@ -493,17 +526,61 @@ impl Turn for Reply {
         self.spin_label.set_label("Working…");
     }
 
-    /// The model's reasoning isn't shown, only that it's thinking.
-    fn on_reasoning(&self, _: &str) {
+    /// The reasoning streams into a block that opens on a click; it's closed by
+    /// default so the answer stays the main thing.
+    fn on_reasoning(&self, s: &str) {
         self.spin_label.set_label("Thinking…");
+        let mut i = self.inner.borrow_mut();
+        if i.think.is_none() {
+            let text = gtk::Label::builder()
+                .wrap(true)
+                .wrap_mode(gtk::pango::WrapMode::WordChar)
+                .xalign(0.0)
+                .selectable(true)
+                .build();
+            text.add_css_class("thinking-text");
+            let block = gtk::Expander::builder()
+                .label("Thinking…")
+                .child(&text)
+                .build();
+            block.add_css_class("thinking");
+            block.add_css_class("live");
+            self.before_spinner(&block);
+            i.think = Some((block, text, String::new(), Instant::now()));
+        }
+        let (_, text, all, _) = i.think.as_mut().unwrap();
+        all.push_str(s);
+        text.set_text(all.trim());
+        drop(i);
+        self.scroll();
     }
 
+    /// A step shows while it runs, with a spinner, and becomes its result when done.
     fn on_tool_started(&self, name: &str, summary: &str) {
+        self.end_thinking();
         self.set_summary(name, summary);
         self.spin_label.set_label(&format!("{summary}…"));
+        let row = gtk::Box::builder()
+            .spacing(8)
+            .halign(gtk::Align::Start)
+            .build();
+        row.add_css_class("pill");
+        row.add_css_class("quiet");
+        row.append(&spinner());
+        row.append(&gtk::Label::new(Some(summary)));
+        self.before_spinner(&row);
+        self.inner
+            .borrow_mut()
+            .running
+            .insert(name.into(), (row, Instant::now()));
+        self.scroll();
     }
 
     fn on_tool_finished(&self, name: &str, result: &str, ok: bool) {
+        let running = self.inner.borrow_mut().running.remove(name);
+        if let Some((row, _)) = &running {
+            self.bx.remove(row);
+        }
         if ok && assistant_core::tools::CARDS.contains(&name) && !result.starts_with("No ") {
             self.card(tool_icon(name), result);
             return;
@@ -518,12 +595,11 @@ impl Turn for Reply {
                 .get(name)
                 .cloned()
                 .unwrap_or_else(|| name.to_string());
-            let tooltip: String = result.chars().take(600).collect();
             self.pill(
                 tool_icon(name),
                 if short { result } else { &summary },
                 false,
-                (!short).then_some(tooltip.as_str()),
+                None,
             )
         } else {
             let text: String = if short {
@@ -555,7 +631,31 @@ impl Turn for Reply {
             });
             pill.append(&undo);
         }
-        self.before_spinner(&pill);
+        if let Some((_, began)) = running {
+            let took = gtk::Label::new(Some(&format!("{:.1} s", began.elapsed().as_secs_f64())));
+            took.add_css_class("step-time");
+            pill.append(&took);
+        }
+        // A long result opens under its step, instead of hiding in a tooltip.
+        if ok && !short {
+            let detail = gtk::Label::builder()
+                .label(result.chars().take(4000).collect::<String>())
+                .wrap(true)
+                .wrap_mode(gtk::pango::WrapMode::WordChar)
+                .xalign(0.0)
+                .selectable(true)
+                .build();
+            detail.add_css_class("step-detail");
+            let step = gtk::Expander::builder()
+                .label_widget(&pill)
+                .child(&detail)
+                .halign(gtk::Align::Start)
+                .build();
+            step.add_css_class("step");
+            self.before_spinner(&step);
+        } else {
+            self.before_spinner(&pill);
+        }
         let mut i = self.inner.borrow_mut();
         i.label = None; // text after an action starts a new message
         i.answer.push('\n');
@@ -574,6 +674,7 @@ impl Turn for Reply {
     }
 
     fn on_handoff(&self, model: &str) {
+        self.end_thinking();
         self.before_spinner(&self.pill(
             "go-next-symbolic",
             &format!("Handed to {model}"),

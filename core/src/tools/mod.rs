@@ -143,7 +143,9 @@ pub fn guarded_after_untrusted(tool: &str) -> bool {
 }
 
 /// Tools whose change `undo` can reverse (the window offers Undo on their pill).
-pub const UNDOABLE: [&str; 18] = [
+pub const UNDOABLE: [&str; 20] = [
+    "edit_image",
+    "images_to_pdf",
     "write_file",
     "edit_file",
     "move_file",
