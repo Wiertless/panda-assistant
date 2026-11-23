@@ -3792,5 +3792,102 @@
   "paraphrases": [
    "policz 15 procent z 240"
   ]
+ },
+ {
+  "name": "shrink photos",
+  "prompt": "make the photos in Pictures/Trip smaller, they're too big to send",
+  "stubs": {
+   "edit_image": "Saved 12 of 12 in ~/Pictures/Edited (the originals are unchanged):\n~/Pictures/Edited/IMG_1.jpg: 4.1 MB 4032×3024 → 0.6 MB 1920×1440"
+  },
+  "expect": [
+   {
+    "tool": "edit_image",
+    "args": {
+     "files": "Trip",
+     "resize": "%|1920|1600|1280|1024|2048"
+    }
+   }
+  ],
+  "answer": [
+   "12|Edited"
+  ],
+  "tags": [
+   "single",
+   "files",
+   "agent"
+  ],
+  "paraphrases": [
+   "zmniejsz zdjęcia z Pictures/Trip"
+  ]
+ },
+ {
+  "name": "scans to pdf",
+  "prompt": "put all the jpg scans in Documents/Scans into one pdf called lease",
+  "stubs": {
+   "images_to_pdf": "Made ~/Pictures/Edited/lease.pdf from 4 pictures (2.3 MB)"
+  },
+  "expect": [
+   {
+    "tool": "images_to_pdf",
+    "args": {
+     "files": "Scans",
+     "name": "lease"
+    }
+   }
+  ],
+  "answer": [
+   "lease"
+  ],
+  "tags": [
+   "single",
+   "files",
+   "agent"
+  ]
+ },
+ {
+  "name": "undo all that",
+  "before": [
+   "make the photos in Pictures/Trip smaller"
+  ],
+  "stubs": {
+   "edit_image": "Saved 12 of 12 in ~/Pictures/Edited",
+   "undo": "Undid “Edit 12 pictures”: removed 12 new files."
+  },
+  "prompt": "undo all that",
+  "expect": [
+   {
+    "tool": "undo",
+    "args": {
+     "whole_task": "true"
+    }
+   }
+  ],
+  "tags": [
+   "single",
+   "agent",
+   "multi-turn"
+  ],
+  "paraphrases": [
+   "cofnij wszystko"
+  ]
+ },
+ {
+  "name": "tip math",
+  "prompt": "what's a 18% tip on 64.50?",
+  "expect": [
+   {
+    "tool": "calculate"
+   }
+  ],
+  "stubs": {
+   "calculate": "18% * 64.50 = 11.61"
+  },
+  "answer": [
+   "11.61"
+  ],
+  "tags": [
+   "single",
+   "answer"
+  ]
  }
 ]
