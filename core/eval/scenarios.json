@@ -3890,5 +3890,60 @@
    "single",
    "answer"
   ]
+ },
+ {
+  "name": "think, don't hand off",
+  "prompt": "think about why the sky is blue",
+  "smarter": true,
+  "forbid": [
+   "ask_smarter_model"
+  ],
+  "answer": [
+   "scatter|rayleigh|rozprasz"
+  ],
+  "tags": [
+   "no-tool",
+   "escalate"
+  ],
+  "paraphrases": [
+   "explain why the sky is blue",
+   "zastanów się, dlaczego niebo jest niebieskie"
+  ]
+ },
+ {
+  "name": "asked for the smarter model",
+  "prompt": "ask the smarter model why the sky is blue",
+  "smarter": true,
+  "expect": [
+   {
+    "tool": "ask_smarter_model"
+   }
+  ],
+  "tags": [
+   "escalate"
+  ],
+  "paraphrases": [
+   "zapytaj mądrzejszy model, dlaczego niebo jest niebieskie",
+   "let the bigger model answer this: why is the sky blue?"
+  ]
+ },
+ {
+  "name": "think after a hand-off",
+  "before": [
+   "ask the smarter model why the sky is blue"
+  ],
+  "prompt": "think about why the sky is blue",
+  "smarter": true,
+  "forbid": [
+   "ask_smarter_model"
+  ],
+  "answer": [
+   "scatter|rayleigh"
+  ],
+  "tags": [
+   "no-tool",
+   "escalate",
+   "multi-turn"
+  ]
  }
 ]

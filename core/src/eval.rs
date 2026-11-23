@@ -50,6 +50,8 @@ pub struct Variant {
     pub context_rule: Option<bool>,
     /// The list_servers tool.
     pub local_servers: Option<bool>,
+    /// Thinking before every request (the app's Think First toggle).
+    pub think: Option<bool>,
     /// Stand-ins for the prompt fragments: web, memory, escalate, nudge.
     #[serde(default)]
     pub prompt_parts: std::collections::HashMap<String, String>,
@@ -140,6 +142,10 @@ pub struct Scenario {
     pub answer: Vec<String>,
     #[serde(default)]
     pub no_tools: bool,
+    /// A smarter model is there to hand off to (a stand-in answers; the hand-off is
+    /// judged as an ask_smarter_model call).
+    #[serde(default)]
+    pub smarter: bool,
     /// The expected calls may come in any order (independent steps).
     #[serde(default)]
     pub unordered: bool,
@@ -350,6 +356,19 @@ pub fn run(
     });
     agent.context_rule = v.context_rule.unwrap_or(true);
     agent.local_servers = v.local_servers.unwrap_or(false);
+    if v.think == Some(true) {
+        agent.think_with_tools = Some(true);
+    }
+    if s.smarter {
+        agent.smarter_model = Some("the smarter model".into());
+        let log = calls.clone();
+        agent.escalate_stub = Some(Arc::new(move |task: &str| {
+            let mut a = Args::new();
+            a.insert("task".into(), json!(task));
+            log.lock().unwrap().push(("ask_smarter_model".into(), a));
+            "Here is the full answer from the smarter model.".into()
+        }));
+    }
     let embedder = embedder.filter(|_| v.embed.unwrap_or(true));
     agent.embedder = embedder.cloned();
     agent.log_rounds = false;
@@ -705,7 +724,8 @@ mod tests {
 
     #[test]
     fn scenarios_load_and_name_real_tools() {
-        let names: Vec<String> = crate::tools::all().into_iter().map(|t| t.name).collect();
+        let mut names: Vec<String> = crate::tools::all().into_iter().map(|t| t.name).collect();
+        names.push(crate::agent::ESCALATE.into()); // the hand-off, judged like a tool
         for s in load(None).unwrap() {
             for e in &s.expect {
                 assert!(

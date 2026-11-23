@@ -347,6 +347,9 @@ use the tools. Use it for hard requests; it answers the user itself."),
 
 pub type ToolSource = Arc<dyn Fn() -> Vec<Tool> + Send + Sync>;
 
+/// Takes the hand-off's task, returns the answer (the eval's stand-in model).
+pub type EscalateStub = Arc<dyn Fn(&str) -> String + Send + Sync>;
+
 #[derive(Clone)]
 pub struct Agent {
     pub client: Arc<FlmClient>,
@@ -356,6 +359,9 @@ pub struct Agent {
     pub messages: Vec<Value>,
     pub cancel: Arc<AtomicBool>,
     pub smarter_model: Option<String>,
+    /// The eval's stand-in for the smarter model: takes the task, returns its answer
+    /// (so a hand-off can be judged without running a second model).
+    pub escalate_stub: Option<EscalateStub>,
     /// Writes research reports when the smarter model doesn't fit in memory; only
     /// when installed (loading a missing one could start a download).
     pub middle_writer: Option<String>,
@@ -441,6 +447,7 @@ impl Agent {
             messages: vec![],
             cancel: Arc::new(AtomicBool::new(false)),
             smarter_model: None,
+            escalate_stub: None,
             middle_writer: None,
             web_enabled: true,
             machine: None,
@@ -1342,6 +1349,14 @@ impl Agent {
             })
             .unwrap_or_default();
         let model = self.smarter_model.clone().unwrap();
+        if let Some(stub) = &self.escalate_stub {
+            let answer = stub(&task);
+            self.messages.push(json!({"role": "tool", "tool_call_id": call.id,
+                                      "content": format!("{model} answered the user directly:\n{answer}")}));
+            self.messages
+                .push(json!({"role": "assistant", "content": answer}));
+            return Ok(());
+        }
         let end = self.messages.len().saturating_sub(2);
         let answer = self.helper_answer(&model, request, &task, end, false, cb)?;
         self.messages.push(json!({"role": "tool", "tool_call_id": call.id,

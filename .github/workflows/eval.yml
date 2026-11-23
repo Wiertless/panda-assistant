@@ -60,6 +60,8 @@ jobs:
           import json, os
           all = [
               {"model": "gemma4-it:e2b", "search": "gemma-4-E2B-it"},
+              # Google's quantization-aware-trained 4-bit build (llama.cpp only; FLM has none).
+              {"model": "gemma4-it:e2b-qat", "search": "gemma-4-E2B-it-qat-q4_0-gguf", "quant": "Q4_0"},
               {"model": "gemma4-it:e4b", "search": "gemma-4-E4B-it"},
               {"model": "qwen3.5:2b", "search": "Qwen3.5-2B"},
               {"model": "qwen3.5:4b", "search": "Qwen3.5-4B"},
@@ -106,7 +108,7 @@ jobs:
       - name: Find and download the GGUF
         id: gguf
         run: |
-          read -r repo file < <(python3 .github/scripts/find_gguf.py "${{ matrix.m.search }}")
+          read -r repo file < <(python3 .github/scripts/find_gguf.py "${{ matrix.m.search }}" "${{ matrix.m.quant || 'Q4_K_M' }}")
           echo "Using $repo / $file"
           echo "source=$repo/$file" >> "$GITHUB_OUTPUT"
           mkdir -p models
