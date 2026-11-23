@@ -21,6 +21,13 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.34.1" date="2026-11-23">
+      <description>
+        <ul>
+          <li>Research reports are written in the language of your question, not in the language of the pages they read</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.34.0" date="2026-11-22">
       <description>
         <ul>
