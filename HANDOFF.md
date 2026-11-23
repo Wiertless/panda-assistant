@@ -87,7 +87,7 @@ Streamlined in the same release (~1,300 lines): removed required rounds, compact
 
 ## Nightly update ignores Steam (silverpanda PR 52, merged 2026-11-22)
 
-`nightly-update.sh` skips `steam` / `com.valvesoftware.Steam` like Assistant when deciding whether apps are open (owner doesn't mind it closing). A game launched outside Steam still counts.
+`nightly-update.sh` restarts on battery above 20% (PR 53, was 50%; 2026-11-23 skipped at 25%) and skips `steam` / `com.valvesoftware.Steam` like Assistant when deciding whether apps are open (owner doesn't mind it closing). A game launched outside Steam still counts.
 
 ## Screen flicker while changing brightness (2026-11-21): owner chose to live with it
 
