@@ -24,7 +24,7 @@ Still open after that: "ciszej proszę" volume value; English replies to Polish 
 3. Check the tarball (core-bin/assistantd, core-bin/panda-assistant, the clipboard extension, Reminders.desktop) and its sha256 against the release's `.sha256`.
 4. In silverpanda: branch `claude/great-ride-v90usy` from origin/main, bump VERSION/SHA256, PR, wait for `bluebuild`, check its log shows `assistantd X` / `Assistant X`, merge. The owner allows merging these pin PRs without asking.
 
-Released so far: see "Pinned / releasing" (latest **0.34.0**, pinned (silverpanda PR 51 merged 2026-11-22); nothing unreleased on main).
+Released so far: see "Pinned / releasing" (latest **0.34.1**, pinned (silverpanda PR 57 merged 2026-11-23; 0.34.0 was PR 51); nothing unreleased on main).
 
 ## The owner's wishes (keep to them)
 
@@ -84,6 +84,10 @@ Owner's pop-up chat: "what api does lemonade advertise" with a link selected in 
 **Eval 44965080030** verdict (Gemma E2B, repeat 3): all three UNDECIDED overall (+1.0/+1.4/+1.7). self-aware (self_info + context_rule): lemonade address 0/3 → 3/3 wordings, 12 fixed / 7 broke, no time cost → **on by default** (`flm::self_info` from the client's backend + URL; context_rule true). local-servers: only variant that answers dev-server port / is-ollama-running, but proofread/translate selection dropped to 1–2/3 and self-aware-servers is +15% time → **off**, kept as variant `local-servers` (rerun on selection families before turning on). Check run 45035798333 with the new defaults: lemonade 4/5 (the "link selected ~2" wording still answers with the link's port 443).
 
 Streamlined in the same release (~1,300 lines): removed required rounds, compact tool set + `Tool::resolve` forwarding, route_by_examples/force_proposal + `requests.tsv`, `parallel_tool_calls`; variants pruned (refuted or = baseline), added `routed` (8K, routing + embeddings) and `no-self-aware`. eval.yml: `plan` job builds the model matrix (no more skipped jobs), embedding server only for variants with route_tools. Research middle writer (qwen3.5:4b) only when installed — **the owner removed qwen3.5:4b from the laptop on 2026-11-22** and switched config to gemma4-it:e2b (measured on the NPU: Gemma 18–21 tok/s decode, ~1,800 tok/s prefill vs Qwen 4B 12 and ~500).
+
+## Research language (0.34.1, 2026-11-23)
+
+An English research question's report came out in Turkish: qwen3.5:9b wrote it from notes in several languages and the prompts only said "the question's language". `in_language()` now names it (Polish by its letters, else English; shortcut noted) in the outline, section, summary and quick-answer prompts. Same chat, not fixed: "thanks" answered in Polish (small-model language slip), mail summary called an older mail "the newest". **Nightly update proven 2026-11-23 08:00**: with the light sensor masked, the old script restarted, after-update saw the login and stayed awake; the owner is now on 45.20261123 (PRs 53–56).
 
 ## Nightly update ignores Steam (silverpanda PR 52, merged 2026-11-22)
 
