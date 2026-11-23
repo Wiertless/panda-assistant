@@ -52,6 +52,8 @@ pub struct Variant {
     pub local_servers: Option<bool>,
     /// Thinking before every request (the app's Think First toggle).
     pub think: Option<bool>,
+    /// The plan tool (default on).
+    pub planning: Option<bool>,
     /// Stand-ins for the prompt fragments: web, memory, escalate, nudge.
     #[serde(default)]
     pub prompt_parts: std::collections::HashMap<String, String>,
@@ -356,6 +358,7 @@ pub fn run(
     });
     agent.context_rule = v.context_rule.unwrap_or(true);
     agent.local_servers = v.local_servers.unwrap_or(false);
+    agent.planning = v.planning.unwrap_or(true);
     if v.think == Some(true) {
         agent.think_with_tools = Some(true);
     }

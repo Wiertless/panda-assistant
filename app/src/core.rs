@@ -31,6 +31,8 @@ pub trait Turn {
     fn on_finished(&self, error: &str);
     /// How long the answer took and how many tokens it used (JSON from the service).
     fn on_stats(&self, _json: &str) {}
+    /// The task's plan: [{"step": "…", "done": bool}, …] (JSON from the service).
+    fn on_plan(&self, _json: &str) {}
 }
 
 #[derive(Default)]
@@ -339,6 +341,7 @@ impl Core {
             ),
             "Notice" => turn.on_notice(&s(1)),
             "Progress" => turn.on_progress(&s(1)),
+            "Plan" => turn.on_plan(&s(1)),
             "Handoff" => turn.on_handoff(&s(1)),
             "Compacting" => turn.on_compacting(),
             "Retract" => turn.on_retract(),

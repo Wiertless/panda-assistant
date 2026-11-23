@@ -3945,5 +3945,35 @@
    "escalate",
    "multi-turn"
   ]
+ },
+ {
+  "name": "shrink and send",
+  "prompt": "make the photos in Pictures/Trip smaller and send them to my phone",
+  "stubs": {
+   "edit_image": "Saved 3 of 3 in ~/Pictures/Edited (the originals are unchanged):\n~/Pictures/Edited/a.jpg: 4.1 MB 4032×3024 → 0.6 MB 1920×1440",
+   "send_file": "Sent to jakubs-iphone."
+  },
+  "expect": [
+   {
+    "tool": "edit_image",
+    "args": {
+     "files": "Trip"
+    }
+   },
+   {
+    "tool": "send_file",
+    "args": {
+     "path": "Edited"
+    }
+   }
+  ],
+  "tags": [
+   "chain",
+   "files",
+   "agent"
+  ],
+  "paraphrases": [
+   "zmniejsz zdjęcia z Pictures/Trip i wyślij je na telefon"
+  ]
  }
 ]

@@ -75,5 +75,9 @@
     "prompt_parts": {
       "escalate": "\nUse the smarter model only when the user asks for it, or the task exceeds your capabilities,\nyou repeatedly fail, or reliable execution requires substantial reasoning.\nBeing asked to think about, explain or reason through something is not a reason: answer it yourself.\nDo not escalate ordinary multi-step tasks.\nInclude relevant context and results when escalating.\n"
     }
+  },
+  "no-plan": {
+    "about": "Without the plan tool (as before stage 2).",
+    "planning": false
   }
 }

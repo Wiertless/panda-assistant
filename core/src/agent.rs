@@ -212,6 +212,22 @@ Include relevant context and results when escalating.
 "#;
 
 pub const ESCALATE: &str = "ask_smarter_model";
+/// The steps of a task of several, shown to the user as a checklist and ticked as
+/// they're done; a turn that ends with steps left is checked once.
+pub const PLAN: &str = "plan";
+const PLAN_LEFT: &str = "(These steps of your plan aren't ticked: {left}. Do them now and tick them with plan \
+done, or, if they can't be done, tell the user plainly which weren't done and why. Don't say it's all done.)";
+
+fn plan_schema() -> Value {
+    json!({"type": "function", "function": {
+        "name": PLAN,
+        "description": "For a task of 3 or more steps (several tools one after another), first list the steps \
+(steps), then do them, and as each is done call plan with its number in done. The user sees the list as a checklist. \
+Not for a one-step request.",
+        "parameters": {"type": "object", "properties": {
+            "steps": {"type": "array", "items": {"type": "string"}, "description": "The steps, short, in order"},
+            "done": {"type": "array", "items": {"type": "integer"}, "description": "Numbers of the steps just done (from 1)"}}}}})
+}
 /// How to read the screen context the pop-up puts before a question.
 const CONTEXT_RULE: &str = " A message may start with what was on the user's screen ([On screen: …]): \
 use it, and the selected text in it, only when the question refers to it (this, it, the selected text, \
@@ -257,6 +273,8 @@ pub trait Callbacks: Send + Sync {
     fn notice(&self, _text: &str) {}
     /// What a long tool is doing now ("Reading 3 pages…"), replacing the last such line.
     fn progress(&self, _text: &str) {}
+    /// The task's plan changed: [{"step": "…", "done": false}, …] as JSON.
+    fn plan(&self, _json: &str) {}
     fn handoff(&self, _model: &str) {}
     fn compacting(&self) {}
     /// Take back the text streamed so far this round (a claim that wasn't true).
@@ -434,6 +452,10 @@ pub struct Agent {
     round_no: usize,
     /// This turn's language, when the user's words make it clear.
     reply_language: Option<&'static str>,
+    /// Offer the plan tool (tasks of several steps get a checklist and a check at the end).
+    pub planning: bool,
+    /// This turn's plan: each step and whether it's done.
+    pub plan: Vec<(String, bool)>,
     pub group_seen: std::collections::HashMap<String, usize>,
 }
 
@@ -486,6 +508,8 @@ impl Agent {
             turn_no: 0,
             round_no: 0,
             reply_language: None,
+            planning: true,
+            plan: vec![],
             group_seen: std::collections::HashMap::new(),
         }
     }
@@ -660,6 +684,9 @@ impl Agent {
             if !missing.is_empty() {
                 schemas.push(groups::more_tools_schema(&missing));
             }
+        }
+        if self.planning {
+            schemas.push(plan_schema());
         }
         if self.can_escalate() {
             schemas.push(escalate_schema(self.smarter_model.as_deref().unwrap()));
@@ -838,6 +865,7 @@ impl Agent {
         images: &[String],
     ) -> Result<(), FlmError> {
         self.reply_language = language(text);
+        self.plan.clear();
         // Tools that work on long text (documents) ask the model in a fresh context of their own.
         let (client, model) = (self.client.clone(), self.model.clone());
         self.ctx.ask_model = Some(Arc::new(move |system: &str, user: &str| {
@@ -922,9 +950,17 @@ impl Agent {
             ..Turn::default()
         };
         let result = self.run_turn(text, actionable, turn_start, &mut turn, cb);
-        // The nudge was for the model only: it isn't part of the chat.
-        if let Some(i) = turn.nudge_at.filter(|i| *i < self.messages.len()) {
-            self.messages.remove(i);
+        // The nudge and the plan's check were for the model only: they aren't part of the
+        // chat (the later one first, so the earlier index stays right).
+        let mut notes: Vec<usize> = [turn.nudge_at, turn.plan_note_at]
+            .into_iter()
+            .flatten()
+            .collect();
+        notes.sort_unstable_by(|a, b| b.cmp(a));
+        for i in notes {
+            if i < self.messages.len() {
+                self.messages.remove(i);
+            }
         }
         // Summarize old turns now, after the answer was shown, so the next question
         // doesn't wait for it.
@@ -1077,6 +1113,23 @@ impl Agent {
                     .push(json!({"role": "user", "content": ANSWER_NOW}));
                 continue;
             }
+            let left: Vec<String> = self
+                .plan
+                .iter()
+                .enumerate()
+                .filter(|(_, (_, done))| !done)
+                .map(|(i, (s, _))| format!("{}. {s}", i + 1))
+                .collect();
+            if calls.is_empty() && !self.cancelled() && !left.is_empty() && !turn.plan_checked {
+                // The turn would end with steps of its plan left: take the answer back and
+                // ask once for them, or for a plain account of what wasn't done.
+                cb.retract();
+                turn.plan_checked = true;
+                turn.plan_note_at = Some(self.messages.len());
+                self.messages.push(json!({"role": "user",
+                    "content": PLAN_LEFT.replace("{left}", &left.join("; "))}));
+                continue;
+            }
             self.messages.push(assistant);
             if calls.is_empty() || self.cancelled() {
                 return Ok(());
@@ -1100,6 +1153,12 @@ impl Agent {
                 return Ok(());
             }
             for call in &calls {
+                if call.name == PLAN {
+                    let result = self.update_plan(call, cb);
+                    self.messages
+                        .push(json!({"role": "tool", "tool_call_id": call.id, "content": result}));
+                    continue;
+                }
                 if call.name == groups::MORE_TOOLS {
                     let result = self.add_groups(call);
                     self.messages
@@ -1570,6 +1629,59 @@ Its notes: {notes}{done})"
             .unwrap_or_else(|| default.to_string())
     }
 
+    /// A plan call: new steps replace the plan, done ticks steps off. The checklist goes
+    /// to the window; the result reads it back to the model.
+    fn update_plan(&mut self, call: &ToolCall, cb: &dyn Callbacks) -> String {
+        let args = call.parsed_arguments().unwrap_or_default();
+        if let Some(steps) = args.get("steps").and_then(Value::as_array) {
+            let steps: Vec<(String, bool)> = steps
+                .iter()
+                .filter_map(|s| s.as_str().map(|s| (s.trim().to_string(), false)))
+                .filter(|(s, _)| !s.is_empty())
+                .take(12)
+                .collect();
+            if !steps.is_empty() {
+                self.plan = steps;
+            }
+        }
+        let done: Vec<usize> = match args.get("done") {
+            Some(Value::Array(a)) => a
+                .iter()
+                .filter_map(|n| n.as_u64().or_else(|| n.as_str()?.parse().ok()))
+                .map(|n| n as usize)
+                .collect(),
+            Some(Value::Number(n)) => n.as_u64().map(|n| vec![n as usize]).unwrap_or_default(),
+            _ => vec![],
+        };
+        for n in done {
+            if let Some(step) = n.checked_sub(1).and_then(|i| self.plan.get_mut(i)) {
+                step.1 = true;
+            }
+        }
+        if self.plan.is_empty() {
+            return "Error: give the steps first (steps: a list of short steps).".into();
+        }
+        cb.plan(
+            &Value::Array(
+                self.plan
+                    .iter()
+                    .map(|(s, d)| json!({"step": s, "done": d}))
+                    .collect(),
+            )
+            .to_string(),
+        );
+        let list: Vec<String> = self
+            .plan
+            .iter()
+            .enumerate()
+            .map(|(i, (s, d))| format!("{}. [{}] {s}", i + 1, if *d { "x" } else { " " }))
+            .collect();
+        format!(
+            "Plan:\n{}\nNow do the next step; after each, call plan with done: [its number].",
+            list.join("\n")
+        )
+    }
+
     fn run_call(&self, call: &ToolCall, cb: &dyn Callbacks, tainted: bool) -> String {
         let loose = || {
             if self.repair_args {
@@ -1764,6 +1876,9 @@ struct Turn {
     tainted: bool,
     /// The model chose to answer with the reply tool on a required round.
     replied: bool,
+    /// The end-of-turn check of the plan was made (once a turn), and where its note sits.
+    plan_checked: bool,
+    plan_note_at: Option<usize>,
     was_forced: bool,
 }
 
@@ -2869,6 +2984,68 @@ mod tests {
         let mut a = agent(&flm);
         a.ask("hello", &Rec::default(), &[]).unwrap();
         assert_eq!(flm.requests()[0]["think"], false);
+    }
+
+    #[test]
+    fn a_plan_is_checked_before_the_turn_ends() {
+        let _h = temp_home();
+        let flm = FakeFlm::start(vec![
+            (
+                200,
+                tool_reply(
+                    PLAN,
+                    r#"{"steps": ["Set the volume", "Tell the time"]}"#,
+                    "p1",
+                ),
+            ),
+            (200, tool_reply("set_volume", r#"{"percent": 30}"#, "c1")),
+            (200, tool_reply(PLAN, r#"{"done": [1]}"#, "p2")),
+            (200, text_reply("All done!")),
+            (200, tool_reply("get_datetime", "{}", "c2")),
+            (200, tool_reply(PLAN, r#"{"done": [2]}"#, "p3")),
+            (200, text_reply("Volume 30%, and it's 22:00.")),
+        ]);
+        let mut a = agent(&flm);
+        a.ask(
+            "set the volume to 30 and tell me the time",
+            &Rec::default(),
+            &[],
+        )
+        .unwrap();
+        let reqs = flm.requests();
+        assert_eq!(reqs.len(), 7);
+        let said = |r: &Value, what: &str| {
+            r["messages"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|m| m["content"].as_str().is_some_and(|c| c.contains(what)))
+        };
+        assert!(said(&reqs[4], "2. Tell the time"), "the step left is named");
+        assert!(
+            reqs[0]["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|t| t["function"]["name"] == PLAN)
+        );
+        assert_eq!(
+            a.plan,
+            [
+                ("Set the volume".into(), true),
+                ("Tell the time".into(), true)
+            ]
+        );
+        assert_eq!(
+            a.messages.last().unwrap()["content"],
+            "Volume 30%, and it's 22:00."
+        );
+        assert!(
+            !a.messages.iter().any(|m| m["content"]
+                .as_str()
+                .is_some_and(|c| c.contains("aren't ticked"))),
+            "the check isn't kept in the chat"
+        );
     }
 
     #[test]

@@ -97,6 +97,8 @@ struct Inner {
     think: Option<(gtk::Expander, gtk::Label, String, Instant)>,
     /// Steps under way: the row shown while it runs, and when it started.
     running: HashMap<String, (gtk::Box, Instant)>,
+    /// The task's checklist, updated in place.
+    plan: Option<gtk::Box>,
 }
 
 pub struct Reply {
@@ -164,6 +166,7 @@ impl Reply {
                 stats: None,
                 think: None,
                 running: HashMap::new(),
+                plan: None,
             }),
         })
     }
@@ -671,6 +674,56 @@ impl Turn for Reply {
         i.label = None; // text after an action starts a new message
         i.answer.push('\n');
         drop(i);
+        self.scroll();
+    }
+
+    /// A checklist card: made on the first plan, its rows redrawn as steps are ticked.
+    fn on_plan(&self, json: &str) {
+        let Ok(serde_json::Value::Array(steps)) = serde_json::from_str(json) else {
+            return;
+        };
+        let card = self.inner.borrow().plan.clone().unwrap_or_else(|| {
+            let card = gtk::Box::builder()
+                .orientation(gtk::Orientation::Vertical)
+                .spacing(6)
+                .halign(gtk::Align::Start)
+                .build();
+            card.add_css_class("card");
+            card.add_css_class("plan-card");
+            self.before_spinner(&card);
+            self.inner.borrow_mut().plan = Some(card.clone());
+            card
+        });
+        while let Some(c) = card.first_child() {
+            card.remove(&c);
+        }
+        let done = steps.iter().filter(|s| s["done"] == true).count();
+        let head = gtk::Label::builder()
+            .label(format!("Plan · {done} of {}", steps.len()))
+            .xalign(0.0)
+            .build();
+        head.add_css_class("heading");
+        card.append(&head);
+        for s in &steps {
+            let ticked = s["done"] == true;
+            let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            let icon = gtk::Image::from_icon_name(if ticked {
+                "object-select-symbolic"
+            } else {
+                "radio-symbolic"
+            });
+            let label = gtk::Label::builder()
+                .label(s["step"].as_str().unwrap_or(""))
+                .xalign(0.0)
+                .wrap(true)
+                .build();
+            if ticked {
+                row.add_css_class("done");
+            }
+            row.append(&icon);
+            row.append(&label);
+            card.append(&row);
+        }
         self.scroll();
     }
 
