@@ -87,7 +87,7 @@ Streamlined in the same release (~1,300 lines): removed required rounds, compact
 
 ## Nightly update ignores Steam (silverpanda PR 52, merged 2026-11-22)
 
-`nightly-update.sh` restarts on battery above 20% (PR 53, was 50%; 2026-11-23 skipped at 25%) and skips `steam` / `com.valvesoftware.Steam` like Assistant when deciding whether apps are open (owner doesn't mind it closing). A game launched outside Steam still counts.
+`nightly-update.sh` restarts on battery above 20% (PR 53, was 50%; 2026-11-23 skipped at 25%) and skips `steam` / `com.valvesoftware.Steam` like Assistant when deciding whether apps are open (owner doesn't mind it closing). A game launched outside Steam still counts. PR 54: a unit counts as open only while its cgroup runs something besides GNOME helpers (gsd-*, gnome-shell, gnome-session*, xdg-*, at-spi*, dbus-*); a G4Music scope left holding only gsd-media-keys (started by a media key) blocked every run until relogin. Owner's test 2026-11-23 with a WakeSystem on-calendar timer: battery and lock checks passed, only that stale scope stopped it. **Still to see: one real restart through the script** (needs the image with PR 53/54).
 
 ## Screen flicker while changing brightness (2026-11-21): owner chose to live with it
 
