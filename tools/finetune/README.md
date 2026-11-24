@@ -46,12 +46,22 @@ free GPU, merged and converted on the laptop, and run by FastFlowLM on the NPU.
 |---|---|---|
 | stock Gemma 4 E2B | — | 321/381 (84%), 5.0 s/request |
 | ft1: 444 conversations, 2 epochs | first pipeline run | 340/381 (89%), 4.9 s/request: **BETTER**, +4.8 points (95% +0.6 to +9.2), p = 0.01, 27 families better, 11 worse |
-
 | stock, 0.35.0 RC build (b22db7f) | — | 324/381 (85%), 5.2 s/request |
 | ft1, same RC build | | 340/381 (89%), 4.9 s/request: UNDECIDED, +3.6 points (95% −0.7 to +7.8), p = 0.10, 24 better, 13 worse, 5% faster |
 
 (The first two rows ran on the build before `change: up/down` for volume and
 brightness, which counts against ft1 on those scenarios.)
+
+## What ft1 got wrong (and the data now covers)
+
+On the RC build ft1 broke 14 scenarios that stock passed, nearly all from
+imbalances in the first data: short text files read with `ask_document` (32
+examples against 2 for `read_file`), text the user gave sent as a file
+(`send_file` 60, `send_text` 14), "make a file that says…" as `make_folder`,
+what's open read and then passed to `ask_document`, `find_files` repeated 8
+times when nothing matched (2 examples of an empty result). `balance.py` adds
+those cases, and `data.py` now writes `find_files` results as the app does (bare
+paths: the first data had sizes and dates after each one).
 
 ## Lessons from the first run
 

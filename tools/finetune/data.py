@@ -12,6 +12,7 @@ user message is one of the eval's prompts (the eval must stay unseen).
 
 import json
 import random
+import re
 import sys
 from pathlib import Path
 
@@ -293,6 +294,7 @@ import realistic  # noqa: E402,F401  (hand-written: a day's tasks, answers that 
 import talk  # noqa: E402,F401  (hand-written: talk that only sounds like a request)
 import colloquial  # noqa: E402,F401  (hand-written: how people actually ask, mostly Polish)
 import more  # noqa: E402,F401  (hand-written: settings combined, Polish recovery, longer tasks)
+import balance  # noqa: E402,F401  (hand-written: the tools ft1 confused, from its eval)
 
 data_dsl.SOURCE = "gen"
 import generated  # noqa: E402,F401  (adds its families to EXAMPLES)
@@ -337,6 +339,14 @@ def tools_for(e, rng):
     return [TOOLS[n] for n in ORDER if n in pick]
 
 
+def as_app(tool, result):
+    """A tool result as the app writes it: find_files gives bare paths, newest first
+    (some examples were written with sizes and dates after each path)."""
+    if tool == "find_files":
+        return re.sub(r" \(\d[\d.,]* [KMG]?B, \d{4}-\d\d-\d\d\)", "", result)
+    return result
+
+
 def render(e, rng):
     lang = e["lang"] or lang_of(e["user"])
     msgs = [{"role": "system", "content": TEMPLATE["system"]}]
@@ -351,7 +361,7 @@ def render(e, rng):
     else:
         for i, s in enumerate(e["steps"]):
             msgs.append({"role": "assistant", "content": "", "tool_calls": [call(i, s.tool, s.args)]})
-            msgs.append({"role": "tool", "tool_call_id": f"call_{i}", "content": s.result})
+            msgs.append({"role": "tool", "tool_call_id": f"call_{i}", "content": as_app(s.tool, s.result)})
         if e["answer"]:
             msgs.append({"role": "assistant", "content": e["answer"]})
     return {"tools": tools_for(e, rng), "messages": msgs}
