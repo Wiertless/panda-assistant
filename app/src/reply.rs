@@ -62,63 +62,164 @@ fn tool_icon(name: &str) -> &'static str {
     }
 }
 
-/// A step's summary with its link taken out ("Read https://…" -> "Read a web page"),
-/// and the link, which goes in the tooltip, the details and the right-click menu.
-fn without_link(name: &str, summary: &str) -> (String, Option<String>) {
-    let Some(url) = summary
-        .split_whitespace()
-        .find(|w| w.starts_with("http://") || w.starts_with("https://"))
-    else {
-        return (summary.to_string(), None);
-    };
-    let label = match name {
-        "read_web_page" => "Read a web page".to_string(),
-        "open_url" => "Open a link".to_string(),
-        _ => summary.replace(url, "a link"),
-    };
-    (
-        label,
-        Some(url.trim_end_matches(['.', ',', ')']).to_string()),
-    )
+/// What a step touched, for its menu: a web link, or a file or folder.
+enum Target {
+    Link(String),
+    File(std::path::PathBuf),
 }
 
-/// Right-click on a step with a link: copy it, or open it in the browser.
-fn link_menu(widget: &impl IsA<gtk::Widget>, url: &str, win: Weak<Window>) {
-    let widget = widget.as_ref().clone();
-    widget.set_tooltip_text(Some(url));
+/// A step's summary in plain words, and what it touched. "Read https://…" reads "Read
+/// a web page" and "Edit ~/Obrazy/Trip/photo.jpg" reads "Edit photo.jpg"; the link or
+/// path goes in the details and the step's menu.
+// shortcut: paths are split at spaces, so a folder with a space keeps its full path in the label.
+fn plain_step(name: &str, summary: &str) -> (String, Vec<Target>) {
+    let home = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default());
+    let mut label = summary.to_string();
+    let mut targets = vec![];
+    for word in summary.split_whitespace() {
+        let w = word.trim_matches(|c: char| matches!(c, '“' | '”' | '"' | '\'' | ',' | ')' | '('));
+        if w.starts_with("http://") || w.starts_with("https://") {
+            let url = w.trim_end_matches(['.', ',']).to_string();
+            label = match name {
+                "read_web_page" => "Read a web page".into(),
+                "open_url" => "Open a link".into(),
+                _ => label.replace(word, "a link"),
+            };
+            targets.push(Target::Link(url));
+        } else if w.contains('/') && w.len() > 2 {
+            let path = match w.strip_prefix("~/") {
+                Some(rest) => home.join(rest),
+                None if w.starts_with('/') => w.into(),
+                None => home.join(w),
+            };
+            let pattern = path
+                .file_name()
+                .is_some_and(|n| n.to_string_lossy().contains(['*', '?']));
+            let real = if pattern {
+                path.parent().map(|p| p.to_path_buf())
+            } else {
+                Some(path.clone())
+            };
+            let Some(real) = real.filter(|p| p.exists()) else {
+                continue;
+            };
+            let shown = if pattern {
+                format!(
+                    "{}/{}",
+                    real.file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_default(),
+                    path.file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_default()
+                )
+            } else {
+                real.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default()
+            };
+            label = label.replace(w, &shown);
+            targets.push(Target::File(real));
+        }
+    }
+    (label, targets)
+}
+
+/// The step's menu (as Fractal does for a message: a button on hover or focus, and
+/// right-click), with what fits what it touched: Copy Link and Open in Browser, or
+/// Open, Show in Files and Copy Path.
+fn step_menu(pill: &gtk::Box, targets: &[Target], win: Weak<Window>) {
+    if targets.is_empty() {
+        return;
+    }
+    let actions = gio::SimpleActionGroup::new();
+    let menu = gio::Menu::new();
+    let copy = |text: String, toast: &'static str, w: Weak<Window>| {
+        move |_: &gio::SimpleAction, _: Option<&glib::Variant>| {
+            if let Some(d) = gtk::gdk::Display::default() {
+                d.clipboard().set_text(&text);
+            }
+            if let Some(w) = w.upgrade() {
+                w.toast(toast);
+            }
+        }
+    };
+    let open = |uri: String| {
+        move |_: &gio::SimpleAction, _: Option<&glib::Variant>| {
+            let _ = gio::AppInfo::launch_default_for_uri(&uri, None::<&gio::AppLaunchContext>);
+        }
+    };
+    let add =
+        |id: &str, label: &str, f: Box<dyn Fn(&gio::SimpleAction, Option<&glib::Variant>)>| {
+            let a = gio::SimpleAction::new(id, None);
+            a.connect_activate(f);
+            actions.add_action(&a);
+            menu.append(Some(label), Some(&format!("step.{id}")));
+        };
+    match &targets[0] {
+        Target::Link(url) => {
+            add("open", "_Open in Browser", Box::new(open(url.clone())));
+            add(
+                "copy",
+                "_Copy Link",
+                Box::new(copy(url.clone(), "Link copied", win)),
+            );
+        }
+        Target::File(path) => {
+            let uri = gio::File::for_path(path).uri().to_string();
+            add("open", "_Open", Box::new(open(uri.clone())));
+            add(
+                "show",
+                "_Show in Files",
+                Box::new(move |_, _| {
+                    // The file manager selects it (org.freedesktop.FileManager1).
+                    if let Ok(bus) =
+                        gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE)
+                    {
+                        bus.call(
+                            Some("org.freedesktop.FileManager1"),
+                            "/org/freedesktop/FileManager1",
+                            "org.freedesktop.FileManager1",
+                            "ShowItems",
+                            Some(&(vec![uri.as_str()], "").to_variant()),
+                            None,
+                            gio::DBusCallFlags::NONE,
+                            -1,
+                            gio::Cancellable::NONE,
+                            |_| {},
+                        );
+                    }
+                }),
+            );
+            add(
+                "copy",
+                "Copy _Path",
+                Box::new(copy(path.display().to_string(), "Path copied", win)),
+            );
+        }
+    }
+    pill.insert_action_group("step", Some(&actions));
+    let more = gtk::MenuButton::builder()
+        .icon_name("view-more-symbolic")
+        .tooltip_text("More")
+        .menu_model(&menu)
+        .valign(gtk::Align::Center)
+        .build();
+    more.add_css_class("flat");
+    more.add_css_class("circular");
+    more.add_css_class("step-more");
+    pill.append(&more);
     let click = gtk::GestureClick::builder().button(3).build();
-    let url = url.to_string();
-    let anchor = widget.clone();
+    let (anchor, model) = (pill.clone(), menu.clone());
     click.connect_pressed(move |_, _, x, y| {
-        let menu = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        let pop = gtk::Popover::builder()
-            .child(&menu)
-            .has_arrow(false)
-            .build();
+        let pop = gtk::PopoverMenu::from_model(Some(&model));
+        pop.set_has_arrow(false);
         pop.set_parent(&anchor);
         pop.set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
-        for (label, open) in [("Copy Link", false), ("Open in Browser", true)] {
-            let b = gtk::Button::builder().label(label).build();
-            b.add_css_class("flat");
-            let (u, p, w) = (url.clone(), pop.clone(), win.clone());
-            b.connect_clicked(move |b| {
-                if open {
-                    let _ =
-                        gio::AppInfo::launch_default_for_uri(&u, None::<&gio::AppLaunchContext>);
-                } else {
-                    b.clipboard().set_text(&u);
-                    if let Some(w) = w.upgrade() {
-                        w.toast("Link copied");
-                    }
-                }
-                p.popdown();
-            });
-            menu.append(&b);
-        }
         pop.connect_closed(|p| p.unparent());
         pop.popup();
     });
-    widget.add_controller(click);
+    pill.add_controller(click);
 }
 
 /// Notification text: markdown marks removed, cut at a word.
@@ -182,11 +283,11 @@ impl Reply {
         let title = gtk::Label::builder().label(APP_NAME).xalign(0.0).build();
         title.add_css_class("assistant-name");
         let model_label = gtk::Label::builder()
-            .label(
-                model
+            .label(assistant_core::flm::pretty_model(
+                &model
                     .map(String::from)
                     .unwrap_or_else(|| win.st.borrow().model.clone()),
-            )
+            ))
             .xalign(0.0)
             .build();
         model_label.add_css_class("dim-label");
@@ -629,7 +730,7 @@ impl Turn for Reply {
         row.add_css_class("pill");
         row.add_css_class("quiet");
         row.append(&spinner());
-        row.append(&gtk::Label::new(Some(&without_link(name, summary).0)));
+        row.append(&gtk::Label::new(Some(&plain_step(name, summary).0)));
         self.before_spinner(&row);
         self.inner
             .borrow_mut()
@@ -657,7 +758,7 @@ impl Turn for Reply {
                 .get(name)
                 .cloned()
                 .unwrap_or_else(|| name.to_string());
-            let (label, _) = without_link(name, &summary);
+            let (label, _) = plain_step(name, &summary);
             self.pill(
                 tool_icon(name),
                 if short { result } else { &label },
@@ -699,7 +800,7 @@ impl Turn for Reply {
             took.add_css_class("step-time");
             pill.append(&took);
         }
-        let link = without_link(
+        let targets = plain_step(
             name,
             &self
                 .inner
@@ -710,9 +811,11 @@ impl Turn for Reply {
                 .unwrap_or_default(),
         )
         .1;
-        if let Some(url) = &link {
-            link_menu(&pill, url, self.win.clone());
-        }
+        step_menu(&pill, &targets, self.win.clone());
+        let link = targets.first().map(|t| match t {
+            Target::Link(u) => u.clone(),
+            Target::File(p) => p.display().to_string(),
+        });
         // A long result opens under its step, instead of hiding in a tooltip.
         if ok && !short {
             let shown: String = result.chars().take(4000).collect();
@@ -819,12 +922,16 @@ impl Turn for Reply {
         self.end_thinking();
         self.before_spinner(&self.pill(
             "go-next-symbolic",
-            &format!("Handed to {model}"),
+            &format!("Asked {}", assistant_core::flm::pretty_model(model)),
             false,
             None,
         ));
-        self.model_label.set_label(model);
-        self.spin_label.set_label(&format!("Loading {model}…"));
+        self.model_label
+            .set_label(&assistant_core::flm::pretty_model(model));
+        self.spin_label.set_label(&format!(
+            "Loading {}…",
+            assistant_core::flm::pretty_model(model)
+        ));
         let mut i = self.inner.borrow_mut();
         i.label = None;
         i.answer.clear(); // the bigger model's reply is the answer
@@ -840,7 +947,7 @@ impl Turn for Reply {
         // Cards need an Rc for their buttons; the window keeps this reply in one.
         let me = self.win.upgrade().and_then(|w| w.st.borrow().reply.clone());
         if let Some(me) = me {
-            me.confirm_card(request, summary, detail, can_always);
+            me.confirm_card(request, &plain_step(_name, summary).0, detail, can_always);
         }
     }
 

@@ -68,6 +68,8 @@ expander-widget.thinking.live > box > title { opacity: 0.9; }
 expander-widget.step > box > title { padding: 0; min-height: 0; }
 expander-widget.step > box > title > arrow { min-width: 12px; min-height: 12px; margin-right: 4px; opacity: 0.6; }
 .step-time { opacity: 0.55; font-size: 0.85em; }
+.step-more { opacity: 0; min-height: 22px; min-width: 22px; margin: -2px -6px -2px 0; }
+.pill:hover .step-more, .step-more:focus-within, .step-more:checked { opacity: 1; }
 .step-detail { font-family: monospace; font-size: 0.86em; padding: 8px 12px; margin-top: 6px; border-radius: 8px; background: alpha(currentColor, 0.05); }
 .confirm-detail { padding: 8px 12px; border-radius: 8px; background: alpha(currentColor, 0.06); }
 .attachment { border-radius: 10px; }

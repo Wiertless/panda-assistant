@@ -35,6 +35,33 @@ pub enum Backend {
     Lemonade,
 }
 
+/// An FLM tag in plain words: "gemma4-it:e2b" -> "Gemma 4 E2B", "qwen3.5:9b" ->
+/// "Qwen 3.5 9B"; anything else as it is.
+pub fn pretty_model(tag: &str) -> String {
+    if tag.starts_with(GPU_PREFIX) {
+        return tag.trim_start_matches(GPU_PREFIX).to_string();
+    }
+    let Some((family, size)) = tag.split_once(':') else {
+        return tag.to_string();
+    };
+    let family = family.trim_end_matches("-it").replace('-', " ");
+    let split = family
+        .find(|c: char| c.is_ascii_digit())
+        .unwrap_or(family.len());
+    let (word, version) = family.split_at(split);
+    let mut name: String = word
+        .chars()
+        .next()
+        .map(|c| c.to_uppercase().collect::<String>())
+        .unwrap_or_default();
+    name.push_str(&word[word.chars().next().map_or(0, char::len_utf8)..]);
+    if !version.is_empty() {
+        name.push(' ');
+        name.push_str(version.trim());
+    }
+    format!("{} {}", name.trim(), size.to_uppercase())
+}
+
 /// One line on what the assistant runs on, for questions about it ("what API
 /// does Lemonade advertise?").
 pub fn self_info(backend: Backend, url: &str) -> String {
@@ -261,11 +288,11 @@ impl Model {
     pub fn can_see(&self) -> bool {
         self.has("vision")
     }
-    /// The name to show: "Qwen3.5-9B-GGUF (graphics chip)" for a llama.cpp one.
+    /// The name to show: "Gemma 4 E2B", "Qwen3.5-9B-GGUF (graphics chip)" for a llama.cpp one.
     pub fn display_name(&self) -> String {
         match self.name.strip_prefix(GPU_PREFIX) {
             Some(id) => format!("{id} (graphics chip)"),
-            None => self.name.clone(),
+            None => pretty_model(&self.name),
         }
     }
     /// Runs on the graphics chip (through Lemonade), not the NPU.
@@ -1647,6 +1674,15 @@ fn new_session(cmd: &mut Command) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn model_names_in_plain_words() {
+        assert_eq!(pretty_model("gemma4-it:e2b"), "Gemma 4 E2B");
+        assert_eq!(pretty_model("qwen3.5:9b"), "Qwen 3.5 9B");
+        assert_eq!(pretty_model("embed-gemma:300m"), "Embed gemma 300M");
+        assert_eq!(pretty_model("gpu:Qwen3.5-9B-GGUF"), "Qwen3.5-9B-GGUF");
+        assert_eq!(pretty_model("plain"), "plain");
+    }
 
     #[test]
     fn self_info_names_the_backend_and_its_address() {
