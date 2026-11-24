@@ -199,6 +199,9 @@ Never invent memories.
 "#;
 const SKILL_PROMPT: &str = " The user's saved skills are listed below; when a request matches one, call use_skill \
 and follow its steps. When the user asks to save a workflow, call save_skill.";
+/// With no skills saved: only how to save one (the list the full rule points at
+/// isn't there, and the 9B went looking for a skill that didn't exist).
+const SAVE_SKILL_PROMPT: &str = " When the user asks to save a workflow, call save_skill.";
 const SCREEN_PROMPT: &str = " When the user says this, here, or asks about what they're looking at, call \
 read_window first to read the window they mean. To proofread, shorten, translate or otherwise change text they \
 selected, call rewrite_selection instead: it reads the selection itself.";
@@ -609,7 +612,15 @@ impl Agent {
             system += &self.part("memory", MEMORY_PROMPT);
         }
         if self.use_tools {
-            system += SKILL_PROMPT;
+            let has_skills = self
+                .notes
+                .as_deref()
+                .is_some_and(|n| n.contains("Saved skills:"));
+            system += if has_skills {
+                SKILL_PROMPT
+            } else {
+                SAVE_SKILL_PROMPT
+            };
             system += SCREEN_PROMPT;
             if self.context_rule {
                 system += CONTEXT_RULE;
