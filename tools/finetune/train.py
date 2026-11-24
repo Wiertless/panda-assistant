@@ -12,6 +12,8 @@ import os
 import subprocess
 import sys
 
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 REPO = "https://github.com/Wiertless/panda-assistant"
 BRANCH = os.environ.get("PANDA_BRANCH", "claude/finetune")
 WORK = os.environ.get("PANDA_WORK", "/kaggle/working")
@@ -138,7 +140,21 @@ def main():
         warmup_steps=max(1, steps // 20), fp16=True, logging_steps=5, save_strategy="no", report_to=[],
         remove_unused_columns=False, optim="paged_adamw_8bit",
     )
-    Trainer(model=model, args=args, train_dataset=data, data_collator=collate).train()
+    class TrainedOnly(Trainer):
+        """The loss on the trained tokens only, with logits for just those positions:
+        the full vocabulary (262K) for every position of a ~3K-token conversation is
+        3.3 GB in float32 alone (out of memory on a T4), and only ~1% is trained."""
+
+        def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+            labels = inputs.pop("labels")
+            target = labels[:, 1:]
+            keep = (target[0] != -100).nonzero().squeeze(-1)  # position t predicts token t+1
+            out = model(input_ids=inputs["input_ids"], attention_mask=inputs["attention_mask"],
+                        logits_to_keep=keep)
+            loss = torch.nn.functional.cross_entropy(out.logits[0].float(), target[0, keep])
+            return (loss, out) if return_outputs else loss
+
+    TrainedOnly(model=model, args=args, train_dataset=data, data_collator=collate).train()
     out = f"{WORK}/panda-lora"
     model.save_pretrained(out)
     json.dump({"base": MODEL, "rank": RANK, "alpha": RANK * 2, "examples": len(data), "epochs": EPOCHS,
