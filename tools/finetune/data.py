@@ -294,6 +294,7 @@ data_dsl.SOURCE = "gen"
 import generated  # noqa: E402,F401  (adds its families to EXAMPLES)
 import generated2  # noqa: E402,F401
 import generated3  # noqa: E402,F401
+import generated4  # noqa: E402,F401
 
 # ---------------------------------------------------------------- building
 def check(e):
