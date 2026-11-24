@@ -19,41 +19,11 @@ HERE = Path(__file__).parent
 TEMPLATE = json.loads((HERE / "template.json").read_text())
 TOOLS = {t["function"]["name"]: t for t in TEMPLATE["tools"]}
 ORDER = [t["function"]["name"] for t in TEMPLATE["tools"]]
-POLISH = set("ąćęłńóśźżĄĆĘŁŃÓŚŹŻ")
-PL_WORDS = {"ile", "jak", "czy", "co", "gdzie", "kiedy", "jest", "nie", "mi", "mnie", "sie", "prosze",
-            "dzieki", "zrob", "pokaz", "otworz", "wlacz", "wylacz", "ustaw", "jutro", "dzis", "teraz",
-            "troche", "ciszej", "glosniej", "napisz", "przypomnij", "znajdz", "wyslij", "puść", "pusc"}
 DISTRACTORS = 20
 
-
-def lang_of(text):
-    if any(c in POLISH for c in text):
-        return "Polish"
-    words = {w.strip(".,?!").lower() for w in text.split()}
-    return "Polish" if words & PL_WORDS else "English"
-
-
-class T:
-    """One tool call and what it returned."""
-
-    def __init__(self, tool, result, **args):
-        self.tool, self.result, self.args = tool, result, args
-
-
-EXAMPLES = []
-
-
-def ex(user, *steps, answer=None, before=(), lang=None):
-    """A turn: the user's words, the tool steps in order, the answer after them
-    (None for a one-action request the app answers with the tool's own
-    confirmation), and earlier turns as (user, assistant) pairs."""
-    EXAMPLES.append(dict(user=user, steps=steps, answer=answer, before=before, lang=lang))
-
-
-def chat(user, answer, before=(), lang=None):
-    """Small talk or general knowledge: the answer goes through the reply tool."""
-    EXAMPLES.append(dict(user=user, steps=(), answer=answer, before=before, lang=lang, reply=True))
-
+sys.path.insert(0, str(HERE))  # python -I leaves the script's folder out
+import data_dsl  # noqa: E402
+from data_dsl import EXAMPLES, T, chat, ex, lang_of  # noqa: E402,F401
 
 # ---------------------------------------------------------------- settings
 ex("switch to dark mode please", T("set_dark_mode", "Dark mode on.", enabled=True))
@@ -318,6 +288,9 @@ chat("think it through: why is the sky blue?",
      "Sunlight scatters off the molecules in the air, and short blue wavelengths scatter the most (Rayleigh scattering), so blue light reaches your eyes from all over the sky.")
 
 
+data_dsl.SOURCE = "gen"
+import generated  # noqa: E402,F401  (adds its families to EXAMPLES)
+
 # ---------------------------------------------------------------- building
 def check(e):
     for s in e["steps"]:
@@ -375,15 +348,26 @@ def render(e, rng):
 def main(out):
     rng = random.Random(20261124)
     banned = eval_prompts()
+    keep, seen, skipped = [], set(), 0
     for e in EXAMPLES:
         check(e)
-        assert e["user"].strip().lower() not in banned, f"eval prompt in training data: {e['user']}"
+        u = e["user"].strip().lower()
+        if u in banned:
+            assert e["src"] == "gen", f"eval prompt in training data: {e['user']}"
+            skipped += 1
+            continue
+        key = (u, tuple(b[0] for b in e["before"]))
+        if key in seen:
+            continue
+        seen.add(key)
+        keep.append(e)
     Path(out).parent.mkdir(parents=True, exist_ok=True)
     with open(out, "w") as f:
-        for e in EXAMPLES:
+        for e in keep:
             f.write(json.dumps(render(e, rng), ensure_ascii=False) + "\n")
-    pl = sum(1 for e in EXAMPLES if (e["lang"] or lang_of(e["user"])) == "Polish")
-    print(f"{len(EXAMPLES)} examples ({pl} Polish) -> {out}")
+    pl = sum(1 for e in keep if (e["lang"] or lang_of(e["user"])) == "Polish")
+    hand = sum(1 for e in keep if e["src"] == "hand")
+    print(f"{len(keep)} examples ({pl} Polish, {hand} hand-written; {skipped} generated eval prompts skipped) -> {out}")
 
 
 if __name__ == "__main__":
