@@ -291,6 +291,8 @@ import habits  # noqa: E402,F401  (hand-written: tools before answers)
 import judgement  # noqa: E402,F401  (hand-written: context, asking back, errors, follow-ups)
 import realistic  # noqa: E402,F401  (hand-written: a day's tasks, answers that pick out what matters)
 import talk  # noqa: E402,F401  (hand-written: talk that only sounds like a request)
+import colloquial  # noqa: E402,F401  (hand-written: how people actually ask, mostly Polish)
+import more  # noqa: E402,F401  (hand-written: settings combined, Polish recovery, longer tasks)
 
 data_dsl.SOURCE = "gen"
 import generated  # noqa: E402,F401  (adds its families to EXAMPLES)
@@ -372,11 +374,11 @@ def main(out):
         seen.add(key)
         keep.append(e)
     # People often type Polish without its letters ("wlacz ciemny motyw"): a copy of
-    # about a third of the Polish turns that way (the note follows the app's detector).
+    # nearly half of the Polish turns that way (the note follows the app's detector).
     plain = str.maketrans("ąćęłńóśźżĄĆĘŁŃÓŚŹŻ", "acelnoszzACELNOSZZ")
     for e in list(keep):
         u = e["user"]
-        if lang_of(u) == "Polish" and any(c in "ąćęłńóśźżĄĆĘŁŃÓŚŹŻ" for c in u) and rng.random() < 0.35:
+        if lang_of(u) == "Polish" and any(c in "ąćęłńóśźżĄĆĘŁŃÓŚŹŻ" for c in u) and rng.random() < 0.45:
             stripped = u.translate(plain).lower()
             key = (stripped.strip().lower(), tuple(b[0] for b in e["before"]))
             if stripped.strip().lower() not in banned and key not in seen:
