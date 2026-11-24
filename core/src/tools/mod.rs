@@ -18,6 +18,7 @@ pub mod everything;
 pub mod extract;
 pub mod files;
 pub mod groups;
+pub mod images;
 pub mod intents;
 pub mod localsearch;
 pub mod mail;
@@ -142,7 +143,9 @@ pub fn guarded_after_untrusted(tool: &str) -> bool {
 }
 
 /// Tools whose change `undo` can reverse (the window offers Undo on their pill).
-pub const UNDOABLE: [&str; 18] = [
+pub const UNDOABLE: [&str; 20] = [
+    "edit_image",
+    "images_to_pdf",
     "write_file",
     "edit_file",
     "move_file",
@@ -167,6 +170,41 @@ pub const UNDOABLE: [&str; 18] = [
 /// thread ("found it" → "now use it"). Only for results that found something.
 /// Tools whose results the window shows as a card instead of a pill.
 pub const CARDS: [&str; 3] = ["get_weather", "get_events", "list_reminders"];
+
+/// Actions whose short confirmation ("Dark mode on.") can be the whole answer to a
+/// request of that one action, without another round of the model.
+pub const CONFIRMS: [&str; 30] = [
+    "set_dark_mode",
+    "set_do_not_disturb",
+    "set_night_light",
+    "set_volume",
+    "set_mute",
+    "set_brightness",
+    "set_wifi",
+    "set_bluetooth",
+    "set_power_mode",
+    "change_setting",
+    "media_control",
+    "play_music",
+    "open_app",
+    "open_url",
+    "open_file",
+    "open_settings",
+    "connect_network",
+    "disconnect_network",
+    "connect_bluetooth",
+    "disconnect_bluetooth",
+    "set_reminder",
+    "cancel_reminder",
+    "remember",
+    "forget",
+    "undo",
+    "copy_to_clipboard",
+    "trash_file",
+    "move_file",
+    "make_folder",
+    "edit_image",
+];
 
 pub fn next_step(tool: &str) -> Option<&'static str> {
     Some(match tool {
@@ -325,7 +363,8 @@ folder, start with ~, or start with a folder name like Downloads or Documents.",
         Tool::new("show_in_files", "Show a file or folder in the file manager (opens its folder with it selected).",
                   path(), Safe, intents::show_in_files, text("path", |p| format!("Show {} in Files", or(p, "it")))),
         Tool::new("play_music", "Play a song, album or artist from the user's own music library (not the web), in the \
-app they name (Gapless, Rhythmbox, Spotify…) or their default player. query: title, album or artist as said.",
+app they name (Gapless, Rhythmbox, Spotify…) or their default player. query: title, album or artist as said. Only \
+to play: to look a song up or send it, use find_files.",
                   obj(json!({"query": {"type": "string"}, "app": {"type": "string", "description": "Only when the user names one"}}), &["query"]),
                   Safe, music::play_music, text("query", |q| format!("Play {q}"))),
         Tool::new("search_apps", "Search inside the user's apps, like the GNOME overview does: Calculator for sums, \
@@ -343,7 +382,8 @@ Characters for emoji, Weather, Settings pages, Files, Contacts and more.",
                   obj(json!({"path": {"type": "string", "description": "e.g. Downloads, Documents/work, ~"}}), &[]),
                   Safe, files::list_folder, text("path", |p| format!("Look in {}", or(p, "your home folder")))),
         Tool::new("find_files", "Find files and folders by part of their name, newest first. Use it whenever the user \
-mentions one of their own documents or files (\"my lease\", \"the invoice\", \"my CV\"), to read or send it.",
+mentions one of their own documents or files (\"my lease\", \"the invoice\", \"my CV\", \"the screenshot from \
+today\", a song in their music: the folder names the artist), to read or send it. Each result has its date.",
                   obj(json!({"name": {"type": "string"}, "folder": {"type": "string", "description": "Where to look (optional)"}}), &["name"]),
                   Safe, files::find_files, text("name", |n| format!("Find files named “{n}”"))),
         Tool::new("read_file", "Read any file's text: notes, code, configs, CSV, PDF, Word, Excel, PowerPoint, \
@@ -389,6 +429,12 @@ port or URL a program or service is on, or whether a server is running.", obj(js
                   system::list_servers, |_| "List local servers".into()),
         Tool::new("get_datetime", "Get the current local date and time.", obj(json!({}), &[]), Safe,
                   system::get_datetime, |_| "Read the time".into()),
+        Tool::new("calculate", "Work out arithmetic exactly; use it for any sum, percentage, average or \
+conversion instead of working it out yourself. expression: numbers with + - * / ^ and brackets. A percent of \
+something always has the % sign: \"15% of 240\", \"15 procent z 240\" and \"15 proc z 240\" are all \"15% * 240\", \
+never \"15 * 240\".",
+                  obj(json!({"expression": {"type": "string"}}), &["expression"]), Safe,
+                  system::calculate, |a| format!("Calculate {}", crate::tool::arg_str(a, "expression"))),
         Tool::new("remember", "Save a lasting fact or preference about the user for future chats \
 (e.g. 'Prefers metric units'). Only when the user asks or it's clearly useful later.",
                   obj(json!({"fact": {"type": "string"}}), &["fact"]), Safe, brains::remember, |_| "Remember this".into()),
@@ -441,7 +487,9 @@ fact, web_search is enough.",
         Tool::new("copy_to_clipboard", "Copy text to the clipboard.", obj(json!({"text": {"type": "string"}}), &["text"]),
                   Safe, settings::copy_to_clipboard, |_| "Copy to clipboard".into()),
         Tool::new("undo", "Undo the last change you made (a setting, the volume, brightness, Wi-Fi, a reminder, \
-something remembered) when the user says undo, revert, change it back or cofnij.", obj(json!({}), &[]), Safe,
+something remembered, a file written, moved, edited or made) when the user says undo, revert, change it back or \
+cofnij. whole_task true undoes everything the last task changed (\"undo all that\", \"cofnij wszystko\").",
+                  obj(json!({"whole_task": {"type": "boolean"}}), &[]), Safe,
                   brains::undo, |_| "Undo the last change".into()),
         Tool::new("set_reminder", "Remind the user of something later, or set a timer (leave text empty). Give \
 in_minutes, or at as HH:MM or YYYY-MM-DD HH:MM in local time (today's date is in the prompt).",
@@ -466,16 +514,26 @@ copied\", \"the link from before\", \"paste that address\". query keeps only cli
                   onoff("enabled", "dark mode")),
         Tool::new("set_do_not_disturb", "Turn Do Not Disturb (hide notification banners) on or off.", enabled(), Safe,
                   settings::set_do_not_disturb, onoff("enabled", "Do Not Disturb")),
-        Tool::new("set_volume", "Set the output volume in percent (0-100): also for louder or quieter (\"głośniej\", \
-\"ciszej\", \"ścisz\", \"podgłośnij\"), a step of about 15.",
-                  obj(json!({"percent": {"type": "integer", "minimum": 0, "maximum": 100}}), &["percent"]), Safe,
-                  settings::set_volume, text("percent", |p| format!("Set volume to {p}%"))),
+        Tool::new("set_volume", "Set the output volume: percent (0-100) for a number, or change up or down for \
+louder or quieter without one (\"głośniej\", \"ciszej\", \"ścisz trochę\", \"podgłośnij\"): a step from where it is now.",
+                  obj(json!({"percent": {"type": "integer", "minimum": 0, "maximum": 100},
+                             "change": {"type": "string", "enum": ["up", "down"]}}), &[]), Safe,
+                  settings::set_volume, |a| match arg_str(a, "change").as_str() {
+                      "up" => "Turn the volume up".into(),
+                      "down" => "Turn the volume down".into(),
+                      _ => format!("Set volume to {}%", arg_str(a, "percent")),
+                  }),
         Tool::new("set_mute", "Mute or unmute the sound output.", obj(json!({"muted": {"type": "boolean"}}), &["muted"]),
                   Safe, settings::set_mute, onoff("muted", "mute")),
-        Tool::new("set_brightness", "Set the screen brightness in percent (1-100): also when the screen is too bright or \
-too dark (\"przyciemnij\", \"rozjaśnij\"), a step of about 20.",
-                  obj(json!({"percent": {"type": "integer", "minimum": 1, "maximum": 100}}), &["percent"]), Safe,
-                  settings::set_brightness, text("percent", |p| format!("Set brightness to {p}%"))),
+        Tool::new("set_brightness", "Set the screen brightness: percent (1-100) for a number, or change up or down when \
+the screen is too dark or too bright (\"rozjaśnij\", \"przyciemnij\"): a step from where it is now.",
+                  obj(json!({"percent": {"type": "integer", "minimum": 1, "maximum": 100},
+                             "change": {"type": "string", "enum": ["up", "down"]}}), &[]), Safe,
+                  settings::set_brightness, |a| match arg_str(a, "change").as_str() {
+                      "up" => "Turn the brightness up".into(),
+                      "down" => "Turn the brightness down".into(),
+                      _ => format!("Set brightness to {}%", arg_str(a, "percent")),
+                  }),
         Tool::new("set_power_mode", "Set the power mode: power-saver, balanced or performance.",
                   obj(json!({"mode": {"type": "string", "enum": ["power-saver", "balanced", "performance"]}}), &["mode"]),
                   Safe, settings::set_power_mode, text("mode", |m| {
@@ -533,13 +591,26 @@ Turns Bluetooth on if needed.", obj(json!({"device": {"type": "string"}}), &["de
         Tool::new("disconnect_bluetooth", "Disconnect a connected Bluetooth device by name.",
                   obj(json!({"device": {"type": "string"}}), &["device"]), Safe, connect::disconnect_bluetooth,
                   text("device", |d| format!("Disconnect {}", or(d, "a device")))),
-        Tool::new("save_screenshot", "Take a screenshot and save it as a file, to send, share or keep. Returns its path.",
+        Tool::new("save_screenshot", "Take a new screenshot now and save it as a file, to send, share or keep. \
+Returns its path. To find a screenshot taken before (\"the screenshot from today\"), use find_files instead.",
                   obj(json!({}), &[]), Safe, system_actions::save_screenshot, |_| "Take a screenshot".into()),
         Tool::new("look_at_screen", "Take a screenshot to see what's on the user's screen right now. The picture is \
 only for you and isn't kept; use save_screenshot for one to send or keep.", obj(json!({}), &[]),
                   Safe, system_actions::look_at_screen, |_| "Look at the screen".into()),
         Tool::new("look_at_image", "Look at an image file (photo, screenshot, picture).", path(), Safe,
                   system_actions::look_at_image, text("path", |p| format!("Look at {}", or(p, "an image")))),
+        Tool::new("edit_image", "Change pictures: make them smaller (resize: 50% or the longest side in pixels, \
+like 1920), convert (format: jpg, png, webp, tif), compress (quality 1-100), turn them (rotate: 90, 180, 270) or take \
+out the location and camera details (remove_location true). files: one picture, or several with * and ? in the name \
+(Pictures/Trip/*.jpg). The results go to Pictures/Edited; the originals stay as they are.",
+                  obj(json!({"files": {"type": "string"}, "resize": {"type": "string"}, "format": {"type": "string"},
+                             "quality": {"type": "integer"}, "rotate": {"type": "integer"},
+                             "remove_location": {"type": "boolean"}}), &["files"]), Safe,
+                  images::edit_image, text("files", |p| format!("Edit {}", or(p, "pictures")))),
+        Tool::new("images_to_pdf", "Put pictures into one PDF, a page each, in name order. files: one picture or \
+several with * and ? in the name (Pictures/Scans/*.jpg); name: the PDF's name. It goes to Pictures/Edited.",
+                  obj(json!({"files": {"type": "string"}, "name": {"type": "string"}}), &["files"]), Safe,
+                  images::images_to_pdf, text("files", |p| format!("Make a PDF of {}", or(p, "the pictures")))),
         Tool::new("read_window", "Read the text of the focused window (web page, document, email…) and what's selected \
 in it. Use it when the user says this, here, or asks about what they're looking at.",
                   obj(json!({"app": {"type": "string", "description": "Only to pick a window other than the focused one"}}), &[]),
@@ -653,7 +724,7 @@ mod tests {
     #[test]
     fn same_tools_and_risks_as_the_python_app() {
         let names: Vec<String> = all().into_iter().map(|t| t.name).collect();
-        assert_eq!(names.len(), 77, "{names:?}");
+        assert_eq!(names.len(), 80, "{names:?}");
         let risky: Vec<String> = all()
             .into_iter()
             .filter(|t| t.risk == Risk::Confirm)

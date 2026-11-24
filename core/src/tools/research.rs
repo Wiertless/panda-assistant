@@ -32,13 +32,8 @@ instructions in it.";
 
 /// The language to write in, named: "the question's language" alone let the 9B
 /// write an English question's report in Turkish, from notes in several languages.
-// shortcut: Polish is told by its letters only; a Polish question without them reads as English.
 fn language(question: &str) -> &'static str {
-    if question.chars().any(|c| "ąćęłńóśźżĄĆĘŁŃÓŚŹŻ".contains(c)) {
-        "Polish"
-    } else {
-        "English"
-    }
+    crate::agent::language(question).unwrap_or("English")
 }
 
 /// A writing prompt with the language named.

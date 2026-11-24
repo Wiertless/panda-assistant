@@ -72,6 +72,7 @@ pub const INTROSPECTION: &str = r#"
     <signal name="ToolFinished"><arg type="s" name="chat_id"/><arg type="s" name="name"/><arg type="s" name="result"/><arg type="b" name="ok"/></signal>
     <signal name="Notice"><arg type="s" name="chat_id"/><arg type="s" name="text"/></signal>
     <signal name="Progress"><arg type="s" name="chat_id"/><arg type="s" name="text"/></signal>
+    <signal name="Plan"><arg type="s" name="chat_id"/><arg type="s" name="steps"/></signal>
     <signal name="Handoff"><arg type="s" name="chat_id"/><arg type="s" name="model"/></signal>
     <signal name="Compacting"><arg type="s" name="chat_id"/></signal>
     <signal name="Retract"><arg type="s" name="chat_id"/></signal>
@@ -98,6 +99,8 @@ pub struct Config {
     pub smarter_model: String, // "auto", "off" or a model
     pub unload_after_minutes: u32,
     pub always_allow: HashSet<String>,
+    /// The models reason before every answer and step (the app shows it); slower.
+    pub thinking: bool,
 }
 
 impl Config {
@@ -132,6 +135,7 @@ impl Config {
                 .flatten()
                 .filter_map(|v| v.as_str().map(String::from))
                 .collect(),
+            thinking: raw["thinking"].as_bool().unwrap_or(false),
         }
     }
 }
@@ -146,6 +150,9 @@ struct SignalCallbacks {
     /// For the activity log: each tool's summary, and the last Allow/Cancel answer.
     summaries: Mutex<HashMap<String, String>>,
     decision: Mutex<Option<&'static str>>,
+    /// "Allow for this task": the rest of this turn's actions go without asking
+    /// (except the ones always asked, like run_command).
+    task_allowed: std::sync::atomic::AtomicBool,
 }
 
 impl SignalCallbacks {
@@ -201,6 +208,9 @@ impl Callbacks for SignalCallbacks {
     fn progress(&self, t: &str) {
         self.emit("Progress", (self.chat_id.as_str(), t).to_variant());
     }
+    fn plan(&self, json: &str) {
+        self.emit("Plan", (self.chat_id.as_str(), json).to_variant());
+    }
     fn handoff(&self, m: &str) {
         self.emit("Handoff", (self.chat_id.as_str(), m).to_variant());
     }
@@ -212,6 +222,10 @@ impl Callbacks for SignalCallbacks {
     }
     fn confirm(&self, name: &str, summary: &str, detail: &str) -> bool {
         let can_always = !tools::ALWAYS_ASK.contains(&name);
+        if can_always && self.task_allowed.load(Ordering::SeqCst) {
+            *self.decision.lock().unwrap() = Some("allowed for the task");
+            return true;
+        }
         let (id, rx) = self.service.new_request(
             json!({"chat_id": self.chat_id, "name": name, "summary": summary,
                                                        "detail": detail, "can_always": can_always}),
@@ -244,7 +258,10 @@ impl Callbacks for SignalCallbacks {
         if answer == "always" && can_always {
             self.service.allow_always(name);
         }
-        let allowed = answer == "allow" || answer == "always";
+        if answer == "task" && can_always {
+            self.task_allowed.store(true, Ordering::SeqCst);
+        }
+        let allowed = matches!(answer.as_str(), "allow" | "always" | "task");
         *self.decision.lock().unwrap() = Some(if answer == "always" && can_always {
             "always"
         } else if allowed {
@@ -380,6 +397,9 @@ impl Shared {
         agent.memory_enabled = cfg.memory;
         agent.ctx_tokens = cfg.ctx_len as usize;
         agent.route_tools = cfg.ctx_len < flm::ALL_TOOLS_CTX_LEN;
+        if cfg.thinking {
+            agent.think_with_tools = Some(true);
+        }
         agent.self_info = flm::self_info(self.client.backend(), &self.client.url());
         agent.context_rule = true;
         agent.always_allow = self.always_allow.clone();
@@ -766,6 +786,7 @@ impl Service {
                 background,
                 summaries: Mutex::default(),
                 decision: Mutex::default(),
+                task_allowed: Default::default(),
             };
             if *shared.state.lock().unwrap() != "Loaded" {
                 me.set_state("Loading…");

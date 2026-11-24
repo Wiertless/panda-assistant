@@ -982,8 +982,13 @@
    {
     "tool": "set_volume",
     "args": {
-     "percent": "30|35|40|45|50|55|60|65"
-    }
+     "change": "down"
+    },
+    "or_args": [
+     {
+      "percent": "30|35|40|45|50|55|60|65"
+     }
+    ]
    }
   ],
   "forbid": [
@@ -3465,7 +3470,12 @@
     "tool": "set_volume",
     "args": {
      "percent": "55|60|65|70|75|80"
-    }
+    },
+    "or_args": [
+     {
+      "change": "up"
+     }
+    ]
    }
   ],
   "paraphrases": [
@@ -3753,6 +3763,287 @@
   ],
   "paraphrases": [
    "[On screen: Firefox — “GitHub”. Selected text: «https://github.com/JeyKul/kinect-hello»\n[/On screen]\n\nwłącz tryb ciemny"
+  ]
+ },
+ {
+  "name": "thanks after polish mail",
+  "before": [
+   "whats on my mail"
+  ],
+  "stubs": {
+   "search_mail": "Mail matching “”, newest first:\n[uni:1] noreply@moodle.example.pl — Masz zadania do oddania w ciągu 7 dni (Monday 2026-11-23 01:13, the newest)\n  Drogi użytkowniku, następujące zadania należy oddać do poniedziałku.\n[home:2] Jolanta Markowska — Umowa (Saturday 2026-11-21 17:48)\n  Dzień dobry, w załączniku przesyłam umowę do podpisu."
+  },
+  "prompt": "thanks",
+  "no_tools": true,
+  "answer": [
+   "welcome|glad|anytime|problem|happy|sure|let me know"
+  ],
+  "tags": [
+   "no-tool",
+   "multi-turn",
+   "language"
+  ],
+  "paraphrases": [
+   "thank you"
+  ]
+ },
+ {
+  "name": "percent (pl)",
+  "prompt": "ile to 15% z 240?",
+  "answer": [
+   "36",
+   "wynosi|jest|równa|daje|procent"
+  ],
+  "tags": [
+   "answer",
+   "polish",
+   "language"
+  ],
+  "paraphrases": [
+   "policz 15 procent z 240",
+   "ile to 15 proc z 79,2?"
+  ]
+ },
+ {
+  "name": "shrink photos",
+  "prompt": "make the photos in Pictures/Trip smaller, they're too big to send",
+  "stubs": {
+   "edit_image": "Saved 12 of 12 in ~/Pictures/Edited (the originals are unchanged):\n~/Pictures/Edited/IMG_1.jpg: 4.1 MB 4032×3024 → 0.6 MB 1920×1440"
+  },
+  "expect": [
+   {
+    "tool": "edit_image",
+    "args": {
+     "files": "Trip",
+     "resize": "%|1920|1600|1280|1024|2048"
+    }
+   }
+  ],
+  "answer": [
+   "12|Edited"
+  ],
+  "tags": [
+   "single",
+   "files",
+   "agent"
+  ],
+  "paraphrases": [
+   "zmniejsz zdjęcia z Pictures/Trip"
+  ]
+ },
+ {
+  "name": "scans to pdf",
+  "prompt": "put all the jpg scans in Documents/Scans into one pdf called lease",
+  "stubs": {
+   "images_to_pdf": "Made ~/Pictures/Edited/lease.pdf from 4 pictures (2.3 MB)"
+  },
+  "expect": [
+   {
+    "tool": "images_to_pdf",
+    "args": {
+     "files": "Scans",
+     "name": "lease"
+    }
+   }
+  ],
+  "answer": [
+   "lease"
+  ],
+  "tags": [
+   "single",
+   "files",
+   "agent"
+  ]
+ },
+ {
+  "name": "undo all that",
+  "before": [
+   "make the photos in Pictures/Trip smaller"
+  ],
+  "stubs": {
+   "edit_image": "Saved 12 of 12 in ~/Pictures/Edited",
+   "undo": "Undid “Edit 12 pictures”: removed 12 new files."
+  },
+  "prompt": "undo all that",
+  "expect": [
+   {
+    "tool": "undo",
+    "args": {
+     "whole_task": "true"
+    }
+   }
+  ],
+  "tags": [
+   "single",
+   "agent",
+   "multi-turn"
+  ],
+  "paraphrases": [
+   "cofnij wszystko"
+  ]
+ },
+ {
+  "name": "tip math",
+  "prompt": "what's a 18% tip on 64.50?",
+  "expect": [
+   {
+    "tool": "calculate"
+   }
+  ],
+  "stubs": {
+   "calculate": "18% * 64.50 = 11.61"
+  },
+  "answer": [
+   "11.61"
+  ],
+  "tags": [
+   "single",
+   "answer"
+  ]
+ },
+ {
+  "name": "think, don't hand off",
+  "prompt": "think about why the sky is blue",
+  "smarter": true,
+  "forbid": [
+   "ask_smarter_model"
+  ],
+  "answer": [
+   "scatter|rayleigh|rozprasz"
+  ],
+  "tags": [
+   "no-tool",
+   "escalate"
+  ],
+  "paraphrases": [
+   "explain why the sky is blue",
+   "zastanów się, dlaczego niebo jest niebieskie"
+  ]
+ },
+ {
+  "name": "asked for the smarter model",
+  "prompt": "ask the smarter model why the sky is blue",
+  "smarter": true,
+  "expect": [
+   {
+    "tool": "ask_smarter_model"
+   }
+  ],
+  "tags": [
+   "escalate"
+  ],
+  "paraphrases": [
+   "zapytaj mądrzejszy model, dlaczego niebo jest niebieskie",
+   "let the bigger model answer this: why is the sky blue?"
+  ]
+ },
+ {
+  "name": "think after a hand-off",
+  "before": [
+   "ask the smarter model why the sky is blue"
+  ],
+  "prompt": "think about why the sky is blue",
+  "smarter": true,
+  "forbid": [
+   "ask_smarter_model"
+  ],
+  "answer": [
+   "scatter|rayleigh"
+  ],
+  "tags": [
+   "no-tool",
+   "escalate",
+   "multi-turn"
+  ]
+ },
+ {
+  "name": "shrink and send",
+  "prompt": "make the photos in Pictures/Trip smaller and send them to my phone",
+  "stubs": {
+   "edit_image": "Saved 3 of 3 in ~/Pictures/Edited (the originals are unchanged):\n~/Pictures/Edited/a.jpg: 4.1 MB 4032×3024 → 0.6 MB 1920×1440",
+   "send_file": "Sent to jakubs-iphone."
+  },
+  "expect": [
+   {
+    "tool": "edit_image",
+    "args": {
+     "files": "Trip"
+    }
+   },
+   {
+    "tool": "send_file",
+    "args": {
+     "path": "Edited"
+    }
+   }
+  ],
+  "tags": [
+   "chain",
+   "files",
+   "agent"
+  ],
+  "paraphrases": [
+   "zmniejsz zdjęcia z Pictures/Trip i wyślij je na telefon"
+  ]
+ },
+ {
+  "name": "today's screenshot to pdf to phone",
+  "prompt": "find the screenshot from today in my pictures, turn it into a pdf and send it to my phone",
+  "stubs": {
+   "find_files": "~/Pictures/Screenshots/Screenshot From 2026-11-15 09-12-03.png (1.2 MB, 2026-11-15)\n~/Pictures/Screenshots/Screenshot From 2026-11-12 18-40-11.png (0.9 MB, 2026-11-12)",
+   "images_to_pdf": "Made ~/Pictures/Edited/screenshot.pdf from 1 pictures (180 KB)",
+   "send_file": "Sent screenshot.pdf to jakubs-iphone with Taildrop."
+  },
+  "expect": [
+   {
+    "tool": "find_files|list_folder"
+   },
+   {
+    "tool": "images_to_pdf",
+    "args": {
+     "files": "2026-11-15"
+    }
+   },
+   {
+    "tool": "send_file",
+    "args": {
+     "path": ".pdf"
+    }
+   }
+  ],
+  "forbid": [
+   "save_screenshot"
+  ],
+  "tags": [
+   "chain",
+   "files",
+   "agent",
+   "polish"
+  ],
+  "paraphrases": [
+   "przeszukaj zdjecia i znajdz screenshota z dzisiejsza data, zmien go na pdf i wyslij na telefon"
+  ]
+ },
+ {
+  "name": "song, artist, send",
+  "prompt": "search for make you mine in music and tell me the artist then send it to my phone",
+  "stubs": {
+   "play_music": "Playing Make you mine by Charli XCX in Gapless.",
+   "find_files": "~/Music/Charli XCX/Make you mine.flac (31 MB, 2025-06-01)",
+   "send_file": "Sent Make you mine.flac to jakubs-iphone with Taildrop.",
+   "send_text": "Sent the note to jakubs-iphone with Taildrop."
+  },
+  "expect": [
+   {
+    "tool": "send_file|send_text"
+   }
+  ],
+  "answer": [
+   "charli"
+  ],
+  "tags": [
+   "chain",
+   "agent"
   ]
  }
 ]

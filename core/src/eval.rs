@@ -50,6 +50,12 @@ pub struct Variant {
     pub context_rule: Option<bool>,
     /// The list_servers tool.
     pub local_servers: Option<bool>,
+    /// Thinking before every request (the app's Think First toggle).
+    pub think: Option<bool>,
+    /// The plan tool (default on).
+    pub planning: Option<bool>,
+    /// A one-action request ends with its tool's confirmation (default on).
+    pub quick_confirm: Option<bool>,
     /// Stand-ins for the prompt fragments: web, memory, escalate, nudge.
     #[serde(default)]
     pub prompt_parts: std::collections::HashMap<String, String>,
@@ -98,6 +104,15 @@ pub struct Expect {
     /// Each value must appear in the argument (any of "a|b"), ignoring case.
     #[serde(default)]
     pub args: serde_json::Map<String, Value>,
+    /// Other argument sets that are right too ({"percent": "65"} or {"change": "up"}).
+    #[serde(default)]
+    pub or_args: Vec<serde_json::Map<String, Value>>,
+}
+
+impl Expect {
+    fn fits(&self, args: &Args) -> bool {
+        args_match(&self.args, args) || self.or_args.iter().any(|o| args_match(o, args))
+    }
 }
 
 #[derive(Deserialize, Clone)]
@@ -140,6 +155,10 @@ pub struct Scenario {
     pub answer: Vec<String>,
     #[serde(default)]
     pub no_tools: bool,
+    /// A smarter model is there to hand off to (a stand-in answers; the hand-off is
+    /// judged as an ask_smarter_model call).
+    #[serde(default)]
+    pub smarter: bool,
     /// The expected calls may come in any order (independent steps).
     #[serde(default)]
     pub unordered: bool,
@@ -219,8 +238,7 @@ pub fn judge(s: &Scenario, calls: &[(String, Args)], answer: &str) -> Result<(),
     let mut next = 0;
     for want in &s.expect {
         let names: Vec<&str> = want.tool.split('|').collect();
-        let fits =
-            |(n, a): &(String, Args)| names.contains(&n.as_str()) && args_match(&want.args, a);
+        let fits = |(n, a): &(String, Args)| names.contains(&n.as_str()) && want.fits(a);
         let from = if s.unordered { 0 } else { next };
         match calls[from..].iter().position(fits) {
             Some(i) => next = from + i + 1,
@@ -253,7 +271,7 @@ pub fn judge(s: &Scenario, calls: &[(String, Args)], answer: &str) -> Result<(),
         let names: Vec<&str> = want.tool.split('|').collect();
         if !calls
             .iter()
-            .any(|(n, a)| names.contains(&n.as_str()) && args_match(&want.args, a))
+            .any(|(n, a)| names.contains(&n.as_str()) && want.fits(a))
         {
             return Err(format!(
                 "never called {}{}",
@@ -350,6 +368,21 @@ pub fn run(
     });
     agent.context_rule = v.context_rule.unwrap_or(true);
     agent.local_servers = v.local_servers.unwrap_or(false);
+    agent.planning = v.planning.unwrap_or(true);
+    agent.quick_confirm = v.quick_confirm.unwrap_or(true);
+    if v.think == Some(true) {
+        agent.think_with_tools = Some(true);
+    }
+    if s.smarter {
+        agent.smarter_model = Some("the smarter model".into());
+        let log = calls.clone();
+        agent.escalate_stub = Some(Arc::new(move |task: &str| {
+            let mut a = Args::new();
+            a.insert("task".into(), json!(task));
+            log.lock().unwrap().push(("ask_smarter_model".into(), a));
+            "Here is the full answer from the smarter model.".into()
+        }));
+    }
     let embedder = embedder.filter(|_| v.embed.unwrap_or(true));
     agent.embedder = embedder.cloned();
     agent.log_rounds = false;
@@ -705,7 +738,8 @@ mod tests {
 
     #[test]
     fn scenarios_load_and_name_real_tools() {
-        let names: Vec<String> = crate::tools::all().into_iter().map(|t| t.name).collect();
+        let mut names: Vec<String> = crate::tools::all().into_iter().map(|t| t.name).collect();
+        names.push(crate::agent::ESCALATE.into()); // the hand-off, judged like a tool
         for s in load(None).unwrap() {
             for e in &s.expect {
                 assert!(

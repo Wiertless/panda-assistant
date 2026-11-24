@@ -72,7 +72,7 @@ pub fn relative_time(stamp: f64) -> String {
 
 /// How a saved user message reads in the chat: skill runs as /name.
 /// Ends the screen context a pop-up question starts with (see `Window::popup`).
-pub const CONTEXT_END: &str = "\n[/On screen]\n\n";
+pub use assistant_core::agent::CONTEXT_END;
 
 pub fn shown_user_text(content: &str) -> String {
     let content = match content.split_once(CONTEXT_END) {
@@ -102,7 +102,13 @@ pub fn shown_user_text(content: &str) -> String {
 pub struct State {
     pub model: String,
     pub models: Vec<Model>,
+    /// This chat's answer is under way (Send turns into Stop).
     pub busy: bool,
+    /// The chat whose answer the service is working on, here or in another chat
+    /// (one at a time: the NPU runs one model).
+    pub working: Option<String>,
+    /// Chats whose answer finished while another chat was open (a mark in the list).
+    pub unseen: std::collections::HashSet<String>,
     pub chat_id: String,
     pub last_turn: Option<Instant>,
     pub attachments: Vec<(gdk::Texture, String)>,
@@ -143,6 +149,7 @@ pub struct Window {
     scroller: gtk::ScrolledWindow,
     entry: gtk::Entry,
     send_btn: gtk::Button,
+    think_btn: gtk::ToggleButton,
     attach_box: gtk::Box,
     attach_revealer: gtk::Revealer,
     pub split: adw::NavigationSplitView,
@@ -151,13 +158,18 @@ pub struct Window {
     chat_stack: gtk::Stack,
     no_chats: adw::StatusPage,
     greeting: gtk::Label,
-    toasts: adw::ToastOverlay,
+    pub toasts: adw::ToastOverlay,
     model_menu: gio::Menu,
     model_action: gio::SimpleAction,
     unload_action: gio::SimpleAction,
     zoom_css: gtk::CssProvider,
     loading: Rc<Cell<bool>>,
 }
+
+/// The chat column's widest (messages and composer).
+const CHAT_WIDTH: i32 = 1500;
+/// Space between the chat and the window's sides.
+const CHAT_PADDING: i32 = 24;
 
 fn button(icon: &str, tip: &str) -> gtk::Button {
     gtk::Button::builder()
@@ -220,9 +232,13 @@ impl Window {
             .margin_end(12)
             .build();
         messages.add_css_class("conversation");
+        // Wider than GNOME's usual reading column: on a desktop the chat uses the window,
+        // as desktop chat apps do; very wide windows still keep margins.
         let clamp = adw::Clamp::builder()
-            .maximum_size(720)
-            .tightening_threshold(560)
+            .maximum_size(CHAT_WIDTH)
+            .tightening_threshold(CHAT_WIDTH - 200)
+            .margin_start(CHAT_PADDING)
+            .margin_end(CHAT_PADDING)
             .child(&messages)
             .build();
         let scroller = gtk::ScrolledWindow::builder()
@@ -249,8 +265,20 @@ impl Window {
         let send_btn = button("go-up-symbolic", "Send");
         send_btn.add_css_class("suggested-action");
         send_btn.add_css_class("circular");
+        // Thinking on: the models reason before every answer and step (shown above
+        // the answer), slower; off: they answer straight away.
+        let think_btn = gtk::ToggleButton::builder()
+            .icon_name("dialog-information-symbolic")
+            .tooltip_text("Think First (slower, shows its reasoning)")
+            .valign(gtk::Align::Center)
+            .active(config::bool_or(&cfg, "thinking", false))
+            .build();
+        think_btn.add_css_class("flat");
+        think_btn.add_css_class("circular");
+        think_btn.add_css_class("think-toggle");
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         row.append(&entry);
+        row.append(&think_btn);
         row.append(&attach_btn);
         row.append(&send_btn);
         let attach_box = gtk::Box::builder()
@@ -267,8 +295,10 @@ impl Window {
         composer.append(&attach_revealer);
         composer.append(&row);
         let composer_clamp = adw::Clamp::builder()
-            .maximum_size(720)
-            .tightening_threshold(560)
+            .maximum_size(CHAT_WIDTH)
+            .tightening_threshold(CHAT_WIDTH - 200)
+            .margin_start(CHAT_PADDING)
+            .margin_end(CHAT_PADDING)
             .child(&composer)
             .margin_top(6)
             .margin_bottom(16)
@@ -327,6 +357,8 @@ impl Window {
                 model,
                 models: vec![],
                 busy: false,
+                working: None,
+                unseen: Default::default(),
                 chat_id: store::new_chat_id(),
                 last_turn: None,
                 attachments: vec![],
@@ -360,6 +392,7 @@ impl Window {
             scroller,
             entry,
             send_btn,
+            think_btn,
             attach_box,
             attach_revealer,
             split,
@@ -430,6 +463,18 @@ impl Window {
             s.send()
         });
         self.send_btn.connect_clicked(move |_| f());
+        let w = weak.clone();
+        self.think_btn.connect_toggled(move |b| {
+            config::update(&[("thinking", json!(b.is_active()))]);
+            if let Some(s) = w() {
+                s.core.reload();
+                s.toast(if b.is_active() {
+                    "Thinking first: slower, and you can see its reasoning"
+                } else {
+                    "Answering straight away"
+                });
+            }
+        });
         let w = weak.clone();
         self.search.connect_search_changed(move |_| {
             if let Some(s) = w() {
@@ -703,6 +748,16 @@ impl Window {
                 let _ = WidgetExt::activate_action(&win, "win.delete-chat", Some(&id.to_variant()));
             });
             bx.append(&texts);
+            if self.st.borrow().working.as_deref() == Some(chat.id.as_str()) {
+                let spin = crate::reply::spinner();
+                spin.set_tooltip_text(Some("Working"));
+                bx.append(&spin);
+            } else if self.st.borrow().unseen.contains(&chat.id) {
+                let done = gtk::Image::from_icon_name("emblem-ok-symbolic");
+                done.add_css_class("accent");
+                done.set_tooltip_text(Some("Done"));
+                bx.append(&done);
+            }
             bx.append(&delete);
             row.set_child(Some(&bx));
             self.chat_list.append(&row);
@@ -737,10 +792,11 @@ impl Window {
     }
 
     pub fn open_chat(self: &Rc<Self>, id: &str) {
-        if self.st.borrow().busy || id == self.st.borrow().chat_id {
+        if id == self.st.borrow().chat_id {
             self.split.set_show_content(true);
             return;
         }
+        self.st.borrow_mut().unseen.remove(id);
         // A chat started from search is saved when its answer ends; until then
         // it only exists in the service, so open it empty and follow the turn.
         let running = || {
@@ -782,6 +838,7 @@ impl Window {
         }
         let pending = self.core.pending(&chat_id).unwrap_or(Value::Null);
         self.set_busy(true);
+        self.st.borrow_mut().working = Some(chat_id.clone());
         self.stack.set_visible_child_name("chat");
         if let Some(q) = status["question"].as_str().filter(|q| !q.is_empty()) {
             self.add_user(&shown_user_text(q), &[], true);
@@ -1148,7 +1205,7 @@ impl Window {
 
     fn on_model(self: &Rc<Self>, action: &gio::SimpleAction, value: &glib::Variant) {
         let name = value.get::<String>().unwrap_or_default();
-        if self.st.borrow().busy || name == self.st.borrow().model {
+        if self.working() || name == self.st.borrow().model {
             return;
         }
         action.set_state(value);
@@ -1164,7 +1221,7 @@ impl Window {
         self.st.borrow_mut().state = state.to_string();
         self.show_state();
         self.unload_action
-            .set_enabled(state == "Loaded" && !self.st.borrow().busy);
+            .set_enabled(state == "Loaded" && !self.working());
     }
 
     fn show_state(&self) {
@@ -1188,7 +1245,7 @@ impl Window {
     /// Restart the service (model server and connected apps too), then pick
     /// the chat back up from disk with fresh settings.
     pub fn restart(self: &Rc<Self>) {
-        if self.st.borrow().busy {
+        if self.working() {
             self.stop();
         }
         let before = self.core.owner();
@@ -1229,7 +1286,7 @@ impl Window {
     }
 
     pub fn unload(&self, manual: bool) {
-        if self.st.borrow().busy {
+        if self.working() {
             return;
         }
         self.core.unload();
@@ -1240,9 +1297,7 @@ impl Window {
 
     // -- chat ------------------------------------------------------------------------
     pub fn new_chat(self: &Rc<Self>) {
-        if self.st.borrow().busy {
-            self.stop();
-        }
+        self.leave_chat();
         {
             let mut st = self.st.borrow_mut();
             st.chat_id = store::new_chat_id();
@@ -1258,6 +1313,44 @@ impl Window {
         self.split.set_show_content(true);
         self.stack.set_visible_child_name("empty");
         self.entry.grab_focus();
+    }
+
+    /// Going to another chat: an answer under way here goes on in the service (its
+    /// view stops being shown; the list shows it's working, and it says when it's done).
+    fn leave_chat(&self) {
+        if self.st.borrow().busy {
+            // What was queued here goes back to the text box: it belonged to this chat.
+            let queued = std::mem::take(&mut self.st.borrow_mut().queue);
+            self.restore(queued);
+            self.st.borrow_mut().reply = None;
+            self.set_busy(false);
+        }
+    }
+
+    /// A task this window didn't start (GNOME search, the pop-up) has no answer view here
+    /// to say it ended: check the service until it's done, then send what waited.
+    fn watch_other_task(self: &Rc<Self>) {
+        let w = self.weak();
+        glib::timeout_add_seconds_local(2, move || {
+            let Some(w) = w.upgrade() else {
+                return glib::ControlFlow::Break;
+            };
+            let running = w.core.status().is_ok_and(|s| s["busy"] == true);
+            if running && w.working() {
+                return glib::ControlFlow::Continue;
+            }
+            if w.working() && !w.st.borrow().busy {
+                w.st.borrow_mut().working = None;
+                w.refresh_chats();
+                w.send_queued();
+            }
+            glib::ControlFlow::Break
+        });
+    }
+
+    /// The service is answering somewhere (this chat or another).
+    pub fn working(&self) -> bool {
+        self.st.borrow().working.is_some()
     }
 
     pub fn ask(self: &Rc<Self>, text: &str) {
@@ -1324,7 +1417,17 @@ impl Window {
         self.show_attachments();
         self.stack.set_visible_child_name("chat");
         let bubble = self.add_user(&text, &thumbs, true);
-        if self.st.borrow().busy {
+        // A task started elsewhere (GNOME search, the pop-up) counts too.
+        if !self.working()
+            && let Ok(status) = self.core.status()
+            && status["busy"] == true
+            && let Some(other) = status["chat_id"].as_str()
+        {
+            self.st.borrow_mut().working = Some(other.to_string());
+            self.refresh_chats();
+            self.watch_other_task();
+        }
+        if self.st.borrow().busy || self.working() {
             self.queue_message(text, prompt, images, thumbs, bubble);
             return;
         }
@@ -1345,7 +1448,12 @@ impl Window {
             .spacing(6)
             .halign(gtk::Align::End)
             .build();
-        let label = gtk::Label::new(Some("Queued"));
+        // Waiting for this chat's answer, or for another chat's task (one at a time).
+        let label = gtk::Label::new(Some(if self.st.borrow().busy || !self.working() {
+            "Queued"
+        } else {
+            "Waits for the other task"
+        }));
         label.add_css_class("caption");
         let undo = gtk::Button::builder()
             .icon_name("edit-undo-symbolic")
@@ -1415,7 +1523,7 @@ impl Window {
 
     /// Send the next queued message, if any.
     fn send_queued(self: &Rc<Self>) {
-        if self.st.borrow().busy || self.st.borrow().queue.is_empty() {
+        if self.st.borrow().busy || self.working() || self.st.borrow().queue.is_empty() {
             return;
         }
         let q = self.st.borrow_mut().queue.remove(0);
@@ -1429,13 +1537,15 @@ impl Window {
         let reply = Reply::new(self, true, None);
         self.st.borrow_mut().reply = Some(reply.clone());
         let chat_id = self.st.borrow().chat_id.clone();
+        self.st.borrow_mut().working = Some(chat_id.clone());
+        self.refresh_chats();
         if let Err(e) = self.core.ask(&chat_id, prompt, images, reply.clone()) {
             reply.on_finished(&e);
         }
     }
 
     pub fn stop(&self) {
-        if self.st.borrow().busy {
+        if self.st.borrow().busy || self.working() {
             self.core.stop();
         }
         // Stopping means "not now": what was queued goes back to the text box.
@@ -1443,10 +1553,36 @@ impl Window {
         self.restore(queued);
     }
 
-    /// The service finished a turn (it has saved the chat).
-    pub fn turn_finished(self: &Rc<Self>, error: &str) {
-        let chat_id = self.st.borrow().chat_id.clone();
-        if let Some(data) = store::load_chat(&chat_id) {
+    /// The service finished a turn in `chat_id` (it has saved the chat).
+    pub fn turn_finished(self: &Rc<Self>, chat_id: &str, error: &str) {
+        self.st.borrow_mut().working = None;
+        if chat_id != self.st.borrow().chat_id {
+            // A task in another chat: say so, mark it in the list, and send what waited.
+            self.st.borrow_mut().unseen.insert(chat_id.to_string());
+            self.refresh_chats();
+            let title = store::load_chat(chat_id)
+                .and_then(|d| d["title"].as_str().map(String::from))
+                .unwrap_or_else(|| "The other task".into());
+            let toast = adw::Toast::builder()
+                .title(glib::markup_escape_text(&if error.is_empty() {
+                    format!("“{title}” is done")
+                } else {
+                    format!("“{title}” stopped")
+                }))
+                .button_label("_Open")
+                .action_name("app.open-chat")
+                .action_target(&chat_id.to_variant())
+                .build();
+            self.toasts.add_toast(toast);
+            let w = self.weak();
+            glib::idle_add_local_once(move || {
+                if let Some(w) = w.upgrade() {
+                    w.send_queued();
+                }
+            });
+            return;
+        }
+        if let Some(data) = store::load_chat(chat_id) {
             self.st.borrow_mut().messages =
                 data["messages"].as_array().cloned().unwrap_or_default();
         }

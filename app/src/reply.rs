@@ -5,6 +5,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
+use std::time::Instant;
 
 use adw::prelude::*;
 use gtk::gio;
@@ -44,7 +45,10 @@ fn tool_icon(name: &str) -> &'static str {
         "use_skill" => "view-list-bullet-symbolic",
         "save_skill" => "document-save-symbolic",
         "look_at_screen" => "camera-photo-symbolic",
-        "look_at_image" => "image-x-generic-symbolic",
+        "look_at_image" | "edit_image" => "image-x-generic-symbolic",
+        "images_to_pdf" => "x-office-document-symbolic",
+        "calculate" => "accessories-calculator-symbolic",
+        "undo" => "edit-undo-symbolic",
         "run_command" => "utilities-terminal-symbolic",
         "send_file" => "send-to-symbolic",
         "list_devices" => "network-workgroup-symbolic",
@@ -58,13 +62,192 @@ fn tool_icon(name: &str) -> &'static str {
     }
 }
 
+/// What a step touched, for its menu: a web link, or a file or folder.
+enum Target {
+    Link(String),
+    File(std::path::PathBuf),
+}
+
+/// A step's summary in plain words, and what it touched. "Read https://…" reads "Read
+/// a web page" and "Edit ~/Obrazy/Zrzuty ekranu/a.png" reads "Edit a.png"; the link or
+/// path goes in the details and the step's menu.
+fn plain_step(name: &str, summary: &str) -> (String, Vec<Target>) {
+    let home = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default());
+    let words: Vec<&str> = summary.split(' ').collect();
+    let clean = |w: &str| {
+        w.trim_matches(|c: char| matches!(c, '“' | '”' | '"' | '\'' | ',' | ')' | '('))
+            .to_string()
+    };
+    let resolve = |w: &str| -> std::path::PathBuf {
+        match w.strip_prefix("~/") {
+            Some(rest) => home.join(rest),
+            None if w.starts_with('/') => w.into(),
+            None => home.join(w),
+        }
+    };
+    let mut label = summary.to_string();
+    let mut targets = vec![];
+    let mut i = 0;
+    while i < words.len() {
+        let w = clean(words[i]);
+        if w.starts_with("http://") || w.starts_with("https://") {
+            let url = w.trim_end_matches(['.', ',']).to_string();
+            label = match name {
+                "read_web_page" => "Read a web page".into(),
+                "open_url" => "Open a link".into(),
+                _ => label.replace(words[i], "a link"),
+            };
+            targets.push(Target::Link(url));
+            i += 1;
+            continue;
+        }
+        if !w.contains('/') || w.len() < 3 {
+            i += 1;
+            continue;
+        }
+        // The longest run of words from here that is a real path (folders with spaces).
+        let mut found = None;
+        for end in (i + 1..=words.len()).rev() {
+            let text = clean(&words[i..end].join(" "));
+            let path = resolve(&text);
+            let pattern = path
+                .file_name()
+                .is_some_and(|n| n.to_string_lossy().contains(['*', '?']));
+            let real = if pattern {
+                path.parent().map(|p| p.to_path_buf())
+            } else {
+                Some(path.clone())
+            };
+            if let Some(real) = real.filter(|p| p.exists()) {
+                found = Some((end, text, path, real, pattern));
+                break;
+            }
+        }
+        let Some((end, text, path, real, pattern)) = found else {
+            i += 1;
+            continue;
+        };
+        let name_of = |p: &std::path::Path| {
+            p.file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default()
+        };
+        let shown = if pattern {
+            format!("{}/{}", name_of(&real), name_of(&path))
+        } else {
+            name_of(&real)
+        };
+        label = label.replace(&text, &shown);
+        targets.push(Target::File(real));
+        i = end;
+    }
+    (label, targets)
+}
+
+/// The step's menu (as Fractal does for a message: a button on hover or focus, and
+/// right-click), with what fits what it touched: Copy Link and Open in Browser, or
+/// Open, Show in Files and Copy Path.
+fn step_menu(pill: &gtk::Box, targets: &[Target], win: Weak<Window>) {
+    if targets.is_empty() {
+        return;
+    }
+    let actions = gio::SimpleActionGroup::new();
+    let menu = gio::Menu::new();
+    let copy = |text: String, toast: &'static str, w: Weak<Window>| {
+        move |_: &gio::SimpleAction, _: Option<&glib::Variant>| {
+            if let Some(d) = gtk::gdk::Display::default() {
+                d.clipboard().set_text(&text);
+            }
+            if let Some(w) = w.upgrade() {
+                w.toast(toast);
+            }
+        }
+    };
+    let open = |uri: String| {
+        move |_: &gio::SimpleAction, _: Option<&glib::Variant>| {
+            let _ = gio::AppInfo::launch_default_for_uri(&uri, None::<&gio::AppLaunchContext>);
+        }
+    };
+    let add =
+        |id: &str, label: &str, f: Box<dyn Fn(&gio::SimpleAction, Option<&glib::Variant>)>| {
+            let a = gio::SimpleAction::new(id, None);
+            a.connect_activate(f);
+            actions.add_action(&a);
+            menu.append(Some(label), Some(&format!("step.{id}")));
+        };
+    match &targets[0] {
+        Target::Link(url) => {
+            add("open", "_Open in Browser", Box::new(open(url.clone())));
+            add(
+                "copy",
+                "_Copy Link",
+                Box::new(copy(url.clone(), "Link copied", win)),
+            );
+        }
+        Target::File(path) => {
+            let uri = gio::File::for_path(path).uri().to_string();
+            add("open", "_Open", Box::new(open(uri.clone())));
+            add(
+                "show",
+                "_Show in Files",
+                Box::new(move |_, _| {
+                    // The file manager selects it (org.freedesktop.FileManager1).
+                    if let Ok(bus) =
+                        gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE)
+                    {
+                        bus.call(
+                            Some("org.freedesktop.FileManager1"),
+                            "/org/freedesktop/FileManager1",
+                            "org.freedesktop.FileManager1",
+                            "ShowItems",
+                            Some(&(vec![uri.as_str()], "").to_variant()),
+                            None,
+                            gio::DBusCallFlags::NONE,
+                            -1,
+                            gio::Cancellable::NONE,
+                            |_| {},
+                        );
+                    }
+                }),
+            );
+            add(
+                "copy",
+                "Copy _Path",
+                Box::new(copy(path.display().to_string(), "Path copied", win)),
+            );
+        }
+    }
+    pill.insert_action_group("step", Some(&actions));
+    let more = gtk::MenuButton::builder()
+        .icon_name("view-more-symbolic")
+        .tooltip_text("More")
+        .menu_model(&menu)
+        .valign(gtk::Align::Center)
+        .build();
+    more.add_css_class("flat");
+    more.add_css_class("circular");
+    more.add_css_class("step-more");
+    pill.append(&more);
+    let click = gtk::GestureClick::builder().button(3).build();
+    let (anchor, model) = (pill.clone(), menu.clone());
+    click.connect_pressed(move |_, _, x, y| {
+        let pop = gtk::PopoverMenu::from_model(Some(&model));
+        pop.set_has_arrow(false);
+        pop.set_parent(&anchor);
+        pop.set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+        pop.connect_closed(|p| p.unparent());
+        pop.popup();
+    });
+    pill.add_controller(click);
+}
+
 /// Notification text: markdown marks removed, cut at a word.
 fn plain(markdown: &str) -> String {
     assistant_core::search::plain(markdown, 400)
 }
 
 #[cfg(feature = "adw-1-8")]
-fn spinner() -> gtk::Widget {
+pub fn spinner() -> gtk::Widget {
     adw::Spinner::builder()
         .halign(gtk::Align::Start)
         .width_request(24)
@@ -74,7 +257,7 @@ fn spinner() -> gtk::Widget {
 }
 
 #[cfg(not(feature = "adw-1-8"))]
-fn spinner() -> gtk::Widget {
+pub fn spinner() -> gtk::Widget {
     gtk::Spinner::builder()
         .spinning(true)
         .halign(gtk::Align::Start)
@@ -89,10 +272,18 @@ struct Inner {
     answer: String,
     failure: String,
     stats: Option<serde_json::Value>,
+    /// The model's reasoning as it streams: the block, its text, when it began.
+    think: Option<(gtk::Expander, gtk::Label, String, Instant)>,
+    /// Steps under way: the row shown while it runs, and when it started.
+    running: HashMap<String, (gtk::Box, Instant)>,
+    /// The task's checklist, updated in place.
+    plan: Option<gtk::Box>,
 }
 
 pub struct Reply {
     win: Weak<Window>,
+    /// The chat this answer belongs to (another may be open by the time it ends).
+    chat_id: String,
     bx: gtk::Box,
     model_label: gtk::Label,
     spin: gtk::Box,
@@ -113,11 +304,11 @@ impl Reply {
         let title = gtk::Label::builder().label(APP_NAME).xalign(0.0).build();
         title.add_css_class("assistant-name");
         let model_label = gtk::Label::builder()
-            .label(
-                model
+            .label(assistant_core::flm::pretty_model(
+                &model
                     .map(String::from)
                     .unwrap_or_else(|| win.st.borrow().model.clone()),
-            )
+            ))
             .xalign(0.0)
             .build();
         model_label.add_css_class("dim-label");
@@ -143,6 +334,7 @@ impl Reply {
         }
         Rc::new(Self {
             win: win.weak(),
+            chat_id: win.st.borrow().chat_id.clone(),
             bx,
             model_label,
             spin,
@@ -154,6 +346,9 @@ impl Reply {
                 answer: String::new(),
                 failure: String::new(),
                 stats: None,
+                think: None,
+                running: HashMap::new(),
+                plan: None,
             }),
         })
     }
@@ -209,6 +404,17 @@ impl Reply {
         pill
     }
 
+    /// The reasoning is over (an answer or a step began): its block says for how long.
+    fn end_thinking(&self) {
+        if let Some((block, _, _, began)) = self.inner.borrow_mut().think.take() {
+            block.set_label(Some(&format!(
+                "Thought for {:.1} s",
+                began.elapsed().as_secs_f64()
+            )));
+            block.remove_css_class("live");
+        }
+    }
+
     pub fn error(&self, text: &str) {
         self.inner.borrow_mut().failure = text.into();
         let label = gtk::Label::builder()
@@ -222,6 +428,7 @@ impl Reply {
     }
 
     pub fn finish(&self, notify: bool) {
+        self.end_thinking();
         if self.spin.parent().is_some() {
             self.bx.remove(&self.spin);
         }
@@ -342,6 +549,12 @@ impl Reply {
             buttons.append(&b);
             b
         });
+        let task = can_always.then(|| {
+            let b = gtk::Button::with_mnemonic("Allow for This _Task");
+            b.set_tooltip_text(Some("Don't ask again until this task is done"));
+            buttons.append(&b);
+            b
+        });
         buttons.append(&allow);
         card.append(&head);
         if !detail.is_empty() {
@@ -378,10 +591,10 @@ impl Reply {
                 title.remove_css_class("heading");
                 title.set_label(&format!(
                     "{summary}: {}",
-                    if answer == "deny" {
-                        "cancelled"
-                    } else {
-                        "allowed"
+                    match answer {
+                        "deny" => "cancelled",
+                        "task" => "allowed for this task",
+                        _ => "allowed",
                     }
                 ));
                 if let Some(w) = me.win.upgrade() {
@@ -393,6 +606,10 @@ impl Reply {
         allow.connect_clicked(move |_| p("allow"));
         let p = pick.clone();
         cancel.connect_clicked(move |_| p("deny"));
+        if let Some(b) = task {
+            let p = pick.clone();
+            b.connect_clicked(move |_| p("task"));
+        }
         if let Some(b) = always {
             b.connect_clicked(move |_| pick("always"));
         }
@@ -450,6 +667,7 @@ impl Turn for Reply {
     }
 
     fn on_text(&self, s: &str) {
+        self.end_thinking();
         self.spin_label.set_label("Writing…");
         let mut i = self.inner.borrow_mut();
         if i.label.is_none() {
@@ -493,17 +711,61 @@ impl Turn for Reply {
         self.spin_label.set_label("Working…");
     }
 
-    /// The model's reasoning isn't shown, only that it's thinking.
-    fn on_reasoning(&self, _: &str) {
+    /// The reasoning streams into a block that opens on a click; it's closed by
+    /// default so the answer stays the main thing.
+    fn on_reasoning(&self, s: &str) {
         self.spin_label.set_label("Thinking…");
+        let mut i = self.inner.borrow_mut();
+        if i.think.is_none() {
+            let text = gtk::Label::builder()
+                .wrap(true)
+                .wrap_mode(gtk::pango::WrapMode::WordChar)
+                .xalign(0.0)
+                .selectable(true)
+                .build();
+            text.add_css_class("thinking-text");
+            let block = gtk::Expander::builder()
+                .label("Thinking…")
+                .child(&text)
+                .build();
+            block.add_css_class("thinking");
+            block.add_css_class("live");
+            self.before_spinner(&block);
+            i.think = Some((block, text, String::new(), Instant::now()));
+        }
+        let (_, text, all, _) = i.think.as_mut().unwrap();
+        all.push_str(s);
+        text.set_text(all.trim());
+        drop(i);
+        self.scroll();
     }
 
+    /// A step shows while it runs, with a spinner, and becomes its result when done.
     fn on_tool_started(&self, name: &str, summary: &str) {
+        self.end_thinking();
         self.set_summary(name, summary);
         self.spin_label.set_label(&format!("{summary}…"));
+        let row = gtk::Box::builder()
+            .spacing(8)
+            .halign(gtk::Align::Start)
+            .build();
+        row.add_css_class("pill");
+        row.add_css_class("quiet");
+        row.append(&spinner());
+        row.append(&gtk::Label::new(Some(&plain_step(name, summary).0)));
+        self.before_spinner(&row);
+        self.inner
+            .borrow_mut()
+            .running
+            .insert(name.into(), (row, Instant::now()));
+        self.scroll();
     }
 
     fn on_tool_finished(&self, name: &str, result: &str, ok: bool) {
+        let running = self.inner.borrow_mut().running.remove(name);
+        if let Some((row, _)) = &running {
+            self.bx.remove(row);
+        }
         if ok && assistant_core::tools::CARDS.contains(&name) && !result.starts_with("No ") {
             self.card(tool_icon(name), result);
             return;
@@ -518,12 +780,12 @@ impl Turn for Reply {
                 .get(name)
                 .cloned()
                 .unwrap_or_else(|| name.to_string());
-            let tooltip: String = result.chars().take(600).collect();
+            let (label, _) = plain_step(name, &summary);
             self.pill(
                 tool_icon(name),
-                if short { result } else { &summary },
+                if short { result } else { &label },
                 false,
-                (!short).then_some(tooltip.as_str()),
+                None,
             )
         } else {
             let text: String = if short {
@@ -555,11 +817,123 @@ impl Turn for Reply {
             });
             pill.append(&undo);
         }
-        self.before_spinner(&pill);
+        if let Some((_, began)) = running {
+            let took = gtk::Label::new(Some(&format!("{:.1} s", began.elapsed().as_secs_f64())));
+            took.add_css_class("step-time");
+            pill.append(&took);
+        }
+        let targets = plain_step(
+            name,
+            &self
+                .inner
+                .borrow()
+                .summaries
+                .get(name)
+                .cloned()
+                .unwrap_or_default(),
+        )
+        .1;
+        step_menu(&pill, &targets, self.win.clone());
+        let link = targets.first().map(|t| match t {
+            Target::Link(u) => u.clone(),
+            Target::File(p) => p.display().to_string(),
+        });
+        // A long result opens under its step, instead of hiding in a tooltip.
+        if ok && !short {
+            let shown: String = result.chars().take(4000).collect();
+            let detail = gtk::Label::builder()
+                .label(match &link {
+                    Some(url) => format!("{url}\n\n{shown}"),
+                    None => shown,
+                })
+                .wrap(true)
+                .wrap_mode(gtk::pango::WrapMode::WordChar)
+                .xalign(0.0)
+                .selectable(true)
+                .build();
+            detail.add_css_class("step-detail");
+            // One line in the title (the details have it all): a wrapping label in an
+            // expander's title gets almost no width and grows tall.
+            if let Some(label) = pill
+                .first_child()
+                .and_then(|c| c.next_sibling())
+                .and_downcast::<gtk::Label>()
+            {
+                label.set_wrap(false);
+                label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                label.set_max_width_chars(60);
+            }
+            let step = gtk::Expander::builder()
+                .label_widget(&pill)
+                .child(&detail)
+                .halign(gtk::Align::Start)
+                .build();
+            step.add_css_class("step");
+            self.before_spinner(&step);
+        } else {
+            self.before_spinner(&pill);
+        }
         let mut i = self.inner.borrow_mut();
         i.label = None; // text after an action starts a new message
         i.answer.push('\n');
         drop(i);
+        self.scroll();
+    }
+
+    /// A checklist card: made on the first plan, its rows redrawn as steps are ticked.
+    fn on_plan(&self, json: &str) {
+        let Ok(serde_json::Value::Array(steps)) = serde_json::from_str(json) else {
+            return;
+        };
+        let card = self.inner.borrow().plan.clone().unwrap_or_else(|| {
+            let card = gtk::Box::builder()
+                .orientation(gtk::Orientation::Vertical)
+                .spacing(6)
+                .halign(gtk::Align::Start)
+                .build();
+            card.add_css_class("card");
+            card.add_css_class("plan-card");
+            self.before_spinner(&card);
+            self.inner.borrow_mut().plan = Some(card.clone());
+            card
+        });
+        while let Some(c) = card.first_child() {
+            card.remove(&c);
+        }
+        let done = steps.iter().filter(|s| s["done"] == true).count();
+        let head = gtk::Label::builder()
+            .label(format!("Plan · {done} of {}", steps.len()))
+            .xalign(0.0)
+            .build();
+        head.add_css_class("heading");
+        card.append(&head);
+        for s in &steps {
+            let ticked = s["done"] == true;
+            let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            // The step under way spins; done ones are ticked.
+            let icon: gtk::Widget = if s["now"] == true && !ticked {
+                row.add_css_class("now");
+                spinner()
+            } else {
+                gtk::Image::from_icon_name(if ticked {
+                    "object-select-symbolic"
+                } else {
+                    "radio-symbolic"
+                })
+                .upcast()
+            };
+            let label = gtk::Label::builder()
+                .label(s["step"].as_str().unwrap_or(""))
+                .xalign(0.0)
+                .wrap(true)
+                .build();
+            if ticked {
+                row.add_css_class("done");
+            }
+            row.append(&icon);
+            row.append(&label);
+            card.append(&row);
+        }
         self.scroll();
     }
 
@@ -574,14 +948,19 @@ impl Turn for Reply {
     }
 
     fn on_handoff(&self, model: &str) {
+        self.end_thinking();
         self.before_spinner(&self.pill(
             "go-next-symbolic",
-            &format!("Handed to {model}"),
+            &format!("Asked {}", assistant_core::flm::pretty_model(model)),
             false,
             None,
         ));
-        self.model_label.set_label(model);
-        self.spin_label.set_label(&format!("Loading {model}…"));
+        self.model_label
+            .set_label(&assistant_core::flm::pretty_model(model));
+        self.spin_label.set_label(&format!(
+            "Loading {}…",
+            assistant_core::flm::pretty_model(model)
+        ));
         let mut i = self.inner.borrow_mut();
         i.label = None;
         i.answer.clear(); // the bigger model's reply is the answer
@@ -594,10 +973,27 @@ impl Turn for Reply {
     }
 
     fn on_confirm(&self, request: u32, _name: &str, summary: &str, detail: &str, can_always: bool) {
+        // Asked from a chat that isn't open: say so; opening it shows the card
+        // (the window picks up a running answer and its waiting cards).
+        if let Some(w) = self.win.upgrade()
+            && w.st.borrow().chat_id != self.chat_id
+        {
+            let toast = adw::Toast::builder()
+                .title(glib::markup_escape_text(&format!(
+                    "A task needs your OK: {summary}"
+                )))
+                .button_label("_Review")
+                .action_name("app.open-chat")
+                .action_target(&self.chat_id.to_variant())
+                .priority(adw::ToastPriority::High)
+                .build();
+            w.toasts.add_toast(toast);
+            return;
+        }
         // Cards need an Rc for their buttons; the window keeps this reply in one.
         let me = self.win.upgrade().and_then(|w| w.st.borrow().reply.clone());
         if let Some(me) = me {
-            me.confirm_card(request, summary, detail, can_always);
+            me.confirm_card(request, &plain_step(_name, summary).0, detail, can_always);
         }
     }
 
@@ -607,7 +1003,40 @@ impl Turn for Reply {
         }
         self.finish(true);
         if let Some(w) = self.win.upgrade() {
-            w.turn_finished(error);
+            w.turn_finished(&self.chat_id, error);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn steps_in_plain_words() {
+        let home = std::env::var("HOME").unwrap();
+        let dir = std::path::Path::new(&home).join(".cache/panda-test-plain/Zrzuty ekranu");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a b.png"), "x").unwrap();
+        let (label, t) = plain_step(
+            "edit_image",
+            "Edit ~/.cache/panda-test-plain/Zrzuty ekranu/a b.png",
+        );
+        assert_eq!(label, "Edit a b.png");
+        assert!(matches!(&t[..], [Target::File(p)] if p.ends_with("Zrzuty ekranu/a b.png")));
+        let (label, _) = plain_step(
+            "edit_image",
+            "Edit ~/.cache/panda-test-plain/Zrzuty ekranu/*.png",
+        );
+        assert_eq!(label, "Edit Zrzuty ekranu/*.png");
+        let (label, t) = plain_step("read_web_page", "Read https://example.com/a");
+        assert_eq!(label, "Read a web page");
+        assert!(matches!(&t[..], [Target::Link(u)] if u == "https://example.com/a"));
+        assert_eq!(
+            plain_step("set_volume", "Set volume to 30%").0,
+            "Set volume to 30%"
+        );
+        std::fs::remove_dir_all(std::path::Path::new(&home).join(".cache/panda-test-plain"))
+            .unwrap();
     }
 }

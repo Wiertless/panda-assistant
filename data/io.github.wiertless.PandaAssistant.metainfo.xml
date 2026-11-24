@@ -21,6 +21,21 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.35.0" date="2026-11-24">
+      <description>
+        <ul>
+          <li>Pictures: make them smaller, convert, compress, rotate or remove their location, and put them into one PDF; a whole folder or pattern at once, results in Pictures/Edited, originals untouched</li>
+          <li>Tasks of several steps get a checklist that ticks as each step is done, and the assistant keeps going until they are, or says plainly what couldn't be done</li>
+          <li>Allow for This Task: the rest of a task goes without asking; "undo all that" reverts everything the task changed</li>
+          <li>Think First: the models reason before answering, and you can read their reasoning</li>
+          <li>Steps show while they run, say what they did in plain words, and offer Open, Show in Files, Copy Link or Open in Browser</li>
+          <li>Single actions answer about 3 seconds sooner</li>
+          <li>Exact sums and percentages; answers in the language you asked in</li>
+          <li>iPhone photos (HEIC) work; louder, quieter, brighter and darker step from the current level</li>
+          <li>A wider chat that uses the window</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.34.1" date="2026-11-23">
       <description>
         <ul>

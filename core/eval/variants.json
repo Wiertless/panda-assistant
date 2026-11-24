@@ -58,5 +58,30 @@
     "about": "Below 16K context: core tools plus routed groups (keywords, and meaning with an embedding server).",
     "route_tools": true,
     "ctx_tokens": 8192
+  },
+  "think": {
+    "about": "Thinking before every request (the app's Think First toggle).",
+    "think": true
+  },
+  "escalate-explicit": {
+    "about": "Hand-off rule names the user asking for it, and says \"think about it\" isn't a reason.",
+    "prompt_parts": {
+      "escalate": "\nUse the smarter model only when the user asks for it, or the task exceeds your capabilities,\nyou repeatedly fail, or reliable execution requires substantial reasoning.\nBeing asked to think about, explain or reason through something is not a reason: answer it yourself.\nDo not escalate ordinary multi-step tasks.\nInclude relevant context and results when escalating.\n"
+    }
+  },
+  "escalate-explicit-think": {
+    "about": "escalate-explicit with thinking on.",
+    "think": true,
+    "prompt_parts": {
+      "escalate": "\nUse the smarter model only when the user asks for it, or the task exceeds your capabilities,\nyou repeatedly fail, or reliable execution requires substantial reasoning.\nBeing asked to think about, explain or reason through something is not a reason: answer it yourself.\nDo not escalate ordinary multi-step tasks.\nInclude relevant context and results when escalating.\n"
+    }
+  },
+  "no-plan": {
+    "about": "Without the plan tool (as before stage 2).",
+    "planning": false
+  },
+  "no-quick": {
+    "about": "One-action requests get a model-written answer after the tool (as before 0.35).",
+    "quick_confirm": false
   }
 }

@@ -174,7 +174,7 @@ enum Token<'a> {
 
 fn tokens(html: &str) -> Vec<Token<'_>> {
     static TAG: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?s)<!--.*?-->|<(/?)([a-zA-Z][a-zA-Z0-9]*)([^>]*)>").unwrap()
+        Regex::new(r"(?s)<!--.*?-->|<![^>]*>|<(/?)([a-zA-Z][a-zA-Z0-9]*)([^>]*)>").unwrap()
     });
     let mut out = vec![];
     let mut last = 0;
@@ -409,10 +409,15 @@ pub fn page_text(html: &str) -> (String, String) {
             _ => {}
         }
     }
+    // Skip links for screen readers ("Jump to content", "Skip to main content") are chrome.
+    let skip_link = |l: &str| {
+        let l = l.to_lowercase();
+        (l.starts_with("jump to") || l.starts_with("skip to")) && l.split_whitespace().count() <= 4
+    };
     let lines: Vec<String> = text
         .split('\n')
         .map(clean)
-        .filter(|l| l.chars().count() > 1)
+        .filter(|l| l.chars().count() > 1 && !skip_link(l))
         .collect();
     (clean(&title), lines.join("\n"))
 }
@@ -489,6 +494,21 @@ mod tests {
         );
         let html = r#"<a class="result__a" href="https://a.example/">A</a><a class="result__snippet">Snip</a>"#;
         assert_eq!(parse_duckduckgo(html)[0].snippet, "Snip");
+    }
+
+    #[test]
+    fn page_text_drops_doctype_comments_and_skip_links() {
+        let html = "<!DOCTYPE html>\n<html><head><title>Paris</title></head><body>\
+<!-- a comment --><a class=\"mw-jump-link\" href=\"#bodyContent\">Jump to content</a>\
+<p>Paris is the capital of France.</p></body></html>";
+        let (title, text) = page_text(html);
+        assert_eq!(title, "Paris");
+        assert!(
+            !text.contains("DOCTYPE") && !text.contains("comment"),
+            "{text}"
+        );
+        assert!(!text.contains("Jump to content"), "{text}");
+        assert!(text.contains("Paris is the capital of France."));
     }
 
     #[test]

@@ -32,6 +32,106 @@ pub const FINAL_ERROR: &str = "Error (retrying won't help): ";
 pub const MIDDLE_WRITER: &str = "qwen3.5:4b";
 /// A question asked from the pop-up starts with what was on screen; the window hides it.
 pub const CONTEXT_MARK: &str = "[On screen: ";
+/// Ends the screen context a pop-up question starts with.
+pub const CONTEXT_END: &str = "\n[/On screen]\n\n";
+
+/// The language of the user's own words, when it's clear: Polish by its letters or
+/// common words (also typed without the letters), English by its common words.
+/// The small model slipped both ways ("thanks" answered in Polish after Polish
+/// mail, "ile to 15% z 240?" in English), so each turn names it.
+pub fn language(text: &str) -> Option<&'static str> {
+    const PL: &[&str] = &[
+        "ile",
+        "jak",
+        "jaka",
+        "jaki",
+        "jakie",
+        "czy",
+        "co",
+        "gdzie",
+        "kiedy",
+        "dlaczego",
+        "jest",
+        "sa",
+        "nie",
+        "tak",
+        "mi",
+        "mnie",
+        "sie",
+        "moj",
+        "moja",
+        "moje",
+        "prosze",
+        "dzieki",
+        "dziekuje",
+        "zrob",
+        "pokaz",
+        "otworz",
+        "wlacz",
+        "wylacz",
+        "ustaw",
+        "jutro",
+        "dzis",
+        "dzisiaj",
+        "teraz",
+        "bardzo",
+        "troche",
+        "ciszej",
+        "glosniej",
+        "dla",
+        "przez",
+        "albo",
+        "jestem",
+        "mam",
+        "masz",
+        "czesc",
+        "napisz",
+        "przypomnij",
+        "zadzwon",
+        "poprosze",
+        "znajdz",
+        "wyslij",
+        "zatrzymaj",
+        "uruchom",
+        "odpal",
+        "pusc",
+        "przelacz",
+        "daj",
+        "zamknij",
+        "zapisz",
+        "usun",
+        "przenies",
+        "podlacz",
+        "rozlacz",
+        "nastaw",
+        "zmniejsz",
+        "zwieksz",
+        "dodaj",
+    ];
+    const EN: &[&str] = &[
+        "the", "what", "whats", "how", "is", "are", "thanks", "thank", "please", "my", "me", "you",
+        "can", "could", "open", "set", "turn", "show", "play", "it", "this", "that", "and", "of",
+        "for", "with", "an", "does", "did", "where", "when", "why", "who", "hi", "hello", "find",
+        "send", "write",
+    ];
+    let own = text
+        .split_once(CONTEXT_END)
+        .filter(|(head, _)| head.starts_with(CONTEXT_MARK))
+        .map_or(text, |(_, rest)| rest);
+    if own.chars().any(|c| "ąćęłńóśźżĄĆĘŁŃÓŚŹŻ".contains(c)) {
+        return Some("Polish");
+    }
+    let words: Vec<String> = own
+        .split(|c: char| !c.is_alphanumeric())
+        .map(str::to_lowercase)
+        .collect();
+    let count = |list: &[&str]| words.iter().filter(|w| list.contains(&w.as_str())).count();
+    match (count(PL), count(EN)) {
+        (p, e) if p > e => Some("Polish"),
+        (p, e) if e > p => Some("English"),
+        _ => None,
+    }
+}
 /// A tool result that is the answer itself (research): shown as written, and the turn ends.
 pub const FINAL_ANSWER: &str = "Answer for the user (shown as written): ";
 const ANSWER_NOW: &str = "(Now answer the user from these results, in a sentence or two.)";
@@ -115,6 +215,9 @@ Never invent memories.
 "#;
 const SKILL_PROMPT: &str = " The user's saved skills are listed below; when a request matches one, call use_skill \
 and follow its steps. When the user asks to save a workflow, call save_skill.";
+/// With no skills saved: only how to save one (the list the full rule points at
+/// isn't there, and the 9B went looking for a skill that didn't exist).
+const SAVE_SKILL_PROMPT: &str = " When the user asks to save a workflow, call save_skill.";
 const SCREEN_PROMPT: &str = " When the user says this, here, or asks about what they're looking at, call \
 read_window first to read the window they mean. To proofread, shorten, translate or otherwise change text they \
 selected, call rewrite_selection instead: it reads the selection itself.";
@@ -128,6 +231,22 @@ Include relevant context and results when escalating.
 "#;
 
 pub const ESCALATE: &str = "ask_smarter_model";
+/// The steps of a task of several, shown to the user as a checklist and ticked as
+/// they're done; a turn that ends with steps left is checked once.
+pub const PLAN: &str = "plan";
+const PLAN_LEFT: &str = "(These steps of your plan haven't been done: {left}. Do them now, or, if they can't be \
+done, tell the user plainly which weren't done and why. Don't say it's all done.)";
+
+fn plan_schema() -> Value {
+    json!({"type": "function", "function": {
+        "name": PLAN,
+        "description": "For a task of several steps, first list them, then do them in order. Each step is \
+\"tool: what\" with the tool that does it (\"find_files: find today's screenshot\"), or \"answer: what\" for one \
+you do in words (\"answer: say who the artist is\"). The user sees a checklist, ticked as the tools succeed.",
+        "parameters": {"type": "object", "properties": {
+            "steps": {"type": "array", "items": {"type": "string"}, "description": "The steps in order, each \"tool: what\""},
+            "done": {"type": "array", "items": {"type": "integer"}, "description": "Numbers of the steps just done (from 1)"}}}}})
+}
 /// How to read the screen context the pop-up puts before a question.
 const CONTEXT_RULE: &str = " A message may start with what was on the user's screen ([On screen: …]): \
 use it, and the selected text in it, only when the question refers to it (this, it, the selected text, \
@@ -173,6 +292,8 @@ pub trait Callbacks: Send + Sync {
     fn notice(&self, _text: &str) {}
     /// What a long tool is doing now ("Reading 3 pages…"), replacing the last such line.
     fn progress(&self, _text: &str) {}
+    /// The task's plan changed: [{"step": "…", "done": false}, …] as JSON.
+    fn plan(&self, _json: &str) {}
     fn handoff(&self, _model: &str) {}
     fn compacting(&self) {}
     /// Take back the text streamed so far this round (a claim that wasn't true).
@@ -263,6 +384,9 @@ use the tools. Use it for hard requests; it answers the user itself."),
 
 pub type ToolSource = Arc<dyn Fn() -> Vec<Tool> + Send + Sync>;
 
+/// Takes the hand-off's task, returns the answer (the eval's stand-in model).
+pub type EscalateStub = Arc<dyn Fn(&str) -> String + Send + Sync>;
+
 #[derive(Clone)]
 pub struct Agent {
     pub client: Arc<FlmClient>,
@@ -272,6 +396,9 @@ pub struct Agent {
     pub messages: Vec<Value>,
     pub cancel: Arc<AtomicBool>,
     pub smarter_model: Option<String>,
+    /// The eval's stand-in for the smarter model: takes the task, returns its answer
+    /// (so a hand-off can be judged without running a second model).
+    pub escalate_stub: Option<EscalateStub>,
     /// Writes research reports when the smarter model doesn't fit in memory; only
     /// when installed (loading a missing one could start a download).
     pub middle_writer: Option<String>,
@@ -342,6 +469,23 @@ pub struct Agent {
     /// for a while are dropped, so the tool list doesn't only grow.
     pub turn_no: usize,
     round_no: usize,
+    /// This turn's language, when the user's words make it clear.
+    reply_language: Option<&'static str>,
+    /// The request is of more than one action: a plan may be made (one action gets none).
+    plan_allowed: bool,
+    /// Offer the plan tool (tasks of several steps get a checklist and a check at the end).
+    pub planning: bool,
+    /// A request of one action that succeeded with a short confirmation ends there:
+    /// the confirmation is the answer (one round instead of two).
+    pub quick_confirm: bool,
+    /// This turn's plan: each step and whether it's done.
+    pub plan: Vec<(String, bool)>,
+    /// The tool each step names ("" for a step done in words or naming no known tool).
+    plan_tools: Vec<String>,
+    /// How often each step's tool failed (twice lets the model go on without it).
+    plan_fails: Vec<u8>,
+    /// The user declined an action: the plan no longer holds the model.
+    plan_released: bool,
     pub group_seen: std::collections::HashMap<String, usize>,
 }
 
@@ -355,6 +499,7 @@ impl Agent {
             messages: vec![],
             cancel: Arc::new(AtomicBool::new(false)),
             smarter_model: None,
+            escalate_stub: None,
             middle_writer: None,
             web_enabled: true,
             machine: None,
@@ -392,6 +537,14 @@ impl Agent {
             log_rounds: true,
             turn_no: 0,
             round_no: 0,
+            reply_language: None,
+            plan_allowed: false,
+            planning: true,
+            quick_confirm: true,
+            plan: vec![],
+            plan_tools: vec![],
+            plan_fails: vec![],
+            plan_released: false,
             group_seen: std::collections::HashMap::new(),
         }
     }
@@ -472,7 +625,15 @@ impl Agent {
             system += &self.part("memory", MEMORY_PROMPT);
         }
         if self.use_tools {
-            system += SKILL_PROMPT;
+            let has_skills = self
+                .notes
+                .as_deref()
+                .is_some_and(|n| n.contains("Saved skills:"));
+            system += if has_skills {
+                SKILL_PROMPT
+            } else {
+                SAVE_SKILL_PROMPT
+            };
             system += SCREEN_PROMPT;
             if self.context_rule {
                 system += CONTEXT_RULE;
@@ -567,6 +728,9 @@ impl Agent {
                 schemas.push(groups::more_tools_schema(&missing));
             }
         }
+        if self.planning {
+            schemas.push(plan_schema());
+        }
         if self.can_escalate() {
             schemas.push(escalate_schema(self.smarter_model.as_deref().unwrap()));
         }
@@ -614,6 +778,27 @@ impl Agent {
         let budget = self.budget(&head);
         let mut out = vec![head];
         out.extend(self.recent(budget));
+        // The plan's next step, as the last message (only the end of the prompt changes).
+        if let Some(i) = self.open_step()
+            && out.last().is_some_and(|m| m["role"] == "tool")
+        {
+            out.push(json!({"role": "user", "content": format!(
+                "(Next: step {}, {}. Do it now with the tool that fits; if it can't be done, say why.)",
+                i + 1, self.plan[i].0)}));
+        }
+        // The reply's language (from the user's words) goes on the latest user message, in
+        // the request only: the start of the prompt stays the same, the saved chat doesn't show it.
+        if let (Some(lang), Some(m)) = (
+            self.reply_language,
+            out.iter_mut().rev().find(|m| m["role"] == "user"),
+        ) {
+            let note = format!("\n\n(Answer in {lang}.)");
+            match &mut m["content"] {
+                Value::String(s) => s.push_str(&note),
+                Value::Array(parts) => parts.push(json!({"type": "text", "text": note})),
+                _ => {}
+            }
+        }
         out
     }
 
@@ -633,7 +818,10 @@ impl Agent {
             temperature: schemas.as_ref().and(self.tool_temperature),
             max_tokens: Some(1),
             tool_choice: force.then(|| json!("required")),
-            think: schemas.as_ref().and(self.think_with_tools),
+            think: match self.think_with_tools {
+                Some(true) => Some(true),
+                t => schemas.as_ref().and(t),
+            },
         };
         if let Ok(stream) =
             self.client
@@ -712,7 +900,9 @@ impl Agent {
         h.smarter_model = None;
         h.force_completion = false; // the bigger model doesn't need pushing
         h.reply_tool = false;
-        h.think_with_tools = None; // the bigger model gets to think: that's why it was asked
+        // The bigger model gets to think when it likes (that's why it was asked), or
+        // always with thinking turned on.
+        h.think_with_tools = self.think_with_tools.filter(|t| *t);
         h.max_rounds = HELPER_ROUNDS; // it gets the long, many-step jobs
         h.helper_holds = false;
         h
@@ -725,6 +915,15 @@ impl Agent {
         cb: &dyn Callbacks,
         images: &[String],
     ) -> Result<(), FlmError> {
+        self.reply_language = language(text);
+        self.plan.clear();
+        self.plan_tools.clear();
+        self.plan_fails.clear();
+        self.plan_released = false;
+        // The model plans when it chooses to; it isn't asked to plan first: on the NPU a plan
+        // written before looking named the wrong tool ("take a screenshot" for "find today's
+        // screenshot") and the plan held it there (0/6 vs 6/6 without, at 1.5x the time).
+        self.plan_allowed = self.planning && self.use_tools && actions_in(text) >= 2;
         // Tools that work on long text (documents) ask the model in a fresh context of their own.
         let (client, model) = (self.client.clone(), self.model.clone());
         self.ctx.ask_model = Some(Arc::new(move |system: &str, user: &str| {
@@ -791,6 +990,7 @@ impl Agent {
         }
         let actionable = !wanted.is_empty();
         self.turn_no += 1;
+        self.ctx.turn = self.turn_no;
         let now = self.turn_no;
         // Groups not used in the last two turns go (more_tools or a keyword brings them back).
         let seen = self.group_seen.clone();
@@ -808,9 +1008,17 @@ impl Agent {
             ..Turn::default()
         };
         let result = self.run_turn(text, actionable, turn_start, &mut turn, cb);
-        // The nudge was for the model only: it isn't part of the chat.
-        if let Some(i) = turn.nudge_at.filter(|i| *i < self.messages.len()) {
-            self.messages.remove(i);
+        // The nudge and the plan's check were for the model only: they aren't part of the
+        // chat (the later one first, so the earlier index stays right).
+        let mut notes: Vec<usize> = [turn.nudge_at, turn.plan_note_at]
+            .into_iter()
+            .flatten()
+            .collect();
+        notes.sort_unstable_by(|a, b| b.cmp(a));
+        for i in notes {
+            if i < self.messages.len() {
+                self.messages.remove(i);
+            }
         }
         // Summarize old turns now, after the answer was shown, so the next question
         // doesn't wait for it.
@@ -847,18 +1055,21 @@ impl Agent {
                 s.push(final_reply_schema());
             }
             self.round_no = round;
-            let (content, calls) =
-                match self.stream(schemas.as_deref(), forced.is_some() || reply_round, cb) {
-                    Err(e) if schemas.is_some() && matches!(e.status, Some(400 | 422)) => {
-                        self.use_tools = false;
-                        cb.notice(&format!(
-                            "{} can't use tools, so it can only chat.",
-                            self.model
-                        ));
-                        self.stream(None, false, cb)?
-                    }
-                    other => other?,
-                };
+            let (content, calls) = match self.stream(
+                schemas.as_deref(),
+                forced.is_some() || reply_round || self.open_step().is_some(),
+                cb,
+            ) {
+                Err(e) if schemas.is_some() && matches!(e.status, Some(400 | 422)) => {
+                    self.use_tools = false;
+                    cb.notice(&format!(
+                        "{} can't use tools, so it can only chat.",
+                        self.model
+                    ));
+                    self.stream(None, false, cb)?
+                }
+                other => other?,
+            };
             // A reply call is the answer, as if the model had written it.
             let (content, calls) = match calls.iter().position(|c| c.name == REPLY) {
                 Some(i) if calls.len() == 1 => {
@@ -963,6 +1174,49 @@ impl Agent {
                     .push(json!({"role": "user", "content": ANSWER_NOW}));
                 continue;
             }
+            // An answer while a step a tool does is still open: take it back and go on
+            // (a question to the user may always go through).
+            if calls.is_empty()
+                && !self.cancelled()
+                && self.open_step().is_some()
+                && !content.trim_end().ends_with('?')
+                && turn.plan_holds < 3
+            {
+                cb.retract();
+                turn.plan_holds += 1;
+                continue;
+            }
+            let left: Vec<String> = self
+                .plan
+                .iter()
+                .enumerate()
+                .filter(|(_, (_, done))| !done)
+                .map(|(i, (s, _))| format!("{}. {s}", i + 1))
+                .collect();
+            // Only when a step failed or was declined: if every tool worked, steps without a
+            // tool of their own ("tell me the artist") were done in words.
+            let fell_short = !turn.errors.is_empty() || turn.declined;
+            if calls.is_empty() && !left.is_empty() && !fell_short && !self.plan.is_empty() {
+                for step in self.plan.iter_mut() {
+                    step.1 = true;
+                }
+                self.show_plan(cb);
+            }
+            if calls.is_empty()
+                && !self.cancelled()
+                && !left.is_empty()
+                && fell_short
+                && !turn.plan_checked
+            {
+                // The turn would end with steps of its plan left: take the answer back and
+                // ask once for them, or for a plain account of what wasn't done.
+                cb.retract();
+                turn.plan_checked = true;
+                turn.plan_note_at = Some(self.messages.len());
+                self.messages.push(json!({"role": "user",
+                    "content": PLAN_LEFT.replace("{left}", &left.join("; "))}));
+                continue;
+            }
             self.messages.push(assistant);
             if calls.is_empty() || self.cancelled() {
                 return Ok(());
@@ -986,6 +1240,12 @@ impl Agent {
                 return Ok(());
             }
             for call in &calls {
+                if call.name == PLAN {
+                    let result = self.update_plan(call, cb);
+                    self.messages
+                        .push(json!({"role": "tool", "tool_call_id": call.id, "content": result}));
+                    continue;
+                }
                 if call.name == groups::MORE_TOOLS {
                     let result = self.add_groups(call);
                     self.messages
@@ -1016,8 +1276,30 @@ impl Agent {
                 }
                 if !result.starts_with("Error") {
                     turn.done.push(call.name.clone());
+                    // A step done: tick the first open one naming this tool (no extra round to tick).
+                    let i = self
+                        .plan
+                        .iter()
+                        .zip(&self.plan_tools)
+                        .position(|((_, d), t)| !d && *t == call.name)
+                        // Another tool than the plan named did the step under way.
+                        .or_else(|| self.open_step());
+                    if let Some(i) = i {
+                        self.plan[i].1 = true;
+                        self.show_plan(cb);
+                    }
                 }
                 turn.tools_ran += 1;
+                turn.declined |= result == DECLINED;
+                self.plan_released |= result == DECLINED;
+                if result.starts_with("Error")
+                    && let Some(i) = self
+                        .open_step()
+                        .filter(|&i| self.plan_tools[i] == call.name)
+                {
+                    self.plan_fails[i] += 1;
+                    self.show_plan(cb); // the step under way may have moved on
+                }
                 if result.starts_with("Error") && !result.starts_with(FINAL_ERROR) {
                     turn.failed.push(key);
                     turn.errors
@@ -1025,6 +1307,28 @@ impl Agent {
                 }
                 self.messages
                     .push(json!({"role": "tool", "tool_call_id": call.id, "content": result}));
+            }
+            // One action asked, done, confirmed in a line: that's the answer, without another
+            // round (~2.8 s). Not for Polish requests: confirmations are in English.
+            if self.quick_confirm
+                && calls.len() == 1
+                && turn.errors.is_empty()
+                && !turn.declined
+                // Clearly English only: an unclear Polish command ("uruchom kalkulator")
+                // would get the English confirmation as its answer.
+                && self.reply_language == Some("English")
+                && actions_in(text) == 1
+                && crate::tools::CONFIRMS.contains(&calls[0].name.as_str())
+                && let Some(done) = self.messages.last().and_then(|m| m["content"].as_str())
+                && !done.contains('\n')
+                && done.chars().count() <= 140
+                && !done.starts_with("Error")
+            {
+                let done = done.to_string();
+                cb.text(&done);
+                self.messages
+                    .push(json!({"role": "assistant", "content": done}));
+                return Ok(());
             }
             // A tool's result is the answer (research): show it as written, no rewording by the model.
             let answer_at = self.messages.iter().rposition(|m| {
@@ -1235,6 +1539,14 @@ impl Agent {
             })
             .unwrap_or_default();
         let model = self.smarter_model.clone().unwrap();
+        if let Some(stub) = &self.escalate_stub {
+            let answer = stub(&task);
+            self.messages.push(json!({"role": "tool", "tool_call_id": call.id,
+                                      "content": format!("{model} answered the user directly:\n{answer}")}));
+            self.messages
+                .push(json!({"role": "assistant", "content": answer}));
+            return Ok(());
+        }
         let end = self.messages.len().saturating_sub(2);
         let answer = self.helper_answer(&model, request, &task, end, false, cb)?;
         self.messages.push(json!({"role": "tool", "tool_call_id": call.id,
@@ -1371,7 +1683,11 @@ Its notes: {notes}{done})"
             temperature: schemas.and(self.tool_temperature),
             max_tokens: Some(MAX_REPLY_TOKENS),
             tool_choice: force.then(|| json!("required")),
-            think: schemas.and(self.think_with_tools),
+            // Thinking turned on: every request, with tools or not.
+            think: match self.think_with_tools {
+                Some(true) => Some(true),
+                t => schemas.and(t),
+            },
         };
         let started = std::time::Instant::now();
         let mut first: Option<std::time::Duration> = None;
@@ -1442,6 +1758,98 @@ Its notes: {notes}{done})"
             .get(name)
             .cloned()
             .unwrap_or_else(|| default.to_string())
+    }
+
+    /// The plan's next step that a tool does and that can still be tried: while there is
+    /// one, every round must call a tool and an answer is taken back.
+    fn open_step(&self) -> Option<usize> {
+        if self.plan_released {
+            return None;
+        }
+        (0..self.plan.len()).find(|&i| {
+            !self.plan[i].1
+                && !self.plan_tools.get(i).is_none_or(|t| t.is_empty())
+                && self.plan_fails.get(i).copied().unwrap_or(0) < 2
+        })
+    }
+
+    fn show_plan(&self, cb: &dyn Callbacks) {
+        let now = self.open_step();
+        cb.plan(
+            &Value::Array(
+                self.plan
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (s, d))| json!({"step": s, "done": d, "now": now == Some(i)}))
+                    .collect(),
+            )
+            .to_string(),
+        );
+    }
+
+    /// A plan call: new steps replace the plan, done ticks steps off. The checklist goes
+    /// to the window; the result reads it back to the model.
+    fn update_plan(&mut self, call: &ToolCall, cb: &dyn Callbacks) -> String {
+        if !self.plan_allowed {
+            return "No plan for a single step: just do it.".into();
+        }
+        let args = call.parsed_arguments().unwrap_or_default();
+        if let Some(steps) = args.get("steps").and_then(Value::as_array) {
+            let steps: Vec<(String, bool)> = steps
+                .iter()
+                .filter_map(|s| s.as_str().map(|s| (s.trim().to_string(), false)))
+                .filter(|(s, _)| !s.is_empty())
+                .take(12)
+                .collect();
+            if !steps.is_empty() {
+                // "tool: what": the tool ticks the step when it succeeds; the user sees "what".
+                let names: Vec<String> =
+                    self.available_tools().into_iter().map(|t| t.name).collect();
+                let (shown, tools): (Vec<(String, bool)>, Vec<String>) = steps
+                    .into_iter()
+                    .map(|(s, _)| match s.split_once(':') {
+                        Some((t, what)) if names.iter().any(|n| n == t.trim()) => {
+                            ((capitalize(what.trim()), false), t.trim().to_string())
+                        }
+                        Some((t, what)) if t.trim().eq_ignore_ascii_case("answer") => {
+                            ((capitalize(what.trim()), false), String::new())
+                        }
+                        _ => ((s, false), String::new()),
+                    })
+                    .unzip();
+                self.plan_fails = vec![0; shown.len()];
+                self.plan = shown;
+                self.plan_tools = tools;
+            }
+        }
+        let done: Vec<usize> = match args.get("done") {
+            Some(Value::Array(a)) => a
+                .iter()
+                .filter_map(|n| n.as_u64().or_else(|| n.as_str()?.parse().ok()))
+                .map(|n| n as usize)
+                .collect(),
+            Some(Value::Number(n)) => n.as_u64().map(|n| vec![n as usize]).unwrap_or_default(),
+            _ => vec![],
+        };
+        for n in done {
+            if let Some(step) = n.checked_sub(1).and_then(|i| self.plan.get_mut(i)) {
+                step.1 = true;
+            }
+        }
+        if self.plan.is_empty() {
+            return "Error: give the steps first (steps: a list of short steps).".into();
+        }
+        self.show_plan(cb);
+        let list: Vec<String> = self
+            .plan
+            .iter()
+            .enumerate()
+            .map(|(i, (s, d))| format!("{}. [{}] {s}", i + 1, if *d { "x" } else { " " }))
+            .collect();
+        format!(
+            "Plan:\n{}\nNow do the steps in order (each is ticked when its tool succeeds).",
+            list.join("\n")
+        )
     }
 
     fn run_call(&self, call: &ToolCall, cb: &dyn Callbacks, tainted: bool) -> String {
@@ -1638,6 +2046,13 @@ struct Turn {
     tainted: bool,
     /// The model chose to answer with the reply tool on a required round.
     replied: bool,
+    /// The user declined an action this turn.
+    declined: bool,
+    /// Answers taken back because the plan had a step left (at most 3).
+    plan_holds: u8,
+    /// The end-of-turn check of the plan was made (once a turn), and where its note sits.
+    plan_checked: bool,
+    plan_note_at: Option<usize>,
     was_forced: bool,
 }
 
@@ -1660,6 +2075,33 @@ impl Turn {
 
 /// A request to do something, not a question ("turn on tap to click", not
 /// "what's my battery?"), in English or Polish.
+fn capitalize(s: &str) -> String {
+    let mut c = s.chars();
+    c.next()
+        .map(|f| f.to_uppercase().collect::<String>() + c.as_str())
+        .unwrap_or_default()
+}
+
+/// How many actions a request lists ("find the screenshot, turn it into a PDF and
+/// send it" is 3): the parts between commas, "and", "then", "i", "potem"…
+fn actions_in(text: &str) -> usize {
+    if !asks_for_action(text) {
+        return 0;
+    }
+    let t = format!(" {} ", text.to_lowercase().replace(',', " , "));
+    let joins = [
+        " , ",
+        " and ",
+        " then ",
+        " i ",
+        " oraz ",
+        " potem ",
+        " a następnie ",
+        " następnie ",
+    ];
+    1 + joins.iter().map(|j| t.matches(j).count()).sum::<usize>()
+}
+
 fn asks_for_action(text: &str) -> bool {
     const QUESTION: [&str; 34] = [
         "what", "what's", "whats", "how", "is", "are", "do", "does", "did", "can", "could", "when",
@@ -1808,6 +2250,7 @@ mod tests {
             test_tools(),
         );
         a.reply_tool = false; // most tests script plain replies; reply_is_a_tool_on_the_first_round turns it on
+        a.quick_confirm = false; // most tests script the answer after a tool; quick_confirm_ends_a_one_action_turn turns it on
         a.machine = Some("About this computer: test".into());
         a
     }
@@ -2238,7 +2681,7 @@ mod tests {
                 .as_array()
                 .unwrap()
                 .iter()
-                .any(|m| m["content"] == NUDGE)
+                .any(|m| m["content"].as_str().is_some_and(|c| c.starts_with(NUDGE)))
         );
         assert!(
             !a.messages
@@ -2261,7 +2704,9 @@ mod tests {
                 .as_array()
                 .unwrap()
                 .iter()
-                .any(|m| m["content"] == ANSWER_NOW)
+                .any(|m| m["content"]
+                    .as_str()
+                    .is_some_and(|c| c.starts_with(ANSWER_NOW)))
         );
         // Chit-chat that sounds like a claim isn't nudged.
         let flm = FakeFlm::start(vec![(200, text_reply("I've been well, thanks!"))]);
@@ -2295,6 +2740,7 @@ mod tests {
             Arc::new(move || tools.clone()),
         );
         a.machine = Some("About this computer: test".into());
+        a.quick_confirm = false; // the answer after the forced call is what's checked
         let rec = Rec::default();
         a.ask("turn it down a bit", &rec, &[]).unwrap();
         let reqs = flm.requests();
@@ -2693,6 +3139,285 @@ mod tests {
                 .unwrap()
                 .contains("Examples:")
         );
+    }
+
+    #[test]
+    fn the_reply_language_is_named_in_the_request_only() {
+        assert_eq!(language("thanks"), Some("English"));
+        assert_eq!(language("ile to 15% z 240?"), Some("Polish"));
+        assert_eq!(language("ścisz trochę"), Some("Polish"));
+        assert_eq!(
+            language("uruchom kalkulator"),
+            Some("Polish"),
+            "a Polish command without its letters"
+        );
+        assert_eq!(language("ok"), None);
+        // Screen context in another language doesn't count, the user's words do.
+        assert_eq!(
+            language(
+                "[On screen: Firefox. Selected text: «co to jest»]\n[/On screen]\n\nwhat is this"
+            ),
+            Some("English")
+        );
+        let _h = temp_home();
+        let flm = FakeFlm::start(vec![(200, text_reply("Proszę bardzo."))]);
+        let mut a = agent(&flm);
+        a.ask("dzięki", &Rec::default(), &[]).unwrap();
+        let sent = flm.requests()[0]["messages"].as_array().unwrap().clone();
+        assert!(
+            sent.last().unwrap()["content"]
+                .as_str()
+                .unwrap()
+                .ends_with("(Answer in Polish.)")
+        );
+        assert_eq!(
+            a.messages[0]["content"], "dzięki",
+            "the saved chat has the user's words only"
+        );
+    }
+
+    #[test]
+    fn thinking_on_asks_for_it_on_every_request() {
+        let _h = temp_home();
+        let flm = FakeFlm::start(vec![
+            (200, tool_reply("get_datetime", "{}", "c1")),
+            (200, text_reply("It's 22:00.")),
+        ]);
+        let mut a = agent(&flm);
+        a.think_with_tools = Some(true);
+        a.ask("what time is it?", &Rec::default(), &[]).unwrap();
+        assert!(flm.requests().iter().all(|r| r["think"] == true));
+        // Off (the default): no thinking before tool calls.
+        let flm = FakeFlm::start(vec![(200, text_reply("Hi!"))]);
+        let mut a = agent(&flm);
+        a.ask("hello", &Rec::default(), &[]).unwrap();
+        assert_eq!(flm.requests()[0]["think"], false);
+    }
+
+    #[test]
+    fn a_plan_is_checked_only_when_a_step_fell_short() {
+        let _h = temp_home();
+        // Every tool worked, one step had no tool ("tell me the artist"): all ticked, the
+        // answer stands (the owner's test was retracted and turned into an apology).
+        let flm = FakeFlm::start(vec![
+            (
+                200,
+                tool_reply(
+                    PLAN,
+                    r#"{"steps": ["Find the song", "Say the artist", "Send it"]}"#,
+                    "p1",
+                ),
+            ),
+            (200, tool_reply("set_volume", r#"{"percent": 30}"#, "c1")),
+            (200, tool_reply("get_datetime", "{}", "c2")),
+            (200, text_reply("It's by Charli XCX, and it's sent.")),
+        ]);
+        let mut a = agent(&flm);
+        a.ask(
+            "find the song, tell me the artist and send it",
+            &Rec::default(),
+            &[],
+        )
+        .unwrap();
+        assert_eq!(flm.requests().len(), 4, "no check round");
+        assert!(a.plan.iter().all(|(_, d)| *d));
+        assert_eq!(
+            a.messages.last().unwrap()["content"],
+            "It's by Charli XCX, and it's sent."
+        );
+        // A step failed and it says it's all done: asked once to do it or say so.
+        let flm = FakeFlm::start(vec![
+            (
+                200,
+                tool_reply(
+                    PLAN,
+                    r#"{"steps": ["Set the volume", "Tell the time"]}"#,
+                    "p1",
+                ),
+            ),
+            (200, tool_reply("set_volum", r#"{"percent": 30}"#, "c1")),
+            (200, text_reply("All done!")),
+            (200, text_reply("I couldn't set the volume.")),
+        ]);
+        let mut a = agent(&flm);
+        a.ask(
+            "set the volume to 30 and tell me the time",
+            &Rec::default(),
+            &[],
+        )
+        .unwrap();
+        let reqs = flm.requests();
+        assert_eq!(reqs.len(), 4);
+        let said = |r: &Value, what: &str| {
+            r["messages"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|m| m["content"].as_str().is_some_and(|c| c.contains(what)))
+        };
+        assert!(
+            said(&reqs[3], "haven't been done"),
+            "the check names what's left"
+        );
+        assert_eq!(
+            a.messages.last().unwrap()["content"],
+            "I couldn't set the volume."
+        );
+        assert!(!a.messages.iter().any(|m| {
+            m["content"]
+                .as_str()
+                .is_some_and(|c| c.contains("haven't been done"))
+        }));
+    }
+
+    #[test]
+    fn several_actions_may_be_planned_one_may_not() {
+        let req = "przeszukaj zdjecia i znajdz screenshota z dzisiejsza data, zmien go na pdf i wyslij na telefon";
+        assert!(actions_in(req) >= 3);
+        assert_eq!(actions_in("turn on dark mode"), 1);
+        assert_eq!(
+            actions_in("what's the weather and the time?"),
+            0,
+            "a question"
+        );
+        let _h = temp_home();
+        // One action: no plan, nothing shown.
+        let flm = FakeFlm::start(vec![
+            (
+                200,
+                tool_reply(PLAN, r#"{"steps": ["Turn on dark mode"]}"#, "p1"),
+            ),
+            (200, tool_reply(REPLY, r#"{"text": "OK."}"#, "r2")),
+        ]);
+        let mut a = agent(&flm);
+        a.ask("turn on dark mode", &Rec::default(), &[]).unwrap();
+        assert!(a.plan.is_empty());
+        assert!(
+            a.messages
+                .iter()
+                .any(|m| m["content"] == "No plan for a single step: just do it.")
+        );
+    }
+
+    #[test]
+    fn quick_confirm_ends_a_one_action_turn() {
+        let _h = temp_home();
+        let flm = FakeFlm::start(vec![(
+            200,
+            tool_reply("set_volume", r#"{"percent": 30}"#, "c1"),
+        )]);
+        let mut a = agent(&flm);
+        a.quick_confirm = true;
+        a.ask("set the volume to 30", &Rec::default(), &[]).unwrap();
+        assert_eq!(
+            flm.requests().len(),
+            1,
+            "one round: the confirmation is the answer"
+        );
+        let last = a.messages.last().unwrap();
+        assert_eq!(last["role"], "assistant");
+        assert!(!last["content"].as_str().unwrap().is_empty());
+        // Polish: confirmations are English, so the model answers.
+        let flm = FakeFlm::start(vec![
+            (200, tool_reply("set_volume", r#"{"percent": 30}"#, "c1")),
+            (200, text_reply("Głośność 30%.")),
+        ]);
+        let mut a = agent(&flm);
+        a.quick_confirm = true;
+        a.ask("ustaw głośność na 30", &Rec::default(), &[]).unwrap();
+        assert_eq!(a.messages.last().unwrap()["content"], "Głośność 30%.");
+        // Two actions: the model goes on.
+        let flm = FakeFlm::start(vec![
+            (200, tool_reply("set_volume", r#"{"percent": 30}"#, "c1")),
+            (200, tool_reply("get_datetime", "{}", "c2")),
+            (200, text_reply("Done, it's 22:00.")),
+        ]);
+        let mut a = agent(&flm);
+        a.quick_confirm = true;
+        a.ask(
+            "set the volume to 30 and tell me the time",
+            &Rec::default(),
+            &[],
+        )
+        .unwrap();
+        assert_eq!(flm.requests().len(), 3);
+    }
+
+    #[test]
+    fn a_plan_holds_the_model_until_its_steps_are_done() {
+        let _h = temp_home();
+        let flm = FakeFlm::start(vec![
+            (
+                200,
+                tool_reply(
+                    PLAN,
+                    r#"{"steps": ["set_volume: set the volume", "get_datetime: tell the time"]}"#,
+                    "p1",
+                ),
+            ),
+            (200, tool_reply("set_volume", r#"{"percent": 30}"#, "c1")),
+            (200, text_reply("All done!")),
+            (200, tool_reply("get_datetime", "{}", "c2")),
+            (200, text_reply("Volume 30%, it's 22:00.")),
+        ]);
+        let mut a = agent(&flm);
+        a.ask(
+            "set the volume to 30 and tell me the time",
+            &Rec::default(),
+            &[],
+        )
+        .unwrap();
+        let reqs = flm.requests();
+        assert_eq!(reqs.len(), 5);
+        let last = |r: &Value| {
+            r["messages"].as_array().unwrap().last().unwrap()["content"]
+                .as_str()
+                .unwrap_or("")
+                .to_string()
+        };
+        assert!(
+            last(&reqs[2]).contains("Next: step 2, Tell the time"),
+            "{}",
+            last(&reqs[2])
+        );
+        assert_eq!(
+            reqs[2]["tool_choice"], "required",
+            "a step open: a call is required"
+        );
+        assert!(!last(&reqs[4]).contains("Next:"), "all done: no note");
+        assert_eq!(
+            a.messages.last().unwrap()["content"],
+            "Volume 30%, it's 22:00."
+        );
+        assert!(a.plan.iter().all(|(_, d)| *d));
+        assert!(
+            !a.messages.iter().any(|m| m["content"] == "All done!"),
+            "the early answer was taken back"
+        );
+        // A step that keeps failing lets the model go, and the check asks it to say so.
+        let flm = FakeFlm::start(vec![
+            (
+                200,
+                tool_reply(
+                    PLAN,
+                    r#"{"steps": ["broken: do it", "get_datetime: tell the time"]}"#,
+                    "p1",
+                ),
+            ),
+            (200, tool_reply("broken", "{}", "c1")),
+            (200, tool_reply("broken", r#"{"again": true}"#, "c2")),
+            (200, tool_reply("get_datetime", "{}", "c3")),
+            (200, text_reply("All done!")),
+            (200, text_reply("I couldn't do the first part; it's 22:00.")),
+        ]);
+        let mut a = agent(&flm);
+        a.ask("run it and tell me the time", &Rec::default(), &[])
+            .unwrap();
+        assert_eq!(
+            a.messages.last().unwrap()["content"],
+            "I couldn't do the first part; it's 22:00."
+        );
+        assert_eq!(flm.requests().len(), 6);
     }
 
     #[test]

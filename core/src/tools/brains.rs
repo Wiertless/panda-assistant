@@ -16,8 +16,12 @@ pub fn remember(ctx: &Context, args: &Args) -> ToolResult {
 }
 
 /// "Undo that": reverse the newest change (a setting, the volume, a reminder, a remembered fact…).
-pub fn undo(ctx: &Context, _: &Args) -> ToolResult {
-    ctx.undo_last()
+pub fn undo(ctx: &Context, args: &Args) -> ToolResult {
+    match args.get("whole_task") {
+        Some(serde_json::Value::Bool(true)) => ctx.undo_task(),
+        Some(serde_json::Value::String(s)) if s == "true" => ctx.undo_task(),
+        _ => ctx.undo_last(),
+    }
 }
 
 pub fn forget(_: &Context, args: &Args) -> ToolResult {
