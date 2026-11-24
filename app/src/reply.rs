@@ -907,11 +907,18 @@ impl Turn for Reply {
         for s in &steps {
             let ticked = s["done"] == true;
             let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-            let icon = gtk::Image::from_icon_name(if ticked {
-                "object-select-symbolic"
+            // The step under way spins; done ones are ticked.
+            let icon: gtk::Widget = if s["now"] == true && !ticked {
+                row.add_css_class("now");
+                spinner()
             } else {
-                "radio-symbolic"
-            });
+                gtk::Image::from_icon_name(if ticked {
+                    "object-select-symbolic"
+                } else {
+                    "radio-symbolic"
+                })
+                .upcast()
+            };
             let label = gtk::Label::builder()
                 .label(s["step"].as_str().unwrap_or(""))
                 .xalign(0.0)

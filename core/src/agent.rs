@@ -1293,6 +1293,7 @@ impl Agent {
                         .filter(|&i| self.plan_tools[i] == call.name)
                 {
                     self.plan_fails[i] += 1;
+                    self.show_plan(cb); // the step under way may have moved on
                 }
                 if result.starts_with("Error") && !result.starts_with(FINAL_ERROR) {
                     turn.failed.push(key);
@@ -1766,11 +1767,13 @@ Its notes: {notes}{done})"
     }
 
     fn show_plan(&self, cb: &dyn Callbacks) {
+        let now = self.open_step();
         cb.plan(
             &Value::Array(
                 self.plan
                     .iter()
-                    .map(|(s, d)| json!({"step": s, "done": d}))
+                    .enumerate()
+                    .map(|(i, (s, d))| json!({"step": s, "done": d, "now": now == Some(i)}))
                     .collect(),
             )
             .to_string(),

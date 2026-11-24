@@ -61,6 +61,7 @@ window.popup { background: none; box-shadow: none; outline: none; border: none; 
 .plan-card { padding: 12px 16px; }
 .plan-card .done label { opacity: 0.6; }
 .plan-card .done image { color: @accent_color; }
+.plan-card .now label { font-weight: 600; }
 .think-toggle:checked { color: @accent_color; background: alpha(@accent_color, 0.14); }
 expander-widget.thinking > box > title { opacity: 0.7; font-size: 0.92em; padding: 0; min-height: 0; }
 expander-widget.thinking.live > box > title { opacity: 0.9; }
