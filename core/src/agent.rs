@@ -465,6 +465,10 @@ pub struct Agent {
     pub plan: Vec<(String, bool)>,
     /// The tool each step names ("" for a step done in words or naming no known tool).
     plan_tools: Vec<String>,
+    /// How often each step's tool failed (twice lets the model go on without it).
+    plan_fails: Vec<u8>,
+    /// The user declined an action: the plan no longer holds the model.
+    plan_released: bool,
     pub group_seen: std::collections::HashMap<String, usize>,
 }
 
@@ -523,6 +527,8 @@ impl Agent {
             quick_confirm: true,
             plan: vec![],
             plan_tools: vec![],
+            plan_fails: vec![],
+            plan_released: false,
             group_seen: std::collections::HashMap::new(),
         }
     }
@@ -748,6 +754,15 @@ impl Agent {
         let budget = self.budget(&head);
         let mut out = vec![head];
         out.extend(self.recent(budget));
+        // The plan's next step, as the last message (only the end of the prompt changes).
+        if let Some(i) = self.open_step()
+            && out.last().is_some_and(|m| m["role"] == "tool")
+        {
+            let tool = &self.plan_tools[i];
+            out.push(json!({"role": "user", "content": format!(
+                "(Next: step {}, {}: {}. Call {tool} now; if it can't be done, say why.)",
+                i + 1, tool, self.plan[i].0)}));
+        }
         // The reply's language (from the user's words) goes on the latest user message, in
         // the request only: the start of the prompt stays the same, the saved chat doesn't show it.
         // A request of several actions, not planned yet: ask for the plan first (a note, not
@@ -890,6 +905,8 @@ impl Agent {
         self.reply_language = language(text);
         self.plan.clear();
         self.plan_tools.clear();
+        self.plan_fails.clear();
+        self.plan_released = false;
         let actions = actions_in(text);
         self.plan_allowed = self.planning && self.use_tools && actions >= 2;
         self.plan_first = self.plan_allowed && actions >= 3;
@@ -1024,18 +1041,21 @@ impl Agent {
                 s.push(final_reply_schema());
             }
             self.round_no = round;
-            let (content, calls) =
-                match self.stream(schemas.as_deref(), forced.is_some() || reply_round, cb) {
-                    Err(e) if schemas.is_some() && matches!(e.status, Some(400 | 422)) => {
-                        self.use_tools = false;
-                        cb.notice(&format!(
-                            "{} can't use tools, so it can only chat.",
-                            self.model
-                        ));
-                        self.stream(None, false, cb)?
-                    }
-                    other => other?,
-                };
+            let (content, calls) = match self.stream(
+                schemas.as_deref(),
+                forced.is_some() || reply_round || self.open_step().is_some(),
+                cb,
+            ) {
+                Err(e) if schemas.is_some() && matches!(e.status, Some(400 | 422)) => {
+                    self.use_tools = false;
+                    cb.notice(&format!(
+                        "{} can't use tools, so it can only chat.",
+                        self.model
+                    ));
+                    self.stream(None, false, cb)?
+                }
+                other => other?,
+            };
             // A reply call is the answer, as if the model had written it.
             let (content, calls) = match calls.iter().position(|c| c.name == REPLY) {
                 Some(i) if calls.len() == 1 => {
@@ -1138,6 +1158,18 @@ impl Agent {
                 turn.nudge_at = Some(self.messages.len());
                 self.messages
                     .push(json!({"role": "user", "content": ANSWER_NOW}));
+                continue;
+            }
+            // An answer while a step a tool does is still open: take it back and go on
+            // (a question to the user may always go through).
+            if calls.is_empty()
+                && !self.cancelled()
+                && self.open_step().is_some()
+                && !content.trim_end().ends_with('?')
+                && turn.plan_holds < 3
+            {
+                cb.retract();
+                turn.plan_holds += 1;
                 continue;
             }
             let left: Vec<String> = self
@@ -1243,6 +1275,14 @@ impl Agent {
                 }
                 turn.tools_ran += 1;
                 turn.declined |= result == DECLINED;
+                self.plan_released |= result == DECLINED;
+                if result.starts_with("Error")
+                    && let Some(i) = self
+                        .open_step()
+                        .filter(|&i| self.plan_tools[i] == call.name)
+                {
+                    self.plan_fails[i] += 1;
+                }
                 if result.starts_with("Error") && !result.starts_with(FINAL_ERROR) {
                     turn.failed.push(key);
                     turn.errors
@@ -1701,6 +1741,19 @@ Its notes: {notes}{done})"
             .unwrap_or_else(|| default.to_string())
     }
 
+    /// The plan's next step that a tool does and that can still be tried: while there is
+    /// one, every round must call a tool and an answer is taken back.
+    fn open_step(&self) -> Option<usize> {
+        if self.plan_released {
+            return None;
+        }
+        (0..self.plan.len()).find(|&i| {
+            !self.plan[i].1
+                && !self.plan_tools.get(i).is_none_or(|t| t.is_empty())
+                && self.plan_fails.get(i).copied().unwrap_or(0) < 2
+        })
+    }
+
     fn show_plan(&self, cb: &dyn Callbacks) {
         cb.plan(
             &Value::Array(
@@ -1743,6 +1796,7 @@ Its notes: {notes}{done})"
                         _ => ((s, false), String::new()),
                     })
                     .unzip();
+                self.plan_fails = vec![0; shown.len()];
                 self.plan = shown;
                 self.plan_tools = tools;
             }
@@ -1973,6 +2027,8 @@ struct Turn {
     replied: bool,
     /// The user declined an action this turn.
     declined: bool,
+    /// Answers taken back because the plan had a step left (at most 3).
+    plan_holds: u8,
     /// The end-of-turn check of the plan was made (once a turn), and where its note sits.
     plan_checked: bool,
     plan_note_at: Option<usize>,
@@ -3279,6 +3335,83 @@ mod tests {
         )
         .unwrap();
         assert_eq!(flm.requests().len(), 3);
+    }
+
+    #[test]
+    fn a_plan_holds_the_model_until_its_steps_are_done() {
+        let _h = temp_home();
+        let flm = FakeFlm::start(vec![
+            (
+                200,
+                tool_reply(
+                    PLAN,
+                    r#"{"steps": ["set_volume: set the volume", "get_datetime: tell the time"]}"#,
+                    "p1",
+                ),
+            ),
+            (200, tool_reply("set_volume", r#"{"percent": 30}"#, "c1")),
+            (200, text_reply("All done!")),
+            (200, tool_reply("get_datetime", "{}", "c2")),
+            (200, text_reply("Volume 30%, it's 22:00.")),
+        ]);
+        let mut a = agent(&flm);
+        a.ask(
+            "set the volume to 30 and tell me the time",
+            &Rec::default(),
+            &[],
+        )
+        .unwrap();
+        let reqs = flm.requests();
+        assert_eq!(reqs.len(), 5);
+        let last = |r: &Value| {
+            r["messages"].as_array().unwrap().last().unwrap()["content"]
+                .as_str()
+                .unwrap_or("")
+                .to_string()
+        };
+        assert!(
+            last(&reqs[2]).contains("Next: step 2, get_datetime"),
+            "{}",
+            last(&reqs[2])
+        );
+        assert_eq!(
+            reqs[2]["tool_choice"], "required",
+            "a step open: a call is required"
+        );
+        assert!(!last(&reqs[4]).contains("Next:"), "all done: no note");
+        assert_eq!(
+            a.messages.last().unwrap()["content"],
+            "Volume 30%, it's 22:00."
+        );
+        assert!(a.plan.iter().all(|(_, d)| *d));
+        assert!(
+            !a.messages.iter().any(|m| m["content"] == "All done!"),
+            "the early answer was taken back"
+        );
+        // A step that keeps failing lets the model go, and the check asks it to say so.
+        let flm = FakeFlm::start(vec![
+            (
+                200,
+                tool_reply(
+                    PLAN,
+                    r#"{"steps": ["broken: do it", "get_datetime: tell the time"]}"#,
+                    "p1",
+                ),
+            ),
+            (200, tool_reply("broken", "{}", "c1")),
+            (200, tool_reply("broken", r#"{"again": true}"#, "c2")),
+            (200, tool_reply("get_datetime", "{}", "c3")),
+            (200, text_reply("All done!")),
+            (200, text_reply("I couldn't do the first part; it's 22:00.")),
+        ]);
+        let mut a = agent(&flm);
+        a.ask("run it and tell me the time", &Rec::default(), &[])
+            .unwrap();
+        assert_eq!(
+            a.messages.last().unwrap()["content"],
+            "I couldn't do the first part; it's 22:00."
+        );
+        assert_eq!(flm.requests().len(), 6);
     }
 
     #[test]
