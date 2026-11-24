@@ -91,6 +91,22 @@ pub fn language(text: &str) -> Option<&'static str> {
         "poprosze",
         "znajdz",
         "wyslij",
+        "zatrzymaj",
+        "uruchom",
+        "odpal",
+        "pusc",
+        "przelacz",
+        "daj",
+        "zamknij",
+        "zapisz",
+        "usun",
+        "przenies",
+        "podlacz",
+        "rozlacz",
+        "nastaw",
+        "zmniejsz",
+        "zwieksz",
+        "dodaj",
     ];
     const EN: &[&str] = &[
         "the", "what", "whats", "how", "is", "are", "thanks", "thank", "please", "my", "me", "you",
@@ -1298,7 +1314,9 @@ impl Agent {
                 && calls.len() == 1
                 && turn.errors.is_empty()
                 && !turn.declined
-                && self.reply_language != Some("Polish")
+                // Clearly English only: an unclear Polish command ("uruchom kalkulator")
+                // would get the English confirmation as its answer.
+                && self.reply_language == Some("English")
                 && actions_in(text) == 1
                 && crate::tools::CONFIRMS.contains(&calls[0].name.as_str())
                 && let Some(done) = self.messages.last().and_then(|m| m["content"].as_str())
@@ -3128,6 +3146,11 @@ mod tests {
         assert_eq!(language("thanks"), Some("English"));
         assert_eq!(language("ile to 15% z 240?"), Some("Polish"));
         assert_eq!(language("ścisz trochę"), Some("Polish"));
+        assert_eq!(
+            language("uruchom kalkulator"),
+            Some("Polish"),
+            "a Polish command without its letters"
+        );
         assert_eq!(language("ok"), None);
         // Screen context in another language doesn't count, the user's words do.
         assert_eq!(
