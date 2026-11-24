@@ -1,0 +1,713 @@
+header: EXACT (81056 bytes); file size same
+tensor set: same
+DIFF   model.embed_tokens.weight.scale: 0.04% equal, rel diff median 0.0154 max 0.279
+DIFF   model.per_layer_token_embd.weight.scale: 0.06% equal, rel diff median 0.00848 max 0.184
+EXACT  model.layers.0.inp_gate.weight
+EXACT  model.layers.0.inp_gate.weight_prefill
+EXACT  model.layers.0.input_layernorm.weight
+EXACT  model.layers.0.layer_output_scale.weight
+EXACT  model.layers.0.per_layer_projection.weight
+EXACT  model.layers.0.per_layer_projection.weight_prefill
+EXACT  model.layers.0.post_attention_layernorm.weight
+EXACT  model.layers.0.post_feedforward_layernorm.weight
+EXACT  model.layers.0.post_layernorm.weight
+EXACT  model.layers.0.pre_feedforward_layernorm.weight
+EXACT  model.layers.0.self_attn.k_norm.weight
+EXACT  model.layers.0.self_attn.q_norm.weight
+EXACT  model.layers.1.inp_gate.weight
+EXACT  model.layers.1.inp_gate.weight_prefill
+EXACT  model.layers.1.input_layernorm.weight
+EXACT  model.layers.1.layer_output_scale.weight
+EXACT  model.layers.1.per_layer_projection.weight
+EXACT  model.layers.1.per_layer_projection.weight_prefill
+EXACT  model.layers.1.post_attention_layernorm.weight
+EXACT  model.layers.1.post_feedforward_layernorm.weight
+EXACT  model.layers.1.post_layernorm.weight
+EXACT  model.layers.1.pre_feedforward_layernorm.weight
+EXACT  model.layers.1.self_attn.k_norm.weight
+EXACT  model.layers.1.self_attn.q_norm.weight
+EXACT  model.layers.10.inp_gate.weight
+EXACT  model.layers.10.inp_gate.weight_prefill
+EXACT  model.layers.10.input_layernorm.weight
+EXACT  model.layers.10.layer_output_scale.weight
+EXACT  model.layers.10.per_layer_projection.weight
+EXACT  model.layers.10.per_layer_projection.weight_prefill
+EXACT  model.layers.10.post_attention_layernorm.weight
+EXACT  model.layers.10.post_feedforward_layernorm.weight
+EXACT  model.layers.10.post_layernorm.weight
+EXACT  model.layers.10.pre_feedforward_layernorm.weight
+EXACT  model.layers.10.self_attn.k_norm.weight
+EXACT  model.layers.10.self_attn.q_norm.weight
+EXACT  model.layers.11.inp_gate.weight
+EXACT  model.layers.11.inp_gate.weight_prefill
+EXACT  model.layers.11.input_layernorm.weight
+EXACT  model.layers.11.layer_output_scale.weight
+EXACT  model.layers.11.per_layer_projection.weight
+EXACT  model.layers.11.per_layer_projection.weight_prefill
+EXACT  model.layers.11.post_attention_layernorm.weight
+EXACT  model.layers.11.post_feedforward_layernorm.weight
+EXACT  model.layers.11.post_layernorm.weight
+EXACT  model.layers.11.pre_feedforward_layernorm.weight
+EXACT  model.layers.11.self_attn.k_norm.weight
+EXACT  model.layers.11.self_attn.q_norm.weight
+EXACT  model.layers.12.inp_gate.weight
+EXACT  model.layers.12.inp_gate.weight_prefill
+EXACT  model.layers.12.input_layernorm.weight
+EXACT  model.layers.12.layer_output_scale.weight
+EXACT  model.layers.12.per_layer_projection.weight
+EXACT  model.layers.12.per_layer_projection.weight_prefill
+EXACT  model.layers.12.post_attention_layernorm.weight
+EXACT  model.layers.12.post_feedforward_layernorm.weight
+EXACT  model.layers.12.post_layernorm.weight
+EXACT  model.layers.12.pre_feedforward_layernorm.weight
+EXACT  model.layers.12.self_attn.k_norm.weight
+EXACT  model.layers.12.self_attn.q_norm.weight
+EXACT  model.layers.13.inp_gate.weight
+EXACT  model.layers.13.inp_gate.weight_prefill
+EXACT  model.layers.13.input_layernorm.weight
+EXACT  model.layers.13.layer_output_scale.weight
+EXACT  model.layers.13.per_layer_projection.weight
+EXACT  model.layers.13.per_layer_projection.weight_prefill
+EXACT  model.layers.13.post_attention_layernorm.weight
+EXACT  model.layers.13.post_feedforward_layernorm.weight
+EXACT  model.layers.13.post_layernorm.weight
+EXACT  model.layers.13.pre_feedforward_layernorm.weight
+EXACT  model.layers.13.self_attn.k_norm.weight
+EXACT  model.layers.13.self_attn.q_norm.weight
+EXACT  model.layers.14.inp_gate.weight
+EXACT  model.layers.14.inp_gate.weight_prefill
+EXACT  model.layers.14.input_layernorm.weight
+EXACT  model.layers.14.layer_output_scale.weight
+EXACT  model.layers.14.per_layer_projection.weight
+EXACT  model.layers.14.per_layer_projection.weight_prefill
+EXACT  model.layers.14.post_attention_layernorm.weight
+EXACT  model.layers.14.post_feedforward_layernorm.weight
+EXACT  model.layers.14.post_layernorm.weight
+EXACT  model.layers.14.pre_feedforward_layernorm.weight
+EXACT  model.layers.14.self_attn.k_norm.weight
+EXACT  model.layers.14.self_attn.q_norm.weight
+EXACT  model.layers.15.inp_gate.weight
+EXACT  model.layers.15.inp_gate.weight_prefill
+EXACT  model.layers.15.input_layernorm.weight
+EXACT  model.layers.15.layer_output_scale.weight
+EXACT  model.layers.15.per_layer_projection.weight
+EXACT  model.layers.15.per_layer_projection.weight_prefill
+EXACT  model.layers.15.post_attention_layernorm.weight
+EXACT  model.layers.15.post_feedforward_layernorm.weight
+EXACT  model.layers.15.post_layernorm.weight
+EXACT  model.layers.15.pre_feedforward_layernorm.weight
+EXACT  model.layers.15.self_attn.k_norm.weight
+EXACT  model.layers.15.self_attn.q_norm.weight
+EXACT  model.layers.16.inp_gate.weight
+EXACT  model.layers.16.inp_gate.weight_prefill
+EXACT  model.layers.16.input_layernorm.weight
+EXACT  model.layers.16.layer_output_scale.weight
+EXACT  model.layers.16.per_layer_projection.weight
+EXACT  model.layers.16.per_layer_projection.weight_prefill
+EXACT  model.layers.16.post_attention_layernorm.weight
+EXACT  model.layers.16.post_feedforward_layernorm.weight
+EXACT  model.layers.16.post_layernorm.weight
+EXACT  model.layers.16.pre_feedforward_layernorm.weight
+EXACT  model.layers.16.self_attn.k_norm.weight
+EXACT  model.layers.16.self_attn.q_norm.weight
+EXACT  model.layers.17.inp_gate.weight
+EXACT  model.layers.17.inp_gate.weight_prefill
+EXACT  model.layers.17.input_layernorm.weight
+EXACT  model.layers.17.layer_output_scale.weight
+EXACT  model.layers.17.per_layer_projection.weight
+EXACT  model.layers.17.per_layer_projection.weight_prefill
+EXACT  model.layers.17.post_attention_layernorm.weight
+EXACT  model.layers.17.post_feedforward_layernorm.weight
+EXACT  model.layers.17.post_layernorm.weight
+EXACT  model.layers.17.pre_feedforward_layernorm.weight
+EXACT  model.layers.17.self_attn.k_norm.weight
+EXACT  model.layers.17.self_attn.q_norm.weight
+EXACT  model.layers.18.inp_gate.weight
+EXACT  model.layers.18.inp_gate.weight_prefill
+EXACT  model.layers.18.input_layernorm.weight
+EXACT  model.layers.18.layer_output_scale.weight
+EXACT  model.layers.18.per_layer_projection.weight
+EXACT  model.layers.18.per_layer_projection.weight_prefill
+EXACT  model.layers.18.post_attention_layernorm.weight
+EXACT  model.layers.18.post_feedforward_layernorm.weight
+EXACT  model.layers.18.post_layernorm.weight
+EXACT  model.layers.18.pre_feedforward_layernorm.weight
+EXACT  model.layers.18.self_attn.k_norm.weight
+EXACT  model.layers.18.self_attn.q_norm.weight
+EXACT  model.layers.19.inp_gate.weight
+EXACT  model.layers.19.inp_gate.weight_prefill
+EXACT  model.layers.19.input_layernorm.weight
+EXACT  model.layers.19.layer_output_scale.weight
+EXACT  model.layers.19.per_layer_projection.weight
+EXACT  model.layers.19.per_layer_projection.weight_prefill
+EXACT  model.layers.19.post_attention_layernorm.weight
+EXACT  model.layers.19.post_feedforward_layernorm.weight
+EXACT  model.layers.19.post_layernorm.weight
+EXACT  model.layers.19.pre_feedforward_layernorm.weight
+EXACT  model.layers.19.self_attn.k_norm.weight
+EXACT  model.layers.19.self_attn.q_norm.weight
+EXACT  model.layers.2.inp_gate.weight
+EXACT  model.layers.2.inp_gate.weight_prefill
+EXACT  model.layers.2.input_layernorm.weight
+EXACT  model.layers.2.layer_output_scale.weight
+EXACT  model.layers.2.per_layer_projection.weight
+EXACT  model.layers.2.per_layer_projection.weight_prefill
+EXACT  model.layers.2.post_attention_layernorm.weight
+EXACT  model.layers.2.post_feedforward_layernorm.weight
+EXACT  model.layers.2.post_layernorm.weight
+EXACT  model.layers.2.pre_feedforward_layernorm.weight
+EXACT  model.layers.2.self_attn.k_norm.weight
+EXACT  model.layers.2.self_attn.q_norm.weight
+EXACT  model.layers.20.inp_gate.weight
+EXACT  model.layers.20.inp_gate.weight_prefill
+EXACT  model.layers.20.input_layernorm.weight
+EXACT  model.layers.20.layer_output_scale.weight
+EXACT  model.layers.20.per_layer_projection.weight
+EXACT  model.layers.20.per_layer_projection.weight_prefill
+EXACT  model.layers.20.post_attention_layernorm.weight
+EXACT  model.layers.20.post_feedforward_layernorm.weight
+EXACT  model.layers.20.post_layernorm.weight
+EXACT  model.layers.20.pre_feedforward_layernorm.weight
+EXACT  model.layers.20.self_attn.k_norm.weight
+EXACT  model.layers.20.self_attn.q_norm.weight
+EXACT  model.layers.21.inp_gate.weight
+EXACT  model.layers.21.inp_gate.weight_prefill
+EXACT  model.layers.21.input_layernorm.weight
+EXACT  model.layers.21.layer_output_scale.weight
+EXACT  model.layers.21.per_layer_projection.weight
+EXACT  model.layers.21.per_layer_projection.weight_prefill
+EXACT  model.layers.21.post_attention_layernorm.weight
+EXACT  model.layers.21.post_feedforward_layernorm.weight
+EXACT  model.layers.21.post_layernorm.weight
+EXACT  model.layers.21.pre_feedforward_layernorm.weight
+EXACT  model.layers.21.self_attn.k_norm.weight
+EXACT  model.layers.21.self_attn.q_norm.weight
+EXACT  model.layers.22.inp_gate.weight
+EXACT  model.layers.22.inp_gate.weight_prefill
+EXACT  model.layers.22.input_layernorm.weight
+EXACT  model.layers.22.layer_output_scale.weight
+EXACT  model.layers.22.per_layer_projection.weight
+EXACT  model.layers.22.per_layer_projection.weight_prefill
+EXACT  model.layers.22.post_attention_layernorm.weight
+EXACT  model.layers.22.post_feedforward_layernorm.weight
+EXACT  model.layers.22.post_layernorm.weight
+EXACT  model.layers.22.pre_feedforward_layernorm.weight
+EXACT  model.layers.22.self_attn.k_norm.weight
+EXACT  model.layers.22.self_attn.q_norm.weight
+EXACT  model.layers.23.inp_gate.weight
+EXACT  model.layers.23.inp_gate.weight_prefill
+EXACT  model.layers.23.input_layernorm.weight
+EXACT  model.layers.23.layer_output_scale.weight
+EXACT  model.layers.23.per_layer_projection.weight
+EXACT  model.layers.23.per_layer_projection.weight_prefill
+EXACT  model.layers.23.post_attention_layernorm.weight
+EXACT  model.layers.23.post_feedforward_layernorm.weight
+EXACT  model.layers.23.post_layernorm.weight
+EXACT  model.layers.23.pre_feedforward_layernorm.weight
+EXACT  model.layers.23.self_attn.k_norm.weight
+EXACT  model.layers.23.self_attn.q_norm.weight
+EXACT  model.layers.24.inp_gate.weight
+EXACT  model.layers.24.inp_gate.weight_prefill
+EXACT  model.layers.24.input_layernorm.weight
+EXACT  model.layers.24.layer_output_scale.weight
+EXACT  model.layers.24.per_layer_projection.weight
+EXACT  model.layers.24.per_layer_projection.weight_prefill
+EXACT  model.layers.24.post_attention_layernorm.weight
+EXACT  model.layers.24.post_feedforward_layernorm.weight
+EXACT  model.layers.24.post_layernorm.weight
+EXACT  model.layers.24.pre_feedforward_layernorm.weight
+EXACT  model.layers.24.self_attn.k_norm.weight
+EXACT  model.layers.24.self_attn.q_norm.weight
+EXACT  model.layers.25.inp_gate.weight
+EXACT  model.layers.25.inp_gate.weight_prefill
+EXACT  model.layers.25.input_layernorm.weight
+EXACT  model.layers.25.layer_output_scale.weight
+EXACT  model.layers.25.per_layer_projection.weight
+EXACT  model.layers.25.per_layer_projection.weight_prefill
+EXACT  model.layers.25.post_attention_layernorm.weight
+EXACT  model.layers.25.post_feedforward_layernorm.weight
+EXACT  model.layers.25.post_layernorm.weight
+EXACT  model.layers.25.pre_feedforward_layernorm.weight
+EXACT  model.layers.25.self_attn.k_norm.weight
+EXACT  model.layers.25.self_attn.q_norm.weight
+EXACT  model.layers.26.inp_gate.weight
+EXACT  model.layers.26.inp_gate.weight_prefill
+EXACT  model.layers.26.input_layernorm.weight
+EXACT  model.layers.26.layer_output_scale.weight
+EXACT  model.layers.26.per_layer_projection.weight
+EXACT  model.layers.26.per_layer_projection.weight_prefill
+EXACT  model.layers.26.post_attention_layernorm.weight
+EXACT  model.layers.26.post_feedforward_layernorm.weight
+EXACT  model.layers.26.post_layernorm.weight
+EXACT  model.layers.26.pre_feedforward_layernorm.weight
+EXACT  model.layers.26.self_attn.k_norm.weight
+EXACT  model.layers.26.self_attn.q_norm.weight
+EXACT  model.layers.27.inp_gate.weight
+EXACT  model.layers.27.inp_gate.weight_prefill
+EXACT  model.layers.27.input_layernorm.weight
+EXACT  model.layers.27.layer_output_scale.weight
+EXACT  model.layers.27.per_layer_projection.weight
+EXACT  model.layers.27.per_layer_projection.weight_prefill
+EXACT  model.layers.27.post_attention_layernorm.weight
+EXACT  model.layers.27.post_feedforward_layernorm.weight
+EXACT  model.layers.27.post_layernorm.weight
+EXACT  model.layers.27.pre_feedforward_layernorm.weight
+EXACT  model.layers.27.self_attn.k_norm.weight
+EXACT  model.layers.27.self_attn.q_norm.weight
+EXACT  model.layers.28.inp_gate.weight
+EXACT  model.layers.28.inp_gate.weight_prefill
+EXACT  model.layers.28.input_layernorm.weight
+EXACT  model.layers.28.layer_output_scale.weight
+EXACT  model.layers.28.per_layer_projection.weight
+EXACT  model.layers.28.per_layer_projection.weight_prefill
+EXACT  model.layers.28.post_attention_layernorm.weight
+EXACT  model.layers.28.post_feedforward_layernorm.weight
+EXACT  model.layers.28.post_layernorm.weight
+EXACT  model.layers.28.pre_feedforward_layernorm.weight
+EXACT  model.layers.28.self_attn.k_norm.weight
+EXACT  model.layers.28.self_attn.q_norm.weight
+EXACT  model.layers.29.inp_gate.weight
+EXACT  model.layers.29.inp_gate.weight_prefill
+EXACT  model.layers.29.input_layernorm.weight
+EXACT  model.layers.29.layer_output_scale.weight
+EXACT  model.layers.29.per_layer_projection.weight
+EXACT  model.layers.29.per_layer_projection.weight_prefill
+EXACT  model.layers.29.post_attention_layernorm.weight
+EXACT  model.layers.29.post_feedforward_layernorm.weight
+EXACT  model.layers.29.post_layernorm.weight
+EXACT  model.layers.29.pre_feedforward_layernorm.weight
+EXACT  model.layers.29.self_attn.k_norm.weight
+EXACT  model.layers.29.self_attn.q_norm.weight
+EXACT  model.layers.3.inp_gate.weight
+EXACT  model.layers.3.inp_gate.weight_prefill
+EXACT  model.layers.3.input_layernorm.weight
+EXACT  model.layers.3.layer_output_scale.weight
+EXACT  model.layers.3.per_layer_projection.weight
+EXACT  model.layers.3.per_layer_projection.weight_prefill
+EXACT  model.layers.3.post_attention_layernorm.weight
+EXACT  model.layers.3.post_feedforward_layernorm.weight
+EXACT  model.layers.3.post_layernorm.weight
+EXACT  model.layers.3.pre_feedforward_layernorm.weight
+EXACT  model.layers.3.self_attn.k_norm.weight
+EXACT  model.layers.3.self_attn.q_norm.weight
+EXACT  model.layers.30.inp_gate.weight
+EXACT  model.layers.30.inp_gate.weight_prefill
+EXACT  model.layers.30.input_layernorm.weight
+EXACT  model.layers.30.layer_output_scale.weight
+EXACT  model.layers.30.per_layer_projection.weight
+EXACT  model.layers.30.per_layer_projection.weight_prefill
+EXACT  model.layers.30.post_attention_layernorm.weight
+EXACT  model.layers.30.post_feedforward_layernorm.weight
+EXACT  model.layers.30.post_layernorm.weight
+EXACT  model.layers.30.pre_feedforward_layernorm.weight
+EXACT  model.layers.30.self_attn.k_norm.weight
+EXACT  model.layers.30.self_attn.q_norm.weight
+EXACT  model.layers.31.inp_gate.weight
+EXACT  model.layers.31.inp_gate.weight_prefill
+EXACT  model.layers.31.input_layernorm.weight
+EXACT  model.layers.31.layer_output_scale.weight
+EXACT  model.layers.31.per_layer_projection.weight
+EXACT  model.layers.31.per_layer_projection.weight_prefill
+EXACT  model.layers.31.post_attention_layernorm.weight
+EXACT  model.layers.31.post_feedforward_layernorm.weight
+EXACT  model.layers.31.post_layernorm.weight
+EXACT  model.layers.31.pre_feedforward_layernorm.weight
+EXACT  model.layers.31.self_attn.k_norm.weight
+EXACT  model.layers.31.self_attn.q_norm.weight
+EXACT  model.layers.32.inp_gate.weight
+EXACT  model.layers.32.inp_gate.weight_prefill
+EXACT  model.layers.32.input_layernorm.weight
+EXACT  model.layers.32.layer_output_scale.weight
+EXACT  model.layers.32.per_layer_projection.weight
+EXACT  model.layers.32.per_layer_projection.weight_prefill
+EXACT  model.layers.32.post_attention_layernorm.weight
+EXACT  model.layers.32.post_feedforward_layernorm.weight
+EXACT  model.layers.32.post_layernorm.weight
+EXACT  model.layers.32.pre_feedforward_layernorm.weight
+EXACT  model.layers.32.self_attn.k_norm.weight
+EXACT  model.layers.32.self_attn.q_norm.weight
+EXACT  model.layers.33.inp_gate.weight
+EXACT  model.layers.33.inp_gate.weight_prefill
+EXACT  model.layers.33.input_layernorm.weight
+EXACT  model.layers.33.layer_output_scale.weight
+EXACT  model.layers.33.per_layer_projection.weight
+EXACT  model.layers.33.per_layer_projection.weight_prefill
+EXACT  model.layers.33.post_attention_layernorm.weight
+EXACT  model.layers.33.post_feedforward_layernorm.weight
+EXACT  model.layers.33.post_layernorm.weight
+EXACT  model.layers.33.pre_feedforward_layernorm.weight
+EXACT  model.layers.33.self_attn.k_norm.weight
+EXACT  model.layers.33.self_attn.q_norm.weight
+EXACT  model.layers.34.inp_gate.weight
+EXACT  model.layers.34.inp_gate.weight_prefill
+EXACT  model.layers.34.input_layernorm.weight
+EXACT  model.layers.34.layer_output_scale.weight
+EXACT  model.layers.34.per_layer_projection.weight
+EXACT  model.layers.34.per_layer_projection.weight_prefill
+EXACT  model.layers.34.post_attention_layernorm.weight
+EXACT  model.layers.34.post_feedforward_layernorm.weight
+EXACT  model.layers.34.post_layernorm.weight
+EXACT  model.layers.34.pre_feedforward_layernorm.weight
+EXACT  model.layers.34.self_attn.k_norm.weight
+EXACT  model.layers.34.self_attn.q_norm.weight
+EXACT  model.layers.4.inp_gate.weight
+EXACT  model.layers.4.inp_gate.weight_prefill
+EXACT  model.layers.4.input_layernorm.weight
+EXACT  model.layers.4.layer_output_scale.weight
+EXACT  model.layers.4.per_layer_projection.weight
+EXACT  model.layers.4.per_layer_projection.weight_prefill
+EXACT  model.layers.4.post_attention_layernorm.weight
+EXACT  model.layers.4.post_feedforward_layernorm.weight
+EXACT  model.layers.4.post_layernorm.weight
+EXACT  model.layers.4.pre_feedforward_layernorm.weight
+EXACT  model.layers.4.self_attn.k_norm.weight
+EXACT  model.layers.4.self_attn.q_norm.weight
+EXACT  model.layers.5.inp_gate.weight
+EXACT  model.layers.5.inp_gate.weight_prefill
+EXACT  model.layers.5.input_layernorm.weight
+EXACT  model.layers.5.layer_output_scale.weight
+EXACT  model.layers.5.per_layer_projection.weight
+EXACT  model.layers.5.per_layer_projection.weight_prefill
+EXACT  model.layers.5.post_attention_layernorm.weight
+EXACT  model.layers.5.post_feedforward_layernorm.weight
+EXACT  model.layers.5.post_layernorm.weight
+EXACT  model.layers.5.pre_feedforward_layernorm.weight
+EXACT  model.layers.5.self_attn.k_norm.weight
+EXACT  model.layers.5.self_attn.q_norm.weight
+EXACT  model.layers.6.inp_gate.weight
+EXACT  model.layers.6.inp_gate.weight_prefill
+EXACT  model.layers.6.input_layernorm.weight
+EXACT  model.layers.6.layer_output_scale.weight
+EXACT  model.layers.6.per_layer_projection.weight
+EXACT  model.layers.6.per_layer_projection.weight_prefill
+EXACT  model.layers.6.post_attention_layernorm.weight
+EXACT  model.layers.6.post_feedforward_layernorm.weight
+EXACT  model.layers.6.post_layernorm.weight
+EXACT  model.layers.6.pre_feedforward_layernorm.weight
+EXACT  model.layers.6.self_attn.k_norm.weight
+EXACT  model.layers.6.self_attn.q_norm.weight
+EXACT  model.layers.7.inp_gate.weight
+EXACT  model.layers.7.inp_gate.weight_prefill
+EXACT  model.layers.7.input_layernorm.weight
+EXACT  model.layers.7.layer_output_scale.weight
+EXACT  model.layers.7.per_layer_projection.weight
+EXACT  model.layers.7.per_layer_projection.weight_prefill
+EXACT  model.layers.7.post_attention_layernorm.weight
+EXACT  model.layers.7.post_feedforward_layernorm.weight
+EXACT  model.layers.7.post_layernorm.weight
+EXACT  model.layers.7.pre_feedforward_layernorm.weight
+EXACT  model.layers.7.self_attn.k_norm.weight
+EXACT  model.layers.7.self_attn.q_norm.weight
+EXACT  model.layers.8.inp_gate.weight
+EXACT  model.layers.8.inp_gate.weight_prefill
+EXACT  model.layers.8.input_layernorm.weight
+EXACT  model.layers.8.layer_output_scale.weight
+EXACT  model.layers.8.per_layer_projection.weight
+EXACT  model.layers.8.per_layer_projection.weight_prefill
+EXACT  model.layers.8.post_attention_layernorm.weight
+EXACT  model.layers.8.post_feedforward_layernorm.weight
+EXACT  model.layers.8.post_layernorm.weight
+EXACT  model.layers.8.pre_feedforward_layernorm.weight
+EXACT  model.layers.8.self_attn.k_norm.weight
+EXACT  model.layers.8.self_attn.q_norm.weight
+EXACT  model.layers.9.inp_gate.weight
+EXACT  model.layers.9.inp_gate.weight_prefill
+EXACT  model.layers.9.input_layernorm.weight
+EXACT  model.layers.9.layer_output_scale.weight
+EXACT  model.layers.9.per_layer_projection.weight
+EXACT  model.layers.9.per_layer_projection.weight_prefill
+EXACT  model.layers.9.post_attention_layernorm.weight
+EXACT  model.layers.9.post_feedforward_layernorm.weight
+EXACT  model.layers.9.post_layernorm.weight
+EXACT  model.layers.9.pre_feedforward_layernorm.weight
+EXACT  model.layers.9.self_attn.k_norm.weight
+EXACT  model.layers.9.self_attn.q_norm.weight
+EXACT  model.norm.weight
+EXACT  model.per_layer_model_proj.weight_layer0
+EXACT  model.per_layer_model_proj.weight_layer1
+EXACT  model.per_layer_model_proj.weight_layer10
+EXACT  model.per_layer_model_proj.weight_layer11
+EXACT  model.per_layer_model_proj.weight_layer12
+EXACT  model.per_layer_model_proj.weight_layer13
+EXACT  model.per_layer_model_proj.weight_layer14
+EXACT  model.per_layer_model_proj.weight_layer15
+EXACT  model.per_layer_model_proj.weight_layer16
+EXACT  model.per_layer_model_proj.weight_layer17
+EXACT  model.per_layer_model_proj.weight_layer18
+EXACT  model.per_layer_model_proj.weight_layer19
+EXACT  model.per_layer_model_proj.weight_layer2
+EXACT  model.per_layer_model_proj.weight_layer20
+EXACT  model.per_layer_model_proj.weight_layer21
+EXACT  model.per_layer_model_proj.weight_layer22
+EXACT  model.per_layer_model_proj.weight_layer23
+EXACT  model.per_layer_model_proj.weight_layer24
+EXACT  model.per_layer_model_proj.weight_layer25
+EXACT  model.per_layer_model_proj.weight_layer26
+EXACT  model.per_layer_model_proj.weight_layer27
+EXACT  model.per_layer_model_proj.weight_layer28
+EXACT  model.per_layer_model_proj.weight_layer29
+EXACT  model.per_layer_model_proj.weight_layer3
+EXACT  model.per_layer_model_proj.weight_layer30
+EXACT  model.per_layer_model_proj.weight_layer31
+EXACT  model.per_layer_model_proj.weight_layer32
+EXACT  model.per_layer_model_proj.weight_layer33
+EXACT  model.per_layer_model_proj.weight_layer34
+EXACT  model.per_layer_model_proj.weight_layer4
+EXACT  model.per_layer_model_proj.weight_layer5
+EXACT  model.per_layer_model_proj.weight_layer6
+EXACT  model.per_layer_model_proj.weight_layer7
+EXACT  model.per_layer_model_proj.weight_layer8
+EXACT  model.per_layer_model_proj.weight_layer9
+EXACT  model.per_layer_model_proj.weight_prefill
+EXACT  model.per_layer_proj_norm.weight
+EXACT  rope_freqs.weight
+DIFF   lm_head.weight: layout round trip EXACT; bytes equal 67.13%; scales equal 16.60%, mins equal 18.90%, nibbles equal 83.29%; |ours-FLM| max 0.0432; RMSE vs source: FLM 0.002658 ours 0.002201
+DIFF   model.embed_tokens.weight: int8 equal 10.80%; dequant |ours-FLM| max 0.862 (35.4 FLM int8 steps), mean 0.0732
+DIFF   model.layers.0.mlp.down_proj.weight: layout round trip EXACT; bytes equal 57.21%; scales equal 7.53%, mins equal 8.00%, nibbles equal 76.48%; |ours-FLM| max 0.0552; RMSE vs source: FLM 0.002294 ours 0.002116
+DIFF   model.layers.0.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 64.69%; scales equal 12.40%, mins equal 12.33%, nibbles equal 81.82%; |ours-FLM| max 0.0339; RMSE vs source: FLM 0.002651 ours 0.002542
+DIFF   model.layers.0.mlp.up_proj.weight: layout round trip EXACT; bytes equal 64.97%; scales equal 13.04%, mins equal 12.47%, nibbles equal 82.01%; |ours-FLM| max 0.0361; RMSE vs source: FLM 0.002677 ours 0.00258
+DIFF   model.layers.0.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 57.88%; scales equal 8.48%, mins equal 8.87%, nibbles equal 76.78%; |ours-FLM| max 0.0215; RMSE vs source: FLM 0.002897 ours 0.002701
+DIFF   model.layers.0.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 60.61%; scales equal 11.73%, mins equal 11.63%, nibbles equal 78.62%; |ours-FLM| max 0.0525; RMSE vs source: FLM 0.002438 ours 0.002297
+DIFF   model.layers.0.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 57.83%; scales equal 8.67%, mins equal 9.01%, nibbles equal 76.70%; |ours-FLM| max 0.0491; RMSE vs source: FLM 0.0028 ours 0.002608
+DIFF   model.layers.0.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 58.61%; scales equal 8.88%, mins equal 9.17%, nibbles equal 77.21%; |ours-FLM| max 0.0312; RMSE vs source: FLM 0.002788 ours 0.002592
+DIFF   model.layers.1.mlp.down_proj.weight: layout round trip EXACT; bytes equal 60.07%; scales equal 8.75%, mins equal 9.13%, nibbles equal 78.66%; |ours-FLM| max 0.0825; RMSE vs source: FLM 0.002257 ours 0.002115
+DIFF   model.layers.1.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 71.66%; scales equal 21.06%, mins equal 19.76%, nibbles equal 86.30%; |ours-FLM| max 0.0443; RMSE vs source: FLM 0.002671 ours 0.002595
+DIFF   model.layers.1.mlp.up_proj.weight: layout round trip EXACT; bytes equal 71.73%; scales equal 21.65%, mins equal 20.38%, nibbles equal 86.27%; |ours-FLM| max 0.0688; RMSE vs source: FLM 0.002714 ours 0.002638
+DIFF   model.layers.1.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 62.83%; scales equal 10.76%, mins equal 10.79%, nibbles equal 80.38%; |ours-FLM| max 0.0664; RMSE vs source: FLM 0.002836 ours 0.002618
+DIFF   model.layers.1.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 65.37%; scales equal 16.86%, mins equal 16.01%, nibbles equal 81.93%; |ours-FLM| max 0.0339; RMSE vs source: FLM 0.002353 ours 0.002261
+DIFF   model.layers.1.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 62.41%; scales equal 10.68%, mins equal 10.58%, nibbles equal 80.09%; |ours-FLM| max 0.156; RMSE vs source: FLM 0.002839 ours 0.002595
+DIFF   model.layers.1.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 63.09%; scales equal 11.64%, mins equal 12.42%, nibbles equal 80.52%; |ours-FLM| max 0.0636; RMSE vs source: FLM 0.002937 ours 0.002717
+DIFF   model.layers.10.mlp.down_proj.weight: layout round trip EXACT; bytes equal 63.51%; scales equal 11.55%, mins equal 11.55%, nibbles equal 81.02%; |ours-FLM| max 0.041; RMSE vs source: FLM 0.001767 ours 0.001694
+DIFF   model.layers.10.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 67.18%; scales equal 17.57%, mins equal 16.74%, nibbles equal 83.32%; |ours-FLM| max 0.0496; RMSE vs source: FLM 0.00257 ours 0.002492
+DIFF   model.layers.10.mlp.up_proj.weight: layout round trip EXACT; bytes equal 67.35%; scales equal 18.46%, mins equal 17.13%, nibbles equal 83.36%; |ours-FLM| max 0.0393; RMSE vs source: FLM 0.002545 ours 0.002471
+DIFF   model.layers.10.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 65.52%; scales equal 13.05%, mins equal 12.92%, nibbles equal 82.31%; |ours-FLM| max 0.0435; RMSE vs source: FLM 0.002659 ours 0.002542
+DIFF   model.layers.10.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 61.72%; scales equal 12.17%, mins equal 11.96%, nibbles equal 79.45%; |ours-FLM| max 0.0403; RMSE vs source: FLM 0.002427 ours 0.002291
+DIFF   model.layers.10.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 65.26%; scales equal 14.34%, mins equal 13.43%, nibbles equal 82.11%; |ours-FLM| max 0.0635; RMSE vs source: FLM 0.002644 ours 0.00254
+DIFF   model.layers.10.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 65.17%; scales equal 13.95%, mins equal 13.40%, nibbles equal 82.12%; |ours-FLM| max 0.0425; RMSE vs source: FLM 0.002471 ours 0.00238
+DIFF   model.layers.11.mlp.down_proj.weight: layout round trip EXACT; bytes equal 62.51%; scales equal 10.51%, mins equal 10.63%, nibbles equal 80.33%; |ours-FLM| max 0.0381; RMSE vs source: FLM 0.001739 ours 0.001657
+DIFF   model.layers.11.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 66.27%; scales equal 16.61%, mins equal 15.86%, nibbles equal 82.71%; |ours-FLM| max 0.0869; RMSE vs source: FLM 0.002357 ours 0.00228
+DIFF   model.layers.11.mlp.up_proj.weight: layout round trip EXACT; bytes equal 66.32%; scales equal 17.50%, mins equal 16.16%, nibbles equal 82.72%; |ours-FLM| max 0.0601; RMSE vs source: FLM 0.002372 ours 0.002296
+DIFF   model.layers.11.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 66.01%; scales equal 13.76%, mins equal 13.93%, nibbles equal 82.74%; |ours-FLM| max 0.0312; RMSE vs source: FLM 0.00246 ours 0.002358
+DIFF   model.layers.11.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 57.85%; scales equal 9.66%, mins equal 9.72%, nibbles equal 76.62%; |ours-FLM| max 0.0601; RMSE vs source: FLM 0.002361 ours 0.002199
+DIFF   model.layers.11.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 66.21%; scales equal 15.25%, mins equal 14.54%, nibbles equal 82.72%; |ours-FLM| max 0.0596; RMSE vs source: FLM 0.002416 ours 0.002326
+DIFF   model.layers.11.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 67.13%; scales equal 17.22%, mins equal 15.64%, nibbles equal 83.38%; |ours-FLM| max 0.0272; RMSE vs source: FLM 0.002309 ours 0.002234
+DIFF   model.layers.12.mlp.down_proj.weight: layout round trip EXACT; bytes equal 63.17%; scales equal 11.08%, mins equal 11.13%, nibbles equal 80.79%; |ours-FLM| max 0.0461; RMSE vs source: FLM 0.001721 ours 0.001644
+DIFF   model.layers.12.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 66.12%; scales equal 16.17%, mins equal 15.47%, nibbles equal 82.60%; |ours-FLM| max 0.0615; RMSE vs source: FLM 0.002459 ours 0.002376
+DIFF   model.layers.12.mlp.up_proj.weight: layout round trip EXACT; bytes equal 66.14%; scales equal 17.10%, mins equal 15.80%, nibbles equal 82.58%; |ours-FLM| max 0.0427; RMSE vs source: FLM 0.002488 ours 0.002405
+DIFF   model.layers.12.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 66.64%; scales equal 16.49%, mins equal 15.09%, nibbles equal 83.06%; |ours-FLM| max 0.0303; RMSE vs source: FLM 0.002441 ours 0.002358
+DIFF   model.layers.12.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 61.54%; scales equal 13.07%, mins equal 12.66%, nibbles equal 79.21%; |ours-FLM| max 0.0381; RMSE vs source: FLM 0.002194 ours 0.002074
+DIFF   model.layers.12.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 67.01%; scales equal 16.30%, mins equal 15.74%, nibbles equal 83.23%; |ours-FLM| max 0.0522; RMSE vs source: FLM 0.00243 ours 0.002355
+DIFF   model.layers.12.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 66.99%; scales equal 16.54%, mins equal 15.75%, nibbles equal 83.34%; |ours-FLM| max 0.0449; RMSE vs source: FLM 0.002285 ours 0.002213
+DIFF   model.layers.13.mlp.down_proj.weight: layout round trip EXACT; bytes equal 63.74%; scales equal 11.18%, mins equal 11.40%, nibbles equal 81.21%; |ours-FLM| max 0.0515; RMSE vs source: FLM 0.00189 ours 0.001806
+DIFF   model.layers.13.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 68.39%; scales equal 17.53%, mins equal 16.93%, nibbles equal 84.22%; |ours-FLM| max 0.0586; RMSE vs source: FLM 0.002393 ours 0.002328
+DIFF   model.layers.13.mlp.up_proj.weight: layout round trip EXACT; bytes equal 68.27%; scales equal 18.06%, mins equal 17.08%, nibbles equal 84.08%; |ours-FLM| max 0.0459; RMSE vs source: FLM 0.002398 ours 0.002333
+DIFF   model.layers.13.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 59.73%; scales equal 8.82%, mins equal 8.50%, nibbles equal 78.28%; |ours-FLM| max 0.022; RMSE vs source: FLM 0.002362 ours 0.002216
+DIFF   model.layers.13.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 64.07%; scales equal 14.14%, mins equal 13.54%, nibbles equal 81.21%; |ours-FLM| max 0.0686; RMSE vs source: FLM 0.002234 ours 0.002136
+DIFF   model.layers.13.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 58.88%; scales equal 8.55%, mins equal 8.32%, nibbles equal 77.66%; |ours-FLM| max 0.0448; RMSE vs source: FLM 0.002664 ours 0.002496
+DIFF   model.layers.13.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 59.20%; scales equal 8.15%, mins equal 9.01%, nibbles equal 77.93%; |ours-FLM| max 0.0396; RMSE vs source: FLM 0.002512 ours 0.002329
+DIFF   model.layers.14.mlp.down_proj.weight: layout round trip EXACT; bytes equal 63.26%; scales equal 10.72%, mins equal 11.10%, nibbles equal 80.93%; |ours-FLM| max 0.0649; RMSE vs source: FLM 0.00186 ours 0.001778
+DIFF   model.layers.14.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 68.94%; scales equal 17.82%, mins equal 17.17%, nibbles equal 84.62%; |ours-FLM| max 0.0466; RMSE vs source: FLM 0.002295 ours 0.00224
+DIFF   model.layers.14.mlp.up_proj.weight: layout round trip EXACT; bytes equal 68.95%; scales equal 18.65%, mins equal 17.38%, nibbles equal 84.60%; |ours-FLM| max 0.0282; RMSE vs source: FLM 0.002407 ours 0.00235
+DIFF   model.layers.14.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 69.63%; scales equal 17.89%, mins equal 17.29%, nibbles equal 85.14%; |ours-FLM| max 0.021; RMSE vs source: FLM 0.002117 ours 0.002065
+DIFF   model.layers.14.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 65.96%; scales equal 15.59%, mins equal 15.12%, nibbles equal 82.52%; |ours-FLM| max 0.053; RMSE vs source: FLM 0.001982 ours 0.00191
+DIFF   model.layers.14.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 69.66%; scales equal 18.17%, mins equal 17.25%, nibbles equal 85.13%; |ours-FLM| max 0.0432; RMSE vs source: FLM 0.002479 ours 0.002423
+DIFF   model.layers.14.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 71.44%; scales equal 20.89%, mins equal 19.00%, nibbles equal 86.32%; |ours-FLM| max 0.0374; RMSE vs source: FLM 0.002599 ours 0.002546
+DIFF   model.layers.15.mlp.down_proj.weight: layout round trip EXACT; bytes equal 61.22%; scales equal 9.82%, mins equal 10.18%, nibbles equal 79.37%; |ours-FLM| max 0.0369; RMSE vs source: FLM 0.001817 ours 0.001722
+DIFF   model.layers.15.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 65.66%; scales equal 15.64%, mins equal 15.16%, nibbles equal 82.29%; |ours-FLM| max 0.0442; RMSE vs source: FLM 0.002508 ours 0.00242
+DIFF   model.layers.15.mlp.up_proj.weight: layout round trip EXACT; bytes equal 65.77%; scales equal 16.90%, mins equal 15.79%, nibbles equal 82.30%; |ours-FLM| max 0.0332; RMSE vs source: FLM 0.002523 ours 0.002437
+DIFF   model.layers.15.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 63.62%; scales equal 7.04%, mins equal 8.95%, nibbles equal 81.23%; |ours-FLM| max 0.00729; RMSE vs source: FLM 0.001734 ours 0.001548
+DIFF   model.layers.15.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 63.28%; scales equal 13.57%, mins equal 13.18%, nibbles equal 80.64%; |ours-FLM| max 0.043; RMSE vs source: FLM 0.002198 ours 0.002091
+DIFF   model.layers.15.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 63.93%; scales equal 13.47%, mins equal 13.03%, nibbles equal 81.09%; |ours-FLM| max 0.0566; RMSE vs source: FLM 0.002471 ours 0.002363
+DIFF   model.layers.15.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 63.63%; scales equal 7.19%, mins equal 9.07%, nibbles equal 81.26%; |ours-FLM| max 0.00723; RMSE vs source: FLM 0.001734 ours 0.001547
+DIFF   model.layers.16.mlp.down_proj.weight: layout round trip EXACT; bytes equal 64.49%; scales equal 12.46%, mins equal 12.40%, nibbles equal 81.73%; |ours-FLM| max 0.0344; RMSE vs source: FLM 0.001833 ours 0.001762
+DIFF   model.layers.16.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 67.06%; scales equal 16.75%, mins equal 15.84%, nibbles equal 83.30%; |ours-FLM| max 0.0381; RMSE vs source: FLM 0.002394 ours 0.002322
+DIFF   model.layers.16.mlp.up_proj.weight: layout round trip EXACT; bytes equal 67.39%; scales equal 18.28%, mins equal 16.79%, nibbles equal 83.45%; |ours-FLM| max 0.0439; RMSE vs source: FLM 0.002434 ours 0.002365
+DIFF   model.layers.16.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 63.80%; scales equal 6.70%, mins equal 8.62%, nibbles equal 81.43%; |ours-FLM| max 0.00732; RMSE vs source: FLM 0.001756 ours 0.001568
+DIFF   model.layers.16.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 62.91%; scales equal 13.77%, mins equal 13.01%, nibbles equal 80.35%; |ours-FLM| max 0.0284; RMSE vs source: FLM 0.002313 ours 0.002204
+DIFF   model.layers.16.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 60.65%; scales equal 11.56%, mins equal 11.28%, nibbles equal 78.72%; |ours-FLM| max 0.0533; RMSE vs source: FLM 0.002539 ours 0.002397
+DIFF   model.layers.16.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 63.52%; scales equal 6.75%, mins equal 8.60%, nibbles equal 81.26%; |ours-FLM| max 0.00739; RMSE vs source: FLM 0.001755 ours 0.001566
+DIFF   model.layers.17.mlp.down_proj.weight: layout round trip EXACT; bytes equal 66.51%; scales equal 14.62%, mins equal 14.45%, nibbles equal 83.06%; |ours-FLM| max 0.0432; RMSE vs source: FLM 0.001875 ours 0.001815
+DIFF   model.layers.17.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 71.03%; scales equal 21.32%, mins equal 20.42%, nibbles equal 85.85%; |ours-FLM| max 0.0474; RMSE vs source: FLM 0.002422 ours 0.002374
+DIFF   model.layers.17.mlp.up_proj.weight: layout round trip EXACT; bytes equal 71.31%; scales equal 22.93%, mins equal 21.25%, nibbles equal 85.95%; |ours-FLM| max 0.0544; RMSE vs source: FLM 0.002434 ours 0.002388
+DIFF   model.layers.17.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 64.08%; scales equal 6.51%, mins equal 8.40%, nibbles equal 81.70%; |ours-FLM| max 0.00723; RMSE vs source: FLM 0.001786 ours 0.001595
+DIFF   model.layers.17.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 62.17%; scales equal 13.40%, mins equal 12.59%, nibbles equal 79.82%; |ours-FLM| max 0.0305; RMSE vs source: FLM 0.00234 ours 0.002227
+DIFF   model.layers.17.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 60.60%; scales equal 10.77%, mins equal 10.94%, nibbles equal 78.69%; |ours-FLM| max 0.042; RMSE vs source: FLM 0.002541 ours 0.002401
+DIFF   model.layers.17.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 63.39%; scales equal 6.51%, mins equal 8.78%, nibbles equal 81.14%; |ours-FLM| max 0.00739; RMSE vs source: FLM 0.00179 ours 0.001596
+DIFF   model.layers.18.mlp.down_proj.weight: layout round trip EXACT; bytes equal 63.32%; scales equal 11.91%, mins equal 12.13%, nibbles equal 80.80%; |ours-FLM| max 0.0325; RMSE vs source: FLM 0.001764 ours 0.001687
+DIFF   model.layers.18.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 69.76%; scales equal 20.06%, mins equal 18.96%, nibbles equal 85.03%; |ours-FLM| max 0.0439; RMSE vs source: FLM 0.002526 ours 0.00247
+DIFF   model.layers.18.mlp.up_proj.weight: layout round trip EXACT; bytes equal 70.03%; scales equal 21.48%, mins equal 19.95%, nibbles equal 85.12%; |ours-FLM| max 0.0464; RMSE vs source: FLM 0.002523 ours 0.002469
+DIFF   model.layers.18.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 63.55%; scales equal 6.56%, mins equal 8.99%, nibbles equal 81.27%; |ours-FLM| max 0.0076; RMSE vs source: FLM 0.001835 ours 0.001637
+DIFF   model.layers.18.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 62.61%; scales equal 13.16%, mins equal 12.64%, nibbles equal 80.18%; |ours-FLM| max 0.0364; RMSE vs source: FLM 0.002311 ours 0.0022
+DIFF   model.layers.18.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 58.47%; scales equal 8.92%, mins equal 9.07%, nibbles equal 77.18%; |ours-FLM| max 0.0472; RMSE vs source: FLM 0.002699 ours 0.002521
+DIFF   model.layers.18.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 63.57%; scales equal 6.59%, mins equal 8.41%, nibbles equal 81.29%; |ours-FLM| max 0.00757; RMSE vs source: FLM 0.001832 ours 0.001635
+DIFF   model.layers.19.mlp.down_proj.weight: layout round trip EXACT; bytes equal 64.08%; scales equal 11.82%, mins equal 11.93%, nibbles equal 81.46%; |ours-FLM| max 0.0444; RMSE vs source: FLM 0.001763 ours 0.001692
+DIFF   model.layers.19.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 65.18%; scales equal 14.88%, mins equal 14.39%, nibbles equal 82.02%; |ours-FLM| max 0.0605; RMSE vs source: FLM 0.00252 ours 0.002429
+DIFF   model.layers.19.mlp.up_proj.weight: layout round trip EXACT; bytes equal 65.36%; scales equal 16.16%, mins equal 15.07%, nibbles equal 82.05%; |ours-FLM| max 0.063; RMSE vs source: FLM 0.002502 ours 0.002413
+DIFF   model.layers.19.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 63.28%; scales equal 6.49%, mins equal 8.33%, nibbles equal 81.19%; |ours-FLM| max 0.008; RMSE vs source: FLM 0.001878 ours 0.001675
+DIFF   model.layers.19.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 65.90%; scales equal 16.23%, mins equal 15.71%, nibbles equal 82.43%; |ours-FLM| max 0.0378; RMSE vs source: FLM 0.002011 ours 0.001942
+DIFF   model.layers.19.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 58.67%; scales equal 8.99%, mins equal 9.20%, nibbles equal 77.34%; |ours-FLM| max 0.0513; RMSE vs source: FLM 0.002622 ours 0.002451
+DIFF   model.layers.19.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 63.40%; scales equal 6.31%, mins equal 8.73%, nibbles equal 81.28%; |ours-FLM| max 0.008; RMSE vs source: FLM 0.001879 ours 0.001678
+DIFF   model.layers.2.mlp.down_proj.weight: layout round trip EXACT; bytes equal 61.17%; scales equal 9.43%, mins equal 9.81%, nibbles equal 79.46%; |ours-FLM| max 0.0566; RMSE vs source: FLM 0.002186 ours 0.002066
+DIFF   model.layers.2.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 72.90%; scales equal 23.82%, mins equal 22.81%, nibbles equal 86.93%; |ours-FLM| max 0.0337; RMSE vs source: FLM 0.00272 ours 0.002677
+DIFF   model.layers.2.mlp.up_proj.weight: layout round trip EXACT; bytes equal 73.12%; scales equal 24.46%, mins equal 23.21%, nibbles equal 87.08%; |ours-FLM| max 0.0369; RMSE vs source: FLM 0.00274 ours 0.002696
+DIFF   model.layers.2.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 63.25%; scales equal 12.43%, mins equal 11.99%, nibbles equal 80.73%; |ours-FLM| max 0.033; RMSE vs source: FLM 0.002504 ours 0.002391
+DIFF   model.layers.2.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 68.86%; scales equal 20.14%, mins equal 18.64%, nibbles equal 84.32%; |ours-FLM| max 0.0391; RMSE vs source: FLM 0.002506 ours 0.002438
+DIFF   model.layers.2.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 63.44%; scales equal 12.49%, mins equal 12.00%, nibbles equal 80.81%; |ours-FLM| max 0.0476; RMSE vs source: FLM 0.002538 ours 0.002428
+DIFF   model.layers.2.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 63.43%; scales equal 13.28%, mins equal 12.81%, nibbles equal 80.76%; |ours-FLM| max 0.0417; RMSE vs source: FLM 0.002598 ours 0.002475
+DIFF   model.layers.20.mlp.down_proj.weight: layout round trip EXACT; bytes equal 62.27%; scales equal 10.54%, mins equal 10.87%, nibbles equal 80.15%; |ours-FLM| max 0.0562; RMSE vs source: FLM 0.001828 ours 0.001741
+DIFF   model.layers.20.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 64.88%; scales equal 15.11%, mins equal 14.45%, nibbles equal 81.76%; |ours-FLM| max 0.0547; RMSE vs source: FLM 0.002481 ours 0.002387
+DIFF   model.layers.20.mlp.up_proj.weight: layout round trip EXACT; bytes equal 65.01%; scales equal 15.99%, mins equal 14.93%, nibbles equal 81.78%; |ours-FLM| max 0.042; RMSE vs source: FLM 0.00249 ours 0.002398
+DIFF   model.layers.20.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 63.28%; scales equal 6.44%, mins equal 8.24%, nibbles equal 81.24%; |ours-FLM| max 0.00775; RMSE vs source: FLM 0.001902 ours 0.001695
+DIFF   model.layers.20.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 64.16%; scales equal 14.66%, mins equal 13.81%, nibbles equal 81.21%; |ours-FLM| max 0.0376; RMSE vs source: FLM 0.002372 ours 0.00227
+DIFF   model.layers.20.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 62.04%; scales equal 12.29%, mins equal 11.77%, nibbles equal 79.73%; |ours-FLM| max 0.0657; RMSE vs source: FLM 0.002753 ours 0.002607
+DIFF   model.layers.20.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 63.23%; scales equal 6.43%, mins equal 8.26%, nibbles equal 81.22%; |ours-FLM| max 0.00781; RMSE vs source: FLM 0.001906 ours 0.001698
+DIFF   model.layers.21.mlp.down_proj.weight: layout round trip EXACT; bytes equal 65.16%; scales equal 13.05%, mins equal 13.08%, nibbles equal 82.16%; |ours-FLM| max 0.0415; RMSE vs source: FLM 0.001753 ours 0.001691
+DIFF   model.layers.21.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 68.64%; scales equal 18.60%, mins equal 17.91%, nibbles equal 84.32%; |ours-FLM| max 0.0452; RMSE vs source: FLM 0.002476 ours 0.002413
+DIFF   model.layers.21.mlp.up_proj.weight: layout round trip EXACT; bytes equal 68.78%; scales equal 19.98%, mins equal 18.54%, nibbles equal 84.30%; |ours-FLM| max 0.0449; RMSE vs source: FLM 0.002485 ours 0.002422
+DIFF   model.layers.21.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 63.65%; scales equal 7.06%, mins equal 9.05%, nibbles equal 81.27%; |ours-FLM| max 0.0072; RMSE vs source: FLM 0.001734 ours 0.001548
+DIFF   model.layers.21.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 63.81%; scales equal 14.21%, mins equal 13.58%, nibbles equal 80.97%; |ours-FLM| max 0.0488; RMSE vs source: FLM 0.002193 ours 0.002096
+DIFF   model.layers.21.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 62.82%; scales equal 13.13%, mins equal 12.91%, nibbles equal 80.27%; |ours-FLM| max 0.0535; RMSE vs source: FLM 0.002498 ours 0.002374
+DIFF   model.layers.21.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 63.58%; scales equal 6.97%, mins equal 9.28%, nibbles equal 81.26%; |ours-FLM| max 0.00757; RMSE vs source: FLM 0.001733 ours 0.001546
+DIFF   model.layers.22.mlp.down_proj.weight: layout round trip EXACT; bytes equal 64.78%; scales equal 13.05%, mins equal 12.98%, nibbles equal 81.84%; |ours-FLM| max 0.0378; RMSE vs source: FLM 0.00163 ours 0.001569
+DIFF   model.layers.22.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 69.09%; scales equal 19.27%, mins equal 18.41%, nibbles equal 84.58%; |ours-FLM| max 0.0493; RMSE vs source: FLM 0.002348 ours 0.00229
+DIFF   model.layers.22.mlp.up_proj.weight: layout round trip EXACT; bytes equal 69.01%; scales equal 20.41%, mins equal 18.85%, nibbles equal 84.48%; |ours-FLM| max 0.0449; RMSE vs source: FLM 0.00232 ours 0.002264
+DIFF   model.layers.22.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 63.49%; scales equal 6.50%, mins equal 8.19%, nibbles equal 81.29%; |ours-FLM| max 0.00781; RMSE vs source: FLM 0.00185 ours 0.001651
+DIFF   model.layers.22.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 63.69%; scales equal 14.30%, mins equal 13.40%, nibbles equal 80.84%; |ours-FLM| max 0.0571; RMSE vs source: FLM 0.002397 ours 0.002284
+DIFF   model.layers.22.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 63.62%; scales equal 14.02%, mins equal 13.39%, nibbles equal 80.81%; |ours-FLM| max 0.0537; RMSE vs source: FLM 0.002629 ours 0.002507
+DIFF   model.layers.22.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 63.52%; scales equal 6.46%, mins equal 7.90%, nibbles equal 81.33%; |ours-FLM| max 0.00775; RMSE vs source: FLM 0.001846 ours 0.001648
+DIFF   model.layers.23.mlp.down_proj.weight: layout round trip EXACT; bytes equal 61.73%; scales equal 10.09%, mins equal 10.38%, nibbles equal 79.75%; |ours-FLM| max 0.0352; RMSE vs source: FLM 0.001671 ours 0.001587
+DIFF   model.layers.23.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 66.60%; scales equal 16.96%, mins equal 16.30%, nibbles equal 82.84%; |ours-FLM| max 0.0479; RMSE vs source: FLM 0.002579 ours 0.002494
+DIFF   model.layers.23.mlp.up_proj.weight: layout round trip EXACT; bytes equal 66.67%; scales equal 17.85%, mins equal 16.85%, nibbles equal 82.85%; |ours-FLM| max 0.0493; RMSE vs source: FLM 0.002588 ours 0.002504
+DIFF   model.layers.23.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 63.34%; scales equal 6.93%, mins equal 8.09%, nibbles equal 81.28%; |ours-FLM| max 0.00806; RMSE vs source: FLM 0.001898 ours 0.001693
+DIFF   model.layers.23.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 63.72%; scales equal 14.39%, mins equal 13.57%, nibbles equal 80.87%; |ours-FLM| max 0.0339; RMSE vs source: FLM 0.002427 ours 0.002318
+DIFF   model.layers.23.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 62.26%; scales equal 12.34%, mins equal 11.91%, nibbles equal 79.89%; |ours-FLM| max 0.0791; RMSE vs source: FLM 0.002748 ours 0.002606
+DIFF   model.layers.23.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 63.52%; scales equal 6.30%, mins equal 8.61%, nibbles equal 81.38%; |ours-FLM| max 0.00806; RMSE vs source: FLM 0.001896 ours 0.001693
+DIFF   model.layers.24.mlp.down_proj.weight: layout round trip EXACT; bytes equal 63.40%; scales equal 11.25%, mins equal 11.39%, nibbles equal 80.99%; |ours-FLM| max 0.0576; RMSE vs source: FLM 0.001872 ours 0.00179
+DIFF   model.layers.24.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 64.70%; scales equal 14.80%, mins equal 14.31%, nibbles equal 81.60%; |ours-FLM| max 0.0564; RMSE vs source: FLM 0.002594 ours 0.002492
+DIFF   model.layers.24.mlp.up_proj.weight: layout round trip EXACT; bytes equal 64.82%; scales equal 15.70%, mins equal 14.81%, nibbles equal 81.65%; |ours-FLM| max 0.0449; RMSE vs source: FLM 0.002623 ours 0.002521
+DIFF   model.layers.24.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 63.61%; scales equal 6.52%, mins equal 8.46%, nibbles equal 81.39%; |ours-FLM| max 0.00781; RMSE vs source: FLM 0.00187 ours 0.001669
+DIFF   model.layers.24.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 65.52%; scales equal 16.79%, mins equal 15.75%, nibbles equal 82.05%; |ours-FLM| max 0.0388; RMSE vs source: FLM 0.001927 ours 0.001855
+DIFF   model.layers.24.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 63.00%; scales equal 12.25%, mins equal 11.90%, nibbles equal 80.48%; |ours-FLM| max 0.0498; RMSE vs source: FLM 0.002526 ours 0.002414
+DIFF   model.layers.24.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 63.33%; scales equal 6.59%, mins equal 8.46%, nibbles equal 81.21%; |ours-FLM| max 0.00793; RMSE vs source: FLM 0.001872 ours 0.001669
+DIFF   model.layers.25.mlp.down_proj.weight: layout round trip EXACT; bytes equal 63.11%; scales equal 11.40%, mins equal 11.55%, nibbles equal 80.75%; |ours-FLM| max 0.0396; RMSE vs source: FLM 0.001849 ours 0.001767
+DIFF   model.layers.25.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 68.19%; scales equal 17.73%, mins equal 17.02%, nibbles equal 84.06%; |ours-FLM| max 0.0437; RMSE vs source: FLM 0.002551 ours 0.002484
+DIFF   model.layers.25.mlp.up_proj.weight: layout round trip EXACT; bytes equal 68.62%; scales equal 19.48%, mins equal 17.95%, nibbles equal 84.24%; |ours-FLM| max 0.0464; RMSE vs source: FLM 0.002577 ours 0.002514
+DIFF   model.layers.25.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 63.74%; scales equal 6.32%, mins equal 8.99%, nibbles equal 81.41%; |ours-FLM| max 0.00754; RMSE vs source: FLM 0.001842 ours 0.001643
+DIFF   model.layers.25.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 61.10%; scales equal 12.95%, mins equal 12.35%, nibbles equal 78.92%; |ours-FLM| max 0.0518; RMSE vs source: FLM 0.002548 ours 0.002412
+DIFF   model.layers.25.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 62.50%; scales equal 11.72%, mins equal 11.55%, nibbles equal 80.13%; |ours-FLM| max 0.0449; RMSE vs source: FLM 0.002517 ours 0.002396
+DIFF   model.layers.25.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 63.70%; scales equal 6.53%, mins equal 8.65%, nibbles equal 81.45%; |ours-FLM| max 0.00745; RMSE vs source: FLM 0.00184 ours 0.001641
+DIFF   model.layers.26.mlp.down_proj.weight: layout round trip EXACT; bytes equal 64.36%; scales equal 12.53%, mins equal 12.59%, nibbles equal 81.59%; |ours-FLM| max 0.0408; RMSE vs source: FLM 0.00183 ours 0.001756
+DIFF   model.layers.26.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 70.37%; scales equal 20.03%, mins equal 19.24%, nibbles equal 85.49%; |ours-FLM| max 0.032; RMSE vs source: FLM 0.002376 ours 0.002329
+DIFF   model.layers.26.mlp.up_proj.weight: layout round trip EXACT; bytes equal 70.78%; scales equal 21.95%, mins equal 20.23%, nibbles equal 85.69%; |ours-FLM| max 0.0413; RMSE vs source: FLM 0.002399 ours 0.002356
+DIFF   model.layers.26.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 63.63%; scales equal 6.66%, mins equal 8.17%, nibbles equal 81.50%; |ours-FLM| max 0.00812; RMSE vs source: FLM 0.001907 ours 0.001704
+DIFF   model.layers.26.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 62.99%; scales equal 14.58%, mins equal 13.79%, nibbles equal 80.23%; |ours-FLM| max 0.0483; RMSE vs source: FLM 0.002508 ours 0.002387
+DIFF   model.layers.26.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 58.46%; scales equal 9.21%, mins equal 9.20%, nibbles equal 77.20%; |ours-FLM| max 0.0522; RMSE vs source: FLM 0.002721 ours 0.002546
+DIFF   model.layers.26.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 63.65%; scales equal 6.83%, mins equal 8.08%, nibbles equal 81.51%; |ours-FLM| max 0.008; RMSE vs source: FLM 0.001908 ours 0.001705
+DIFF   model.layers.27.mlp.down_proj.weight: layout round trip EXACT; bytes equal 65.09%; scales equal 13.71%, mins equal 13.66%, nibbles equal 82.03%; |ours-FLM| max 0.0432; RMSE vs source: FLM 0.001801 ours 0.001734
+DIFF   model.layers.27.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 70.32%; scales equal 20.58%, mins equal 19.52%, nibbles equal 85.39%; |ours-FLM| max 0.0405; RMSE vs source: FLM 0.002553 ours 0.0025
+DIFF   model.layers.27.mlp.up_proj.weight: layout round trip EXACT; bytes equal 70.63%; scales equal 22.09%, mins equal 20.48%, nibbles equal 85.51%; |ours-FLM| max 0.0327; RMSE vs source: FLM 0.002576 ours 0.002526
+DIFF   model.layers.27.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 63.49%; scales equal 6.14%, mins equal 8.59%, nibbles equal 81.27%; |ours-FLM| max 0.00787; RMSE vs source: FLM 0.001848 ours 0.00165
+DIFF   model.layers.27.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 62.76%; scales equal 14.53%, mins equal 13.69%, nibbles equal 79.98%; |ours-FLM| max 0.0723; RMSE vs source: FLM 0.002422 ours 0.00229
+DIFF   model.layers.27.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 58.50%; scales equal 9.26%, mins equal 9.25%, nibbles equal 77.25%; |ours-FLM| max 0.0488; RMSE vs source: FLM 0.002577 ours 0.002413
+DIFF   model.layers.27.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 63.50%; scales equal 6.72%, mins equal 8.82%, nibbles equal 81.28%; |ours-FLM| max 0.00751; RMSE vs source: FLM 0.00185 ours 0.00165
+DIFF   model.layers.28.mlp.down_proj.weight: layout round trip EXACT; bytes equal 64.83%; scales equal 13.60%, mins equal 13.64%, nibbles equal 81.83%; |ours-FLM| max 0.0364; RMSE vs source: FLM 0.001799 ours 0.001729
+DIFF   model.layers.28.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 70.41%; scales equal 20.37%, mins equal 19.27%, nibbles equal 85.57%; |ours-FLM| max 0.0427; RMSE vs source: FLM 0.002454 ours 0.002407
+DIFF   model.layers.28.mlp.up_proj.weight: layout round trip EXACT; bytes equal 70.59%; scales equal 21.63%, mins equal 19.94%, nibbles equal 85.59%; |ours-FLM| max 0.0471; RMSE vs source: FLM 0.002461 ours 0.002417
+DIFF   model.layers.28.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 63.76%; scales equal 7.01%, mins equal 8.58%, nibbles equal 81.48%; |ours-FLM| max 0.00787; RMSE vs source: FLM 0.00188 ours 0.001679
+DIFF   model.layers.28.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 63.02%; scales equal 14.49%, mins equal 13.78%, nibbles equal 80.25%; |ours-FLM| max 0.0486; RMSE vs source: FLM 0.002299 ours 0.002177
+DIFF   model.layers.28.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 54.87%; scales equal 6.87%, mins equal 7.13%, nibbles equal 74.43%; |ours-FLM| max 0.0508; RMSE vs source: FLM 0.002733 ours 0.002497
+DIFF   model.layers.28.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 63.49%; scales equal 6.50%, mins equal 8.89%, nibbles equal 81.29%; |ours-FLM| max 0.00775; RMSE vs source: FLM 0.001877 ours 0.001674
+DIFF   model.layers.29.mlp.down_proj.weight: layout round trip EXACT; bytes equal 64.78%; scales equal 14.43%, mins equal 14.31%, nibbles equal 81.73%; |ours-FLM| max 0.0566; RMSE vs source: FLM 0.001867 ours 0.001794
+DIFF   model.layers.29.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 70.95%; scales equal 21.65%, mins equal 19.96%, nibbles equal 85.86%; |ours-FLM| max 0.0496; RMSE vs source: FLM 0.002546 ours 0.002501
+DIFF   model.layers.29.mlp.up_proj.weight: layout round trip EXACT; bytes equal 71.08%; scales equal 22.01%, mins equal 20.25%, nibbles equal 85.90%; |ours-FLM| max 0.0383; RMSE vs source: FLM 0.002575 ours 0.002532
+DIFF   model.layers.29.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 63.46%; scales equal 6.61%, mins equal 8.59%, nibbles equal 81.20%; |ours-FLM| max 0.00766; RMSE vs source: FLM 0.001833 ours 0.001637
+DIFF   model.layers.29.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 65.65%; scales equal 17.55%, mins equal 16.44%, nibbles equal 82.09%; |ours-FLM| max 0.0981; RMSE vs source: FLM 0.001986 ours 0.001914
+DIFF   model.layers.29.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 54.00%; scales equal 5.83%, mins equal 6.18%, nibbles equal 73.78%; |ours-FLM| max 0.0405; RMSE vs source: FLM 0.002732 ours 0.00247
+DIFF   model.layers.29.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 63.49%; scales equal 6.28%, mins equal 8.50%, nibbles equal 81.27%; |ours-FLM| max 0.00769; RMSE vs source: FLM 0.001836 ours 0.001638
+DIFF   model.layers.3.mlp.down_proj.weight: layout round trip EXACT; bytes equal 63.02%; scales equal 11.09%, mins equal 11.15%, nibbles equal 80.72%; |ours-FLM| max 0.061; RMSE vs source: FLM 0.002185 ours 0.002085
+DIFF   model.layers.3.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 70.06%; scales equal 19.72%, mins equal 18.46%, nibbles equal 85.26%; |ours-FLM| max 0.0369; RMSE vs source: FLM 0.002584 ours 0.002526
+DIFF   model.layers.3.mlp.up_proj.weight: layout round trip EXACT; bytes equal 70.17%; scales equal 19.95%, mins equal 18.66%, nibbles equal 85.34%; |ours-FLM| max 0.0356; RMSE vs source: FLM 0.002624 ours 0.002566
+DIFF   model.layers.3.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 59.04%; scales equal 8.79%, mins equal 9.16%, nibbles equal 77.63%; |ours-FLM| max 0.0312; RMSE vs source: FLM 0.002953 ours 0.002754
+DIFF   model.layers.3.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 64.02%; scales equal 14.67%, mins equal 14.23%, nibbles equal 81.06%; |ours-FLM| max 0.0527; RMSE vs source: FLM 0.002434 ours 0.00233
+DIFF   model.layers.3.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 58.55%; scales equal 8.39%, mins equal 8.53%, nibbles equal 77.30%; |ours-FLM| max 0.0552; RMSE vs source: FLM 0.002811 ours 0.002623
+DIFF   model.layers.3.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 59.10%; scales equal 8.85%, mins equal 9.66%, nibbles equal 77.61%; |ours-FLM| max 0.0293; RMSE vs source: FLM 0.002916 ours 0.002724
+DIFF   model.layers.30.mlp.down_proj.weight: layout round trip EXACT; bytes equal 67.78%; scales equal 17.75%, mins equal 17.47%, nibbles equal 83.72%; |ours-FLM| max 0.0383; RMSE vs source: FLM 0.001898 ours 0.001843
+DIFF   model.layers.30.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 73.98%; scales equal 25.35%, mins equal 23.51%, nibbles equal 87.79%; |ours-FLM| max 0.0635; RMSE vs source: FLM 0.002448 ours 0.002422
+DIFF   model.layers.30.mlp.up_proj.weight: layout round trip EXACT; bytes equal 73.96%; scales equal 25.77%, mins equal 23.81%, nibbles equal 87.72%; |ours-FLM| max 0.0366; RMSE vs source: FLM 0.002477 ours 0.002453
+DIFF   model.layers.30.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 64.02%; scales equal 7.05%, mins equal 8.69%, nibbles equal 81.51%; |ours-FLM| max 0.00745; RMSE vs source: FLM 0.001785 ours 0.001596
+DIFF   model.layers.30.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 61.90%; scales equal 13.73%, mins equal 12.94%, nibbles equal 79.39%; |ours-FLM| max 0.0466; RMSE vs source: FLM 0.002391 ours 0.002255
+DIFF   model.layers.30.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 59.54%; scales equal 10.03%, mins equal 9.88%, nibbles equal 78.01%; |ours-FLM| max 0.0386; RMSE vs source: FLM 0.002383 ours 0.00224
+DIFF   model.layers.30.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 64.15%; scales equal 7.21%, mins equal 8.68%, nibbles equal 81.66%; |ours-FLM| max 0.00763; RMSE vs source: FLM 0.001784 ours 0.001595
+DIFF   model.layers.31.mlp.down_proj.weight: layout round trip EXACT; bytes equal 67.73%; scales equal 17.90%, mins equal 17.81%, nibbles equal 83.63%; |ours-FLM| max 0.0554; RMSE vs source: FLM 0.0018 ours 0.001745
+DIFF   model.layers.31.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 73.65%; scales equal 25.01%, mins equal 23.08%, nibbles equal 87.61%; |ours-FLM| max 0.0403; RMSE vs source: FLM 0.002329 ours 0.002304
+DIFF   model.layers.31.mlp.up_proj.weight: layout round trip EXACT; bytes equal 73.81%; scales equal 25.48%, mins equal 23.38%, nibbles equal 87.66%; |ours-FLM| max 0.0288; RMSE vs source: FLM 0.002352 ours 0.002328
+DIFF   model.layers.31.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 63.39%; scales equal 6.52%, mins equal 8.87%, nibbles equal 81.29%; |ours-FLM| max 0.00769; RMSE vs source: FLM 0.001887 ours 0.001684
+DIFF   model.layers.31.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 63.11%; scales equal 15.34%, mins equal 14.12%, nibbles equal 80.21%; |ours-FLM| max 0.0894; RMSE vs source: FLM 0.0024 ours 0.002276
+DIFF   model.layers.31.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 61.87%; scales equal 11.50%, mins equal 11.30%, nibbles equal 79.71%; |ours-FLM| max 0.04; RMSE vs source: FLM 0.002498 ours 0.002378
+DIFF   model.layers.31.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 63.35%; scales equal 6.17%, mins equal 8.50%, nibbles equal 81.31%; |ours-FLM| max 0.00781; RMSE vs source: FLM 0.001885 ours 0.001682
+DIFF   model.layers.32.mlp.down_proj.weight: layout round trip EXACT; bytes equal 65.22%; scales equal 15.72%, mins equal 15.66%, nibbles equal 81.89%; |ours-FLM| max 0.0342; RMSE vs source: FLM 0.001795 ours 0.001725
+DIFF   model.layers.32.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 73.15%; scales equal 24.70%, mins equal 22.82%, nibbles equal 87.25%; |ours-FLM| max 0.0471; RMSE vs source: FLM 0.002463 ours 0.002433
+DIFF   model.layers.32.mlp.up_proj.weight: layout round trip EXACT; bytes equal 73.28%; scales equal 25.03%, mins equal 23.07%, nibbles equal 87.29%; |ours-FLM| max 0.0374; RMSE vs source: FLM 0.002484 ours 0.002456
+DIFF   model.layers.32.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 63.75%; scales equal 6.45%, mins equal 8.53%, nibbles equal 81.61%; |ours-FLM| max 0.008; RMSE vs source: FLM 0.001908 ours 0.001705
+DIFF   model.layers.32.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 61.92%; scales equal 13.90%, mins equal 12.97%, nibbles equal 79.45%; |ours-FLM| max 0.0527; RMSE vs source: FLM 0.00241 ours 0.002275
+DIFF   model.layers.32.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 58.20%; scales equal 9.07%, mins equal 9.16%, nibbles equal 76.98%; |ours-FLM| max 0.04; RMSE vs source: FLM 0.00253 ours 0.00236
+DIFF   model.layers.32.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 63.84%; scales equal 6.74%, mins equal 8.47%, nibbles equal 81.60%; |ours-FLM| max 0.00818; RMSE vs source: FLM 0.001906 ours 0.001702
+DIFF   model.layers.33.mlp.down_proj.weight: layout round trip EXACT; bytes equal 61.93%; scales equal 12.54%, mins equal 12.40%, nibbles equal 79.64%; |ours-FLM| max 0.0481; RMSE vs source: FLM 0.001932 ours 0.001827
+DIFF   model.layers.33.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 68.28%; scales equal 17.94%, mins equal 16.83%, nibbles equal 84.20%; |ours-FLM| max 0.0498; RMSE vs source: FLM 0.002414 ours 0.002354
+DIFF   model.layers.33.mlp.up_proj.weight: layout round trip EXACT; bytes equal 68.43%; scales equal 19.04%, mins equal 17.41%, nibbles equal 84.19%; |ours-FLM| max 0.0349; RMSE vs source: FLM 0.002437 ours 0.002379
+DIFF   model.layers.33.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 63.49%; scales equal 6.67%, mins equal 8.54%, nibbles equal 81.30%; |ours-FLM| max 0.00781; RMSE vs source: FLM 0.001859 ours 0.00166
+DIFF   model.layers.33.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 60.59%; scales equal 12.34%, mins equal 11.76%, nibbles equal 78.51%; |ours-FLM| max 0.0376; RMSE vs source: FLM 0.002361 ours 0.00221
+DIFF   model.layers.33.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 55.02%; scales equal 6.82%, mins equal 7.19%, nibbles equal 74.60%; |ours-FLM| max 0.0452; RMSE vs source: FLM 0.002556 ours 0.002338
+DIFF   model.layers.33.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 63.66%; scales equal 6.69%, mins equal 8.27%, nibbles equal 81.39%; |ours-FLM| max 0.008; RMSE vs source: FLM 0.00186 ours 0.00166
+DIFF   model.layers.34.mlp.down_proj.weight: layout round trip EXACT; bytes equal 58.30%; scales equal 8.90%, mins equal 9.21%, nibbles equal 77.11%; |ours-FLM| max 0.0442; RMSE vs source: FLM 0.001929 ours 0.001796
+DIFF   model.layers.34.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 63.03%; scales equal 12.96%, mins equal 12.49%, nibbles equal 80.51%; |ours-FLM| max 0.0376; RMSE vs source: FLM 0.002561 ours 0.00245
+DIFF   model.layers.34.mlp.up_proj.weight: layout round trip EXACT; bytes equal 63.18%; scales equal 13.53%, mins equal 12.81%, nibbles equal 80.55%; |ours-FLM| max 0.0447; RMSE vs source: FLM 0.002639 ours 0.002524
+DIFF   model.layers.34.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 63.29%; scales equal 6.52%, mins equal 8.40%, nibbles equal 81.17%; |ours-FLM| max 0.00793; RMSE vs source: FLM 0.00188 ours 0.001677
+DIFF   model.layers.34.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 63.28%; scales equal 15.91%, mins equal 14.90%, nibbles equal 80.38%; |ours-FLM| max 0.0317; RMSE vs source: FLM 0.002291 ours 0.002191
+DIFF   model.layers.34.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 53.65%; scales equal 5.65%, mins equal 6.16%, nibbles equal 73.54%; |ours-FLM| max 0.0399; RMSE vs source: FLM 0.002719 ours 0.002449
+DIFF   model.layers.34.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 63.74%; scales equal 6.36%, mins equal 8.61%, nibbles equal 81.53%; |ours-FLM| max 0.00778; RMSE vs source: FLM 0.001875 ours 0.001674
+DIFF   model.layers.4.mlp.down_proj.weight: layout round trip EXACT; bytes equal 61.02%; scales equal 9.13%, mins equal 9.40%, nibbles equal 79.37%; |ours-FLM| max 0.0522; RMSE vs source: FLM 0.002215 ours 0.002088
+DIFF   model.layers.4.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 69.75%; scales equal 19.50%, mins equal 18.67%, nibbles equal 84.99%; |ours-FLM| max 0.0444; RMSE vs source: FLM 0.002823 ours 0.002756
+DIFF   model.layers.4.mlp.up_proj.weight: layout round trip EXACT; bytes equal 69.96%; scales equal 20.07%, mins equal 19.15%, nibbles equal 85.09%; |ours-FLM| max 0.0314; RMSE vs source: FLM 0.002911 ours 0.002842
+DIFF   model.layers.4.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 62.93%; scales equal 10.76%, mins equal 11.06%, nibbles equal 80.57%; |ours-FLM| max 0.0251; RMSE vs source: FLM 0.002773 ours 0.002619
+DIFF   model.layers.4.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 67.89%; scales equal 19.02%, mins equal 17.92%, nibbles equal 83.66%; |ours-FLM| max 0.0679; RMSE vs source: FLM 0.002142 ours 0.002074
+DIFF   model.layers.4.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 63.01%; scales equal 11.21%, mins equal 11.23%, nibbles equal 80.59%; |ours-FLM| max 0.0552; RMSE vs source: FLM 0.002682 ours 0.002554
+DIFF   model.layers.4.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 63.63%; scales equal 12.98%, mins equal 12.36%, nibbles equal 80.96%; |ours-FLM| max 0.041; RMSE vs source: FLM 0.002802 ours 0.002682
+DIFF   model.layers.5.mlp.down_proj.weight: layout round trip EXACT; bytes equal 61.66%; scales equal 10.43%, mins equal 10.43%, nibbles equal 79.73%; |ours-FLM| max 0.0435; RMSE vs source: FLM 0.002155 ours 0.002045
+DIFF   model.layers.5.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 70.44%; scales equal 21.00%, mins equal 19.70%, nibbles equal 85.43%; |ours-FLM| max 0.0312; RMSE vs source: FLM 0.002615 ours 0.00256
+DIFF   model.layers.5.mlp.up_proj.weight: layout round trip EXACT; bytes equal 70.83%; scales equal 22.29%, mins equal 20.75%, nibbles equal 85.61%; |ours-FLM| max 0.0361; RMSE vs source: FLM 0.00266 ours 0.002608
+DIFF   model.layers.5.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 62.20%; scales equal 10.32%, mins equal 10.47%, nibbles equal 80.10%; |ours-FLM| max 0.0315; RMSE vs source: FLM 0.002756 ours 0.002618
+DIFF   model.layers.5.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 68.10%; scales equal 19.85%, mins equal 19.24%, nibbles equal 83.70%; |ours-FLM| max 0.0508; RMSE vs source: FLM 0.002559 ours 0.00248
+DIFF   model.layers.5.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 62.23%; scales equal 10.56%, mins equal 10.32%, nibbles equal 80.07%; |ours-FLM| max 0.0554; RMSE vs source: FLM 0.002722 ours 0.002591
+DIFF   model.layers.5.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 61.97%; scales equal 10.99%, mins equal 11.45%, nibbles equal 79.85%; |ours-FLM| max 0.0447; RMSE vs source: FLM 0.002858 ours 0.002712
+DIFF   model.layers.6.mlp.down_proj.weight: layout round trip EXACT; bytes equal 62.10%; scales equal 11.32%, mins equal 11.12%, nibbles equal 79.98%; |ours-FLM| max 0.041; RMSE vs source: FLM 0.002089 ours 0.001987
+DIFF   model.layers.6.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 70.40%; scales equal 21.34%, mins equal 20.06%, nibbles equal 85.35%; |ours-FLM| max 0.0513; RMSE vs source: FLM 0.00273 ours 0.002673
+DIFF   model.layers.6.mlp.up_proj.weight: layout round trip EXACT; bytes equal 70.57%; scales equal 22.13%, mins equal 20.78%, nibbles equal 85.41%; |ours-FLM| max 0.0427; RMSE vs source: FLM 0.002725 ours 0.002669
+DIFF   model.layers.6.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 59.42%; scales equal 9.03%, mins equal 9.61%, nibbles equal 77.93%; |ours-FLM| max 0.0244; RMSE vs source: FLM 0.002776 ours 0.0026
+DIFF   model.layers.6.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 64.20%; scales equal 14.82%, mins equal 14.09%, nibbles equal 81.17%; |ours-FLM| max 0.053; RMSE vs source: FLM 0.00247 ours 0.002369
+DIFF   model.layers.6.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 59.04%; scales equal 8.99%, mins equal 9.33%, nibbles equal 77.63%; |ours-FLM| max 0.0522; RMSE vs source: FLM 0.00276 ours 0.002587
+DIFF   model.layers.6.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 59.64%; scales equal 9.77%, mins equal 9.94%, nibbles equal 77.98%; |ours-FLM| max 0.0254; RMSE vs source: FLM 0.00275 ours 0.002578
+DIFF   model.layers.7.mlp.down_proj.weight: layout round trip EXACT; bytes equal 61.75%; scales equal 10.63%, mins equal 10.55%, nibbles equal 79.75%; |ours-FLM| max 0.0522; RMSE vs source: FLM 0.002008 ours 0.001906
+DIFF   model.layers.7.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 70.32%; scales equal 21.41%, mins equal 20.09%, nibbles equal 85.31%; |ours-FLM| max 0.0522; RMSE vs source: FLM 0.002648 ours 0.002592
+DIFF   model.layers.7.mlp.up_proj.weight: layout round trip EXACT; bytes equal 70.64%; scales equal 22.03%, mins equal 20.84%, nibbles equal 85.46%; |ours-FLM| max 0.043; RMSE vs source: FLM 0.002656 ours 0.002602
+DIFF   model.layers.7.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 62.99%; scales equal 11.54%, mins equal 11.08%, nibbles equal 80.60%; |ours-FLM| max 0.0371; RMSE vs source: FLM 0.002979 ours 0.002836
+DIFF   model.layers.7.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 61.92%; scales equal 13.07%, mins equal 12.60%, nibbles equal 79.56%; |ours-FLM| max 0.0596; RMSE vs source: FLM 0.002566 ours 0.002438
+DIFF   model.layers.7.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 63.41%; scales equal 11.94%, mins equal 11.71%, nibbles equal 80.85%; |ours-FLM| max 0.0449; RMSE vs source: FLM 0.002808 ours 0.002688
+DIFF   model.layers.7.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 63.49%; scales equal 12.37%, mins equal 12.22%, nibbles equal 80.88%; |ours-FLM| max 0.0527; RMSE vs source: FLM 0.002756 ours 0.002634
+DIFF   model.layers.8.mlp.down_proj.weight: layout round trip EXACT; bytes equal 63.08%; scales equal 11.28%, mins equal 11.20%, nibbles equal 80.73%; |ours-FLM| max 0.0388; RMSE vs source: FLM 0.001907 ours 0.001822
+DIFF   model.layers.8.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 69.38%; scales equal 20.08%, mins equal 18.99%, nibbles equal 84.75%; |ours-FLM| max 0.0459; RMSE vs source: FLM 0.002647 ours 0.002585
+DIFF   model.layers.8.mlp.up_proj.weight: layout round trip EXACT; bytes equal 69.45%; scales equal 20.86%, mins equal 19.55%, nibbles equal 84.73%; |ours-FLM| max 0.0405; RMSE vs source: FLM 0.00263 ours 0.002569
+DIFF   model.layers.8.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 63.55%; scales equal 12.25%, mins equal 11.89%, nibbles equal 80.95%; |ours-FLM| max 0.0435; RMSE vs source: FLM 0.002725 ours 0.002606
+DIFF   model.layers.8.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 62.72%; scales equal 12.52%, mins equal 12.24%, nibbles equal 80.28%; |ours-FLM| max 0.0439; RMSE vs source: FLM 0.002432 ours 0.002318
+DIFF   model.layers.8.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 63.79%; scales equal 12.74%, mins equal 12.46%, nibbles equal 81.08%; |ours-FLM| max 0.0515; RMSE vs source: FLM 0.002746 ours 0.00263
+DIFF   model.layers.8.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 64.34%; scales equal 14.44%, mins equal 13.96%, nibbles equal 81.33%; |ours-FLM| max 0.0654; RMSE vs source: FLM 0.002787 ours 0.002669
+DIFF   model.layers.9.mlp.down_proj.weight: layout round trip EXACT; bytes equal 63.92%; scales equal 12.09%, mins equal 12.06%, nibbles equal 81.35%; |ours-FLM| max 0.0508; RMSE vs source: FLM 0.00194 ours 0.001862
+DIFF   model.layers.9.mlp.gate_proj.weight: layout round trip EXACT; bytes equal 67.88%; scales equal 18.02%, mins equal 17.22%, nibbles equal 83.80%; |ours-FLM| max 0.0525; RMSE vs source: FLM 0.002562 ours 0.002491
+DIFF   model.layers.9.mlp.up_proj.weight: layout round trip EXACT; bytes equal 67.90%; scales equal 18.91%, mins equal 17.52%, nibbles equal 83.74%; |ours-FLM| max 0.0505; RMSE vs source: FLM 0.002555 ours 0.002484
+DIFF   model.layers.9.self_attn.k_proj.weight: layout round trip EXACT; bytes equal 67.36%; scales equal 15.70%, mins equal 14.82%, nibbles equal 83.59%; |ours-FLM| max 0.0244; RMSE vs source: FLM 0.002441 ours 0.00236
+DIFF   model.layers.9.self_attn.o_proj.weight: layout round trip EXACT; bytes equal 61.87%; scales equal 12.59%, mins equal 12.30%, nibbles equal 79.59%; |ours-FLM| max 0.0474; RMSE vs source: FLM 0.002085 ours 0.001978
+DIFF   model.layers.9.self_attn.q_proj.weight: layout round trip EXACT; bytes equal 67.44%; scales equal 16.12%, mins equal 15.21%, nibbles equal 83.65%; |ours-FLM| max 0.0471; RMSE vs source: FLM 0.002536 ours 0.002464
+DIFF   model.layers.9.self_attn.v_proj.weight: layout round trip EXACT; bytes equal 67.25%; scales equal 16.30%, mins equal 15.36%, nibbles equal 83.57%; |ours-FLM| max 0.0327; RMSE vs source: FLM 0.002415 ours 0.002345
+DIFF   model.per_layer_token_embd.weight: int8 equal 18.10%; dequant |ours-FLM| max 0.399 (29.8 FLM int8 steps), mean 0.0322
+
+459/709 tensors byte-identical
