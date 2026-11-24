@@ -48,6 +48,7 @@ free GPU, merged and converted on the laptop, and run by FastFlowLM on the NPU.
 | ft1: 444 conversations, 2 epochs | first pipeline run | 340/381 (89%), 4.9 s/request: **BETTER**, +4.8 points (95% +0.6 to +9.2), p = 0.01, 27 families better, 11 worse |
 | stock, 0.35.0 RC build (b22db7f) | — | 324/381 (85%), 5.2 s/request |
 | ft1, same RC build | | 340/381 (89%), 4.9 s/request: UNDECIDED, +3.6 points (95% −0.7 to +7.8), p = 0.10, 24 better, 13 worse, 5% faster |
+| ft2: 993 conversations, 1.5 epochs, RC build | before `balance.py` | 340/381 (89%), 4.6 s/request: **BETTER**, +4.6 points (95% +1.2 to +8.2), p = 0.04, 20 better, 8 worse, 11% faster |
 
 (The first two rows ran on the build before `change: up/down` for volume and
 brightness, which counts against ft1 on those scenarios.)
