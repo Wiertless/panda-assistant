@@ -1139,7 +1139,21 @@ impl Agent {
                 .filter(|(_, (_, done))| !done)
                 .map(|(i, (s, _))| format!("{}. {s}", i + 1))
                 .collect();
-            if calls.is_empty() && !self.cancelled() && !left.is_empty() && !turn.plan_checked {
+            // Only when a step failed or was declined: if every tool worked, steps without a
+            // tool of their own ("tell me the artist") were done in words.
+            let fell_short = !turn.errors.is_empty() || turn.declined;
+            if calls.is_empty() && !left.is_empty() && !fell_short && !self.plan.is_empty() {
+                for step in self.plan.iter_mut() {
+                    step.1 = true;
+                }
+                self.show_plan(cb);
+            }
+            if calls.is_empty()
+                && !self.cancelled()
+                && !left.is_empty()
+                && fell_short
+                && !turn.plan_checked
+            {
                 // The turn would end with steps of its plan left: take the answer back and
                 // ask once for them, or for a plain account of what wasn't done.
                 cb.retract();
@@ -1215,6 +1229,7 @@ impl Agent {
                     }
                 }
                 turn.tools_ran += 1;
+                turn.declined |= result == DECLINED;
                 if result.starts_with("Error") && !result.starts_with(FINAL_ERROR) {
                     turn.failed.push(key);
                     turn.errors
@@ -1907,6 +1922,8 @@ struct Turn {
     tainted: bool,
     /// The model chose to answer with the reply tool on a required round.
     replied: bool,
+    /// The user declined an action this turn.
+    declined: bool,
     /// The end-of-turn check of the plan was made (once a turn), and where its note sits.
     plan_checked: bool,
     plan_note_at: Option<usize>,
@@ -3038,8 +3055,37 @@ mod tests {
     }
 
     #[test]
-    fn a_plan_is_checked_before_the_turn_ends() {
+    fn a_plan_is_checked_only_when_a_step_fell_short() {
         let _h = temp_home();
+        // Every tool worked, one step had no tool ("tell me the artist"): all ticked, the
+        // answer stands (the owner's test was retracted and turned into an apology).
+        let flm = FakeFlm::start(vec![
+            (
+                200,
+                tool_reply(
+                    PLAN,
+                    r#"{"steps": ["Find the song", "Say the artist", "Send it"]}"#,
+                    "p1",
+                ),
+            ),
+            (200, tool_reply("set_volume", r#"{"percent": 30}"#, "c1")),
+            (200, tool_reply("get_datetime", "{}", "c2")),
+            (200, text_reply("It's by Charli XCX, and it's sent.")),
+        ]);
+        let mut a = agent(&flm);
+        a.ask(
+            "find the song, tell me the artist and send it",
+            &Rec::default(),
+            &[],
+        )
+        .unwrap();
+        assert_eq!(flm.requests().len(), 4, "no check round");
+        assert!(a.plan.iter().all(|(_, d)| *d));
+        assert_eq!(
+            a.messages.last().unwrap()["content"],
+            "It's by Charli XCX, and it's sent."
+        );
+        // A step failed and it says it's all done: asked once to do it or say so.
         let flm = FakeFlm::start(vec![
             (
                 200,
@@ -3049,12 +3095,9 @@ mod tests {
                     "p1",
                 ),
             ),
-            (200, tool_reply("set_volume", r#"{"percent": 30}"#, "c1")),
-            (200, tool_reply(PLAN, r#"{"done": [1]}"#, "p2")),
+            (200, tool_reply("set_volum", r#"{"percent": 30}"#, "c1")),
             (200, text_reply("All done!")),
-            (200, tool_reply("get_datetime", "{}", "c2")),
-            (200, tool_reply(PLAN, r#"{"done": [2]}"#, "p3")),
-            (200, text_reply("Volume 30%, and it's 22:00.")),
+            (200, text_reply("I couldn't set the volume.")),
         ]);
         let mut a = agent(&flm);
         a.ask(
@@ -3064,7 +3107,7 @@ mod tests {
         )
         .unwrap();
         let reqs = flm.requests();
-        assert_eq!(reqs.len(), 7);
+        assert_eq!(reqs.len(), 4);
         let said = |r: &Value, what: &str| {
             r["messages"]
                 .as_array()
@@ -3072,31 +3115,19 @@ mod tests {
                 .iter()
                 .any(|m| m["content"].as_str().is_some_and(|c| c.contains(what)))
         };
-        assert!(said(&reqs[4], "2. Tell the time"), "the step left is named");
         assert!(
-            reqs[0]["tools"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|t| t["function"]["name"] == PLAN)
-        );
-        assert_eq!(
-            a.plan,
-            [
-                ("Set the volume".into(), true),
-                ("Tell the time".into(), true)
-            ]
+            said(&reqs[3], "haven't been done"),
+            "the check names what's left"
         );
         assert_eq!(
             a.messages.last().unwrap()["content"],
-            "Volume 30%, and it's 22:00."
+            "I couldn't set the volume."
         );
-        assert!(
-            !a.messages.iter().any(|m| m["content"]
+        assert!(!a.messages.iter().any(|m| {
+            m["content"]
                 .as_str()
-                .is_some_and(|c| c.contains("aren't ticked"))),
-            "the check isn't kept in the chat"
-        );
+                .is_some_and(|c| c.contains("haven't been done"))
+        }));
     }
 
     #[test]

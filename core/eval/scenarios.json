@@ -4013,5 +4013,27 @@
   "paraphrases": [
    "przeszukaj zdjecia i znajdz screenshota z dzisiejsza data, zmien go na pdf i wyslij na telefon"
   ]
+ },
+ {
+  "name": "song, artist, send",
+  "prompt": "search for make you mine in music and tell me the artist then send it to my phone",
+  "stubs": {
+   "play_music": "Playing Make you mine by Charli XCX in Gapless.",
+   "find_files": "~/Music/Charli XCX/Make you mine.flac (31 MB, 2025-06-01)",
+   "send_file": "Sent Make you mine.flac to jakubs-iphone with Taildrop.",
+   "send_text": "Sent the note to jakubs-iphone with Taildrop."
+  },
+  "expect": [
+   {
+    "tool": "send_file|send_text"
+   }
+  ],
+  "answer": [
+   "charli"
+  ],
+  "tags": [
+   "chain",
+   "agent"
+  ]
  }
 ]
