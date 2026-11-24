@@ -160,6 +160,11 @@ pub struct Window {
     loading: Rc<Cell<bool>>,
 }
 
+/// The chat column's widest (messages and composer).
+const CHAT_WIDTH: i32 = 1500;
+/// Space between the chat and the window's sides.
+const CHAT_PADDING: i32 = 24;
+
 fn button(icon: &str, tip: &str) -> gtk::Button {
     gtk::Button::builder()
         .icon_name(icon)
@@ -221,9 +226,13 @@ impl Window {
             .margin_end(12)
             .build();
         messages.add_css_class("conversation");
+        // Wider than GNOME's usual reading column: on a desktop the chat uses the window,
+        // as desktop chat apps do; very wide windows still keep margins.
         let clamp = adw::Clamp::builder()
-            .maximum_size(720)
-            .tightening_threshold(560)
+            .maximum_size(CHAT_WIDTH)
+            .tightening_threshold(CHAT_WIDTH - 200)
+            .margin_start(CHAT_PADDING)
+            .margin_end(CHAT_PADDING)
             .child(&messages)
             .build();
         let scroller = gtk::ScrolledWindow::builder()
@@ -280,8 +289,10 @@ impl Window {
         composer.append(&attach_revealer);
         composer.append(&row);
         let composer_clamp = adw::Clamp::builder()
-            .maximum_size(720)
-            .tightening_threshold(560)
+            .maximum_size(CHAT_WIDTH)
+            .tightening_threshold(CHAT_WIDTH - 200)
+            .margin_start(CHAT_PADDING)
+            .margin_end(CHAT_PADDING)
             .child(&composer)
             .margin_top(6)
             .margin_bottom(16)
