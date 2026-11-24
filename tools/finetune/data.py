@@ -289,6 +289,7 @@ chat("think it through: why is the sky blue?",
 
 import habits  # noqa: E402,F401  (hand-written: tools before answers)
 import judgement  # noqa: E402,F401  (hand-written: context, asking back, errors, follow-ups)
+import realistic  # noqa: E402,F401  (hand-written: a day's tasks, answers that pick out what matters)
 
 data_dsl.SOURCE = "gen"
 import generated  # noqa: E402,F401  (adds its families to EXAMPLES)
