@@ -69,29 +69,47 @@ enum Target {
 }
 
 /// A step's summary in plain words, and what it touched. "Read https://…" reads "Read
-/// a web page" and "Edit ~/Obrazy/Trip/photo.jpg" reads "Edit photo.jpg"; the link or
+/// a web page" and "Edit ~/Obrazy/Zrzuty ekranu/a.png" reads "Edit a.png"; the link or
 /// path goes in the details and the step's menu.
-// shortcut: paths are split at spaces, so a folder with a space keeps its full path in the label.
 fn plain_step(name: &str, summary: &str) -> (String, Vec<Target>) {
     let home = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default());
+    let words: Vec<&str> = summary.split(' ').collect();
+    let clean = |w: &str| {
+        w.trim_matches(|c: char| matches!(c, '“' | '”' | '"' | '\'' | ',' | ')' | '('))
+            .to_string()
+    };
+    let resolve = |w: &str| -> std::path::PathBuf {
+        match w.strip_prefix("~/") {
+            Some(rest) => home.join(rest),
+            None if w.starts_with('/') => w.into(),
+            None => home.join(w),
+        }
+    };
     let mut label = summary.to_string();
     let mut targets = vec![];
-    for word in summary.split_whitespace() {
-        let w = word.trim_matches(|c: char| matches!(c, '“' | '”' | '"' | '\'' | ',' | ')' | '('));
+    let mut i = 0;
+    while i < words.len() {
+        let w = clean(words[i]);
         if w.starts_with("http://") || w.starts_with("https://") {
             let url = w.trim_end_matches(['.', ',']).to_string();
             label = match name {
                 "read_web_page" => "Read a web page".into(),
                 "open_url" => "Open a link".into(),
-                _ => label.replace(word, "a link"),
+                _ => label.replace(words[i], "a link"),
             };
             targets.push(Target::Link(url));
-        } else if w.contains('/') && w.len() > 2 {
-            let path = match w.strip_prefix("~/") {
-                Some(rest) => home.join(rest),
-                None if w.starts_with('/') => w.into(),
-                None => home.join(w),
-            };
+            i += 1;
+            continue;
+        }
+        if !w.contains('/') || w.len() < 3 {
+            i += 1;
+            continue;
+        }
+        // The longest run of words from here that is a real path (folders with spaces).
+        let mut found = None;
+        for end in (i + 1..=words.len()).rev() {
+            let text = clean(&words[i..end].join(" "));
+            let path = resolve(&text);
             let pattern = path
                 .file_name()
                 .is_some_and(|n| n.to_string_lossy().contains(['*', '?']));
@@ -100,27 +118,28 @@ fn plain_step(name: &str, summary: &str) -> (String, Vec<Target>) {
             } else {
                 Some(path.clone())
             };
-            let Some(real) = real.filter(|p| p.exists()) else {
-                continue;
-            };
-            let shown = if pattern {
-                format!(
-                    "{}/{}",
-                    real.file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_default(),
-                    path.file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_default()
-                )
-            } else {
-                real.file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_default()
-            };
-            label = label.replace(w, &shown);
-            targets.push(Target::File(real));
+            if let Some(real) = real.filter(|p| p.exists()) {
+                found = Some((end, text, path, real, pattern));
+                break;
+            }
         }
+        let Some((end, text, path, real, pattern)) = found else {
+            i += 1;
+            continue;
+        };
+        let name_of = |p: &std::path::Path| {
+            p.file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default()
+        };
+        let shown = if pattern {
+            format!("{}/{}", name_of(&real), name_of(&path))
+        } else {
+            name_of(&real)
+        };
+        label = label.replace(&text, &shown);
+        targets.push(Target::File(real));
+        i = end;
     }
     (label, targets)
 }
@@ -959,5 +978,38 @@ impl Turn for Reply {
         if let Some(w) = self.win.upgrade() {
             w.turn_finished(error);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn steps_in_plain_words() {
+        let home = std::env::var("HOME").unwrap();
+        let dir = std::path::Path::new(&home).join(".cache/panda-test-plain/Zrzuty ekranu");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a b.png"), "x").unwrap();
+        let (label, t) = plain_step(
+            "edit_image",
+            "Edit ~/.cache/panda-test-plain/Zrzuty ekranu/a b.png",
+        );
+        assert_eq!(label, "Edit a b.png");
+        assert!(matches!(&t[..], [Target::File(p)] if p.ends_with("Zrzuty ekranu/a b.png")));
+        let (label, _) = plain_step(
+            "edit_image",
+            "Edit ~/.cache/panda-test-plain/Zrzuty ekranu/*.png",
+        );
+        assert_eq!(label, "Edit Zrzuty ekranu/*.png");
+        let (label, t) = plain_step("read_web_page", "Read https://example.com/a");
+        assert_eq!(label, "Read a web page");
+        assert!(matches!(&t[..], [Target::Link(u)] if u == "https://example.com/a"));
+        assert_eq!(
+            plain_step("set_volume", "Set volume to 30%").0,
+            "Set volume to 30%"
+        );
+        std::fs::remove_dir_all(std::path::Path::new(&home).join(".cache/panda-test-plain"))
+            .unwrap();
     }
 }
