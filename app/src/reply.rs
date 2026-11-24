@@ -247,7 +247,7 @@ fn plain(markdown: &str) -> String {
 }
 
 #[cfg(feature = "adw-1-8")]
-fn spinner() -> gtk::Widget {
+pub fn spinner() -> gtk::Widget {
     adw::Spinner::builder()
         .halign(gtk::Align::Start)
         .width_request(24)
@@ -257,7 +257,7 @@ fn spinner() -> gtk::Widget {
 }
 
 #[cfg(not(feature = "adw-1-8"))]
-fn spinner() -> gtk::Widget {
+pub fn spinner() -> gtk::Widget {
     gtk::Spinner::builder()
         .spinning(true)
         .halign(gtk::Align::Start)
@@ -282,6 +282,8 @@ struct Inner {
 
 pub struct Reply {
     win: Weak<Window>,
+    /// The chat this answer belongs to (another may be open by the time it ends).
+    chat_id: String,
     bx: gtk::Box,
     model_label: gtk::Label,
     spin: gtk::Box,
@@ -332,6 +334,7 @@ impl Reply {
         }
         Rc::new(Self {
             win: win.weak(),
+            chat_id: win.st.borrow().chat_id.clone(),
             bx,
             model_label,
             spin,
@@ -970,6 +973,23 @@ impl Turn for Reply {
     }
 
     fn on_confirm(&self, request: u32, _name: &str, summary: &str, detail: &str, can_always: bool) {
+        // Asked from a chat that isn't open: say so; opening it shows the card
+        // (the window picks up a running answer and its waiting cards).
+        if let Some(w) = self.win.upgrade()
+            && w.st.borrow().chat_id != self.chat_id
+        {
+            let toast = adw::Toast::builder()
+                .title(glib::markup_escape_text(&format!(
+                    "A task needs your OK: {summary}"
+                )))
+                .button_label("_Review")
+                .action_name("app.open-chat")
+                .action_target(&self.chat_id.to_variant())
+                .priority(adw::ToastPriority::High)
+                .build();
+            w.toasts.add_toast(toast);
+            return;
+        }
         // Cards need an Rc for their buttons; the window keeps this reply in one.
         let me = self.win.upgrade().and_then(|w| w.st.borrow().reply.clone());
         if let Some(me) = me {
@@ -983,7 +1003,7 @@ impl Turn for Reply {
         }
         self.finish(true);
         if let Some(w) = self.win.upgrade() {
-            w.turn_finished(error);
+            w.turn_finished(&self.chat_id, error);
         }
     }
 }
