@@ -454,6 +454,8 @@ pub struct Agent {
     reply_language: Option<&'static str>,
     /// The request lists several actions: the first round is asked to plan them.
     plan_first: bool,
+    /// The request is of more than one action: a plan may be made (one action gets none).
+    plan_allowed: bool,
     /// Offer the plan tool (tasks of several steps get a checklist and a check at the end).
     pub planning: bool,
     /// This turn's plan: each step and whether it's done.
@@ -511,6 +513,7 @@ impl Agent {
             round_no: 0,
             reply_language: None,
             plan_first: false,
+            plan_allowed: false,
             planning: true,
             plan: vec![],
             group_seen: std::collections::HashMap::new(),
@@ -879,7 +882,9 @@ impl Agent {
     ) -> Result<(), FlmError> {
         self.reply_language = language(text);
         self.plan.clear();
-        self.plan_first = self.planning && self.use_tools && actions_in(text) >= 3;
+        let actions = actions_in(text);
+        self.plan_allowed = self.planning && self.use_tools && actions >= 2;
+        self.plan_first = self.plan_allowed && actions >= 3;
         // Tools that work on long text (documents) ask the model in a fresh context of their own.
         let (client, model) = (self.client.clone(), self.model.clone());
         self.ctx.ask_model = Some(Arc::new(move |system: &str, user: &str| {
@@ -1663,6 +1668,9 @@ Its notes: {notes}{done})"
     /// A plan call: new steps replace the plan, done ticks steps off. The checklist goes
     /// to the window; the result reads it back to the model.
     fn update_plan(&mut self, call: &ToolCall, cb: &dyn Callbacks) -> String {
+        if !self.plan_allowed {
+            return "No plan for a single step: just do it.".into();
+        }
         let args = call.parsed_arguments().unwrap_or_default();
         if let Some(steps) = args.get("steps").and_then(Value::as_array) {
             let steps: Vec<(String, bool)> = steps
@@ -3121,6 +3129,22 @@ mod tests {
                 .as_str()
                 .unwrap()
                 .contains("call plan")
+        );
+        // One action: no plan, nothing shown.
+        let flm = FakeFlm::start(vec![
+            (
+                200,
+                tool_reply(PLAN, r#"{"steps": ["Turn on dark mode"]}"#, "p1"),
+            ),
+            (200, tool_reply(REPLY, r#"{"text": "OK."}"#, "r2")),
+        ]);
+        let mut a = agent(&flm);
+        a.ask("turn on dark mode", &Rec::default(), &[]).unwrap();
+        assert!(a.plan.is_empty());
+        assert!(
+            a.messages
+                .iter()
+                .any(|m| m["content"] == "No plan for a single step: just do it.")
         );
     }
 
