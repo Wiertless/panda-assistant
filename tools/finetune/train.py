@@ -129,10 +129,13 @@ def main():
             "labels": torch.tensor([b["labels"] + [-100] * (n - len(b["labels"])) for b in batch]),
         }
 
+    # transformers 5 has no warmup_ratio: about 5% of the steps as a count. Checkpointing
+    # is already on (above), so the Trainer isn't asked to set it up again.
+    steps = max(1, int(len(data) * EPOCHS / 8))
     args = TrainingArguments(
         output_dir=f"{WORK}/run", num_train_epochs=EPOCHS, per_device_train_batch_size=1,
-        gradient_accumulation_steps=8, learning_rate=LR, lr_scheduler_type="cosine", warmup_ratio=0.05,
-        fp16=True, logging_steps=5, save_strategy="no", report_to=[], gradient_checkpointing=True,
+        gradient_accumulation_steps=8, learning_rate=LR, lr_scheduler_type="cosine",
+        warmup_steps=max(1, steps // 20), fp16=True, logging_steps=5, save_strategy="no", report_to=[],
         remove_unused_columns=False, optim="paged_adamw_8bit",
     )
     Trainer(model=model, args=args, train_dataset=data, data_collator=collate).train()
