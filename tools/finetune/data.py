@@ -288,6 +288,8 @@ chat("think it through: why is the sky blue?",
      "Sunlight scatters off the molecules in the air, and short blue wavelengths scatter the most (Rayleigh scattering), so blue light reaches your eyes from all over the sky.")
 
 
+import habits  # noqa: E402,F401  (hand-written: tools before answers)
+
 data_dsl.SOURCE = "gen"
 import generated  # noqa: E402,F401  (adds its families to EXAMPLES)
 
