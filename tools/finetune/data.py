@@ -19,7 +19,7 @@ HERE = Path(__file__).parent
 TEMPLATE = json.loads((HERE / "template.json").read_text())
 TOOLS = {t["function"]["name"]: t for t in TEMPLATE["tools"]}
 ORDER = [t["function"]["name"] for t in TEMPLATE["tools"]]
-DISTRACTORS = 20
+DISTRACTORS = 10  # 20 made ~3.2K-token examples, 55 s a step on a T4
 
 sys.path.insert(0, str(HERE))  # python -I leaves the script's folder out
 import data_dsl  # noqa: E402
@@ -280,7 +280,6 @@ chat("cześć, jak się masz?", "Dzięki, dobrze! W czym mogę pomóc?")
 chat("what's the capital of Australia", "Canberra.")
 chat("explain what an NPU is in one sentence",
      "An NPU is a processor built for AI work: it runs neural networks, like me, faster and with less power than the CPU.")
-chat("ile to jest 7 razy 6", "42.")
 chat("tell me a short joke", "Why do programmers prefer dark mode? Because light attracts bugs.")
 chat("dlaczego niebo jest niebieskie?",
      "Bo światło słoneczne rozprasza się w powietrzu, a niebieskie fale (krótsze) rozpraszają się najmocniej: to rozpraszanie Rayleigha.")
@@ -293,6 +292,7 @@ import judgement  # noqa: E402,F401  (hand-written: context, asking back, errors
 
 data_dsl.SOURCE = "gen"
 import generated  # noqa: E402,F401  (adds its families to EXAMPLES)
+import generated2  # noqa: E402,F401
 
 # ---------------------------------------------------------------- building
 def check(e):
