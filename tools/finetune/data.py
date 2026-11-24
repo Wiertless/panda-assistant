@@ -289,6 +289,7 @@ chat("think it through: why is the sky blue?",
 
 
 import habits  # noqa: E402,F401  (hand-written: tools before answers)
+import judgement  # noqa: E402,F401  (hand-written: context, asking back, errors, follow-ups)
 
 data_dsl.SOURCE = "gen"
 import generated  # noqa: E402,F401  (adds its families to EXAMPLES)
@@ -334,10 +335,11 @@ def render(e, rng):
     for u, a in e["before"]:
         msgs.append({"role": "user", "content": u})
         msgs.append({"role": "assistant", "content": a})
-    msgs.append({"role": "user", "content": f"{e['user']}\n\n(Answer in {lang}.)"})
+    # As the app sends it: the language note only when the app can tell the language.
+    msgs.append({"role": "user", "content": f"{e['user']}\n\n(Answer in {lang}.)" if lang else e["user"]})
     if e.get("reply"):
+        # The reply call is the answer: the turn ends there, no tool result follows.
         msgs.append({"role": "assistant", "content": "", "tool_calls": [call(0, "reply", {"text": e["answer"]})]})
-        msgs.append({"role": "tool", "tool_call_id": "call_0", "content": "Shown to the user."})
     else:
         for i, s in enumerate(e["steps"]):
             msgs.append({"role": "assistant", "content": "", "tool_calls": [call(i, s.tool, s.args)]})
@@ -368,8 +370,9 @@ def main(out):
         for e in keep:
             f.write(json.dumps(render(e, rng), ensure_ascii=False) + "\n")
     pl = sum(1 for e in keep if (e["lang"] or lang_of(e["user"])) == "Polish")
+    none = sum(1 for e in keep if not (e["lang"] or lang_of(e["user"])))
     hand = sum(1 for e in keep if e["src"] == "hand")
-    print(f"{len(keep)} examples ({pl} Polish, {hand} hand-written; {skipped} generated eval prompts skipped) -> {out}")
+    print(f"{len(keep)} examples ({pl} with the Polish note, {none} with none, {hand} hand-written; {skipped} generated eval prompts skipped) -> {out}")
 
 
 if __name__ == "__main__":
