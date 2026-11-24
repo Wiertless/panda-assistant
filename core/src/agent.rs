@@ -215,15 +215,15 @@ pub const ESCALATE: &str = "ask_smarter_model";
 /// The steps of a task of several, shown to the user as a checklist and ticked as
 /// they're done; a turn that ends with steps left is checked once.
 pub const PLAN: &str = "plan";
-const PLAN_LEFT: &str = "(These steps of your plan aren't ticked: {left}. Do them now and tick them with plan \
-done, or, if they can't be done, tell the user plainly which weren't done and why. Don't say it's all done.)";
+const PLAN_LEFT: &str = "(These steps of your plan haven't been done: {left}. Do them now, or, if they can't be \
+done, tell the user plainly which weren't done and why. Don't say it's all done.)";
 
 fn plan_schema() -> Value {
     json!({"type": "function", "function": {
         "name": PLAN,
         "description": "For a task of 3 or more steps (several tools one after another), first list the steps \
-(steps), then do them, and as each is done call plan with its number in done. The user sees the list as a checklist. \
-Not for a one-step request.",
+(steps), one per tool call, then do them in order. The user sees the list as a checklist; steps are ticked as their \
+tools succeed. Not for a one-step request.",
         "parameters": {"type": "object", "properties": {
             "steps": {"type": "array", "items": {"type": "string"}, "description": "The steps, short, in order"},
             "done": {"type": "array", "items": {"type": "integer"}, "description": "Numbers of the steps just done (from 1)"}}}}})
@@ -1203,6 +1203,11 @@ impl Agent {
                 }
                 if !result.starts_with("Error") {
                     turn.done.push(call.name.clone());
+                    // A step done: tick the next one (no extra round of the model to do it).
+                    if let Some(step) = self.plan.iter_mut().find(|(_, d)| !d) {
+                        step.1 = true;
+                        self.show_plan(cb);
+                    }
                 }
                 turn.tools_ran += 1;
                 if result.starts_with("Error") && !result.starts_with(FINAL_ERROR) {
@@ -1643,6 +1648,18 @@ Its notes: {notes}{done})"
             .unwrap_or_else(|| default.to_string())
     }
 
+    fn show_plan(&self, cb: &dyn Callbacks) {
+        cb.plan(
+            &Value::Array(
+                self.plan
+                    .iter()
+                    .map(|(s, d)| json!({"step": s, "done": d}))
+                    .collect(),
+            )
+            .to_string(),
+        );
+    }
+
     /// A plan call: new steps replace the plan, done ticks steps off. The checklist goes
     /// to the window; the result reads it back to the model.
     fn update_plan(&mut self, call: &ToolCall, cb: &dyn Callbacks) -> String {
@@ -1675,15 +1692,7 @@ Its notes: {notes}{done})"
         if self.plan.is_empty() {
             return "Error: give the steps first (steps: a list of short steps).".into();
         }
-        cb.plan(
-            &Value::Array(
-                self.plan
-                    .iter()
-                    .map(|(s, d)| json!({"step": s, "done": d}))
-                    .collect(),
-            )
-            .to_string(),
-        );
+        self.show_plan(cb);
         let list: Vec<String> = self
             .plan
             .iter()
@@ -1691,7 +1700,7 @@ Its notes: {notes}{done})"
             .map(|(i, (s, d))| format!("{}. [{}] {s}", i + 1, if *d { "x" } else { " " }))
             .collect();
         format!(
-            "Plan:\n{}\nNow do the next step; after each, call plan with done: [its number].",
+            "Plan:\n{}\nNow do the steps in order (each is ticked when its tool succeeds).",
             list.join("\n")
         )
     }
