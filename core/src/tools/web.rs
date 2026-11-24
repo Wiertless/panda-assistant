@@ -503,7 +503,10 @@ mod tests {
 <p>Paris is the capital of France.</p></body></html>";
         let (title, text) = page_text(html);
         assert_eq!(title, "Paris");
-        assert!(!text.contains("DOCTYPE") && !text.contains("comment"), "{text}");
+        assert!(
+            !text.contains("DOCTYPE") && !text.contains("comment"),
+            "{text}"
+        );
         assert!(!text.contains("Jump to content"), "{text}");
         assert!(text.contains("Paris is the capital of France."));
     }

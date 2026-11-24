@@ -146,6 +146,35 @@ fn dims(p: &Path) -> String {
         .unwrap_or_else(|| "?".into())
 }
 
+/// Formats ImageMagick here can't read but GNOME's own loader (glycin, through
+/// gdk-pixbuf) can: iPhone photos and the like.
+const VIA_PIXBUF: [&str; 3] = ["heic", "heif", "avif"];
+
+/// The file to hand to ImageMagick, and a temporary copy to remove after, if one was
+/// made (a HEIC photo as PNG, turned the way the camera held it).
+fn readable(f: &Path) -> Result<(PathBuf, Option<PathBuf>), ToolError> {
+    let ext = f
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    if !VIA_PIXBUF.contains(&ext.as_str()) {
+        return Ok((f.to_path_buf(), None));
+    }
+    let pb = gdk_pixbuf::Pixbuf::from_file(f)
+        .map_err(|e| ToolError(format!("{} can't be read: {e}", short(f))))?;
+    let pb = pb.apply_embedded_orientation().unwrap_or(pb);
+    let tmp = std::env::temp_dir().join(format!(
+        "panda-{}-{}.png",
+        std::process::id(),
+        f.file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default()
+    ));
+    pb.savev(&tmp, "png", &[])
+        .map_err(|e| ToolError(format!("{} can't be converted: {e}", short(f))))?;
+    Ok((tmp.clone(), Some(tmp)))
+}
+
 fn magick(args: &[String]) -> Result<(), ToolError> {
     let out = Command::new("magick")
         .args(args)
@@ -232,16 +261,22 @@ pub fn edit_image(ctx: &Context, args: &Args) -> ToolResult {
             .file_stem()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_default();
-        let ext = if format.is_empty() {
-            f.extension()
-                .map(|e| e.to_string_lossy().to_lowercase())
-                .unwrap_or("jpg".into())
-        } else {
-            format.clone()
+        let ext = match f.extension().map(|e| e.to_string_lossy().to_lowercase()) {
+            _ if !format.is_empty() => format.clone(),
+            // Nothing here writes HEIC: those become JPG.
+            Some(e) if !VIA_PIXBUF.contains(&e.as_str()) => e,
+            _ => "jpg".into(),
         };
         let out = free_name(&dir, &stem, &ext);
+        let (input, tmp) = match readable(f) {
+            Ok(r) => r,
+            Err(e) => {
+                lines.push(format!("{}: failed ({})", short(f), e.0));
+                continue;
+            }
+        };
         // [0]: the first frame of an animation or a multi-page file.
-        let mut a = vec![format!("{}[0]", f.display()), "-auto-orient".into()];
+        let mut a = vec![format!("{}[0]", input.display()), "-auto-orient".into()];
         if let Some(r) = &resize {
             a.extend(["-resize".into(), r.clone()]);
         }
@@ -255,7 +290,11 @@ pub fn edit_image(ctx: &Context, args: &Args) -> ToolResult {
             a.extend(["-quality".into(), q.to_string()]);
         }
         a.push(out.display().to_string());
-        match magick(&a) {
+        let done = magick(&a);
+        if let Some(t) = tmp {
+            let _ = fs::remove_file(t);
+        }
+        match done {
             Ok(()) => {
                 lines.push(format!(
                     "{}: {} {} → {} {}",
@@ -296,12 +335,20 @@ pub fn images_to_pdf(ctx: &Context, args: &Args) -> ToolResult {
         .filter(|c| !matches!(c, '/' | '\\' | ':'))
         .collect();
     let out = free_name(&edited_dir()?, &stem, "pdf");
-    let mut a: Vec<String> = files
+    let inputs = files
         .iter()
-        .map(|f| format!("{}[0]", f.display()))
+        .map(|f| readable(f))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut a: Vec<String> = inputs
+        .iter()
+        .map(|(p, _)| format!("{}[0]", p.display()))
         .collect();
     a.extend(["-auto-orient".into(), out.display().to_string()]);
-    magick(&a)?;
+    let done = magick(&a);
+    for t in inputs.into_iter().filter_map(|(_, t)| t) {
+        let _ = fs::remove_file(t);
+    }
+    done?;
     let line = format!(
         "Made {} from {} pictures ({})",
         short(&out),
@@ -379,6 +426,36 @@ mod tests {
         );
         assert!(matching("Trip/*.gif").is_err());
         assert!(matching("*/a.png").is_err());
+    }
+
+    /// An iPhone-style HEIC photo (libheif's example), when it was downloaded for the test.
+    #[test]
+    fn heic_goes_through_gnomes_loader() {
+        let sample = std::env::var("PANDA_HEIC_SAMPLE").unwrap_or_default();
+        if sample.is_empty() || Command::new("magick").arg("-version").output().is_err() {
+            return;
+        }
+        let _h = crate::store::testenv::temp_home();
+        let dir = real_home().join("Photos");
+        fs::create_dir_all(&dir).unwrap();
+        fs::copy(&sample, dir.join("IMG_0001.HEIC")).unwrap();
+        let ctx = Context::default();
+        let args: Args =
+            serde_json::from_value(serde_json::json!({"files": "Photos", "resize": "50%"}))
+                .unwrap();
+        let out = edit_image(&ctx, &args).unwrap();
+        assert!(out.starts_with("Saved 1 of 1"), "{out}");
+        let made = real_home().join("Pictures/Edited/IMG_0001.jpg");
+        assert_eq!(
+            gdk_pixbuf::Pixbuf::file_info(&made).map(|(_, w, h)| (w, h)),
+            Some((640, 427))
+        );
+        let pdf: Args = serde_json::from_value(serde_json::json!({"files": "Photos"})).unwrap();
+        assert!(
+            images_to_pdf(&ctx, &pdf)
+                .unwrap()
+                .contains("from 1 pictures")
+        );
     }
 
     #[test]
