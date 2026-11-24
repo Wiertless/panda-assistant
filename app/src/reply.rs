@@ -62,6 +62,65 @@ fn tool_icon(name: &str) -> &'static str {
     }
 }
 
+/// A step's summary with its link taken out ("Read https://…" -> "Read a web page"),
+/// and the link, which goes in the tooltip, the details and the right-click menu.
+fn without_link(name: &str, summary: &str) -> (String, Option<String>) {
+    let Some(url) = summary
+        .split_whitespace()
+        .find(|w| w.starts_with("http://") || w.starts_with("https://"))
+    else {
+        return (summary.to_string(), None);
+    };
+    let label = match name {
+        "read_web_page" => "Read a web page".to_string(),
+        "open_url" => "Open a link".to_string(),
+        _ => summary.replace(url, "a link"),
+    };
+    (
+        label,
+        Some(url.trim_end_matches(['.', ',', ')']).to_string()),
+    )
+}
+
+/// Right-click on a step with a link: copy it, or open it in the browser.
+fn link_menu(widget: &impl IsA<gtk::Widget>, url: &str, win: Weak<Window>) {
+    let widget = widget.as_ref().clone();
+    widget.set_tooltip_text(Some(url));
+    let click = gtk::GestureClick::builder().button(3).build();
+    let url = url.to_string();
+    let anchor = widget.clone();
+    click.connect_pressed(move |_, _, x, y| {
+        let menu = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        let pop = gtk::Popover::builder()
+            .child(&menu)
+            .has_arrow(false)
+            .build();
+        pop.set_parent(&anchor);
+        pop.set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+        for (label, open) in [("Copy Link", false), ("Open in Browser", true)] {
+            let b = gtk::Button::builder().label(label).build();
+            b.add_css_class("flat");
+            let (u, p, w) = (url.clone(), pop.clone(), win.clone());
+            b.connect_clicked(move |b| {
+                if open {
+                    let _ =
+                        gio::AppInfo::launch_default_for_uri(&u, None::<&gio::AppLaunchContext>);
+                } else {
+                    b.clipboard().set_text(&u);
+                    if let Some(w) = w.upgrade() {
+                        w.toast("Link copied");
+                    }
+                }
+                p.popdown();
+            });
+            menu.append(&b);
+        }
+        pop.connect_closed(|p| p.unparent());
+        pop.popup();
+    });
+    widget.add_controller(click);
+}
+
 /// Notification text: markdown marks removed, cut at a word.
 fn plain(markdown: &str) -> String {
     assistant_core::search::plain(markdown, 400)
@@ -570,7 +629,7 @@ impl Turn for Reply {
         row.add_css_class("pill");
         row.add_css_class("quiet");
         row.append(&spinner());
-        row.append(&gtk::Label::new(Some(summary)));
+        row.append(&gtk::Label::new(Some(&without_link(name, summary).0)));
         self.before_spinner(&row);
         self.inner
             .borrow_mut()
@@ -598,9 +657,10 @@ impl Turn for Reply {
                 .get(name)
                 .cloned()
                 .unwrap_or_else(|| name.to_string());
+            let (label, _) = without_link(name, &summary);
             self.pill(
                 tool_icon(name),
-                if short { result } else { &summary },
+                if short { result } else { &label },
                 false,
                 None,
             )
@@ -639,10 +699,28 @@ impl Turn for Reply {
             took.add_css_class("step-time");
             pill.append(&took);
         }
+        let link = without_link(
+            name,
+            &self
+                .inner
+                .borrow()
+                .summaries
+                .get(name)
+                .cloned()
+                .unwrap_or_default(),
+        )
+        .1;
+        if let Some(url) = &link {
+            link_menu(&pill, url, self.win.clone());
+        }
         // A long result opens under its step, instead of hiding in a tooltip.
         if ok && !short {
+            let shown: String = result.chars().take(4000).collect();
             let detail = gtk::Label::builder()
-                .label(result.chars().take(4000).collect::<String>())
+                .label(match &link {
+                    Some(url) => format!("{url}\n\n{shown}"),
+                    None => shown,
+                })
                 .wrap(true)
                 .wrap_mode(gtk::pango::WrapMode::WordChar)
                 .xalign(0.0)
