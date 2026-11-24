@@ -368,6 +368,17 @@ def main(out):
             continue
         seen.add(key)
         keep.append(e)
+    # People often type Polish without its letters ("wlacz ciemny motyw"): a copy of
+    # about a third of the Polish turns that way (the note follows the app's detector).
+    plain = str.maketrans("ąćęłńóśźżĄĆĘŁŃÓŚŹŻ", "acelnoszzACELNOSZZ")
+    for e in list(keep):
+        u = e["user"]
+        if lang_of(u) == "Polish" and any(c in "ąćęłńóśźżĄĆĘŁŃÓŚŹŻ" for c in u) and rng.random() < 0.35:
+            stripped = u.translate(plain).lower()
+            key = (stripped.strip().lower(), tuple(b[0] for b in e["before"]))
+            if stripped.strip().lower() not in banned and key not in seen:
+                seen.add(key)
+                keep.append({**e, "user": stripped, "lang": None})
     Path(out).parent.mkdir(parents=True, exist_ok=True)
     with open(out, "w") as f:
         for e in keep:
