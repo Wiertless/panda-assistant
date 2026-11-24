@@ -455,8 +455,6 @@ pub struct Agent {
     round_no: usize,
     /// This turn's language, when the user's words make it clear.
     reply_language: Option<&'static str>,
-    /// The request lists several actions: the first round is asked to plan them.
-    plan_first: bool,
     /// The request is of more than one action: a plan may be made (one action gets none).
     plan_allowed: bool,
     /// Offer the plan tool (tasks of several steps get a checklist and a check at the end).
@@ -524,7 +522,6 @@ impl Agent {
             turn_no: 0,
             round_no: 0,
             reply_language: None,
-            plan_first: false,
             plan_allowed: false,
             planning: true,
             quick_confirm: true,
@@ -769,28 +766,17 @@ impl Agent {
         if let Some(i) = self.open_step()
             && out.last().is_some_and(|m| m["role"] == "tool")
         {
-            let tool = &self.plan_tools[i];
             out.push(json!({"role": "user", "content": format!(
-                "(Next: step {}, {}: {}. Call {tool} now; if it can't be done, say why.)",
-                i + 1, tool, self.plan[i].0)}));
+                "(Next: step {}, {}. Do it now with the tool that fits; if it can't be done, say why.)",
+                i + 1, self.plan[i].0)}));
         }
         // The reply's language (from the user's words) goes on the latest user message, in
         // the request only: the start of the prompt stays the same, the saved chat doesn't show it.
-        // A request of several actions, not planned yet: ask for the plan first (a note, not
-        // a forced tool list, which would change the start of the prompt).
-        let plan_note = (self.plan_first && self.plan.is_empty()).then_some(
-            " This is a task of several steps: call plan with them first, then do them in order.",
-        );
-        if let (true, Some(m)) = (
-            self.reply_language.is_some() || plan_note.is_some(),
+        if let (Some(lang), Some(m)) = (
+            self.reply_language,
             out.iter_mut().rev().find(|m| m["role"] == "user"),
         ) {
-            let lang = self
-                .reply_language
-                .map(|l| format!(" Answer in {l}."))
-                .unwrap_or_default();
-            let note = format!("\n\n({}{})", lang.trim_start(), plan_note.unwrap_or(""));
-            let note = note.replace("( ", "(");
+            let note = format!("\n\n(Answer in {lang}.)");
             match &mut m["content"] {
                 Value::String(s) => s.push_str(&note),
                 Value::Array(parts) => parts.push(json!({"type": "text", "text": note})),
@@ -918,9 +904,10 @@ impl Agent {
         self.plan_tools.clear();
         self.plan_fails.clear();
         self.plan_released = false;
-        let actions = actions_in(text);
-        self.plan_allowed = self.planning && self.use_tools && actions >= 2;
-        self.plan_first = self.plan_allowed && actions >= 3;
+        // The model plans when it chooses to; it isn't asked to plan first: on the NPU a plan
+        // written before looking named the wrong tool ("take a screenshot" for "find today's
+        // screenshot") and the plan held it there (0/6 vs 6/6 without, at 1.5x the time).
+        self.plan_allowed = self.planning && self.use_tools && actions_in(text) >= 2;
         // Tools that work on long text (documents) ask the model in a fresh context of their own.
         let (client, model) = (self.client.clone(), self.model.clone());
         self.ctx.ask_model = Some(Arc::new(move |system: &str, user: &str| {
@@ -1278,7 +1265,9 @@ impl Agent {
                         .plan
                         .iter()
                         .zip(&self.plan_tools)
-                        .position(|((_, d), t)| !d && *t == call.name);
+                        .position(|((_, d), t)| !d && *t == call.name)
+                        // Another tool than the plan named did the step under way.
+                        .or_else(|| self.open_step());
                     if let Some(i) = i {
                         self.plan[i].1 = true;
                         self.show_plan(cb);
@@ -3259,7 +3248,7 @@ mod tests {
     }
 
     #[test]
-    fn several_actions_are_planned_first() {
+    fn several_actions_may_be_planned_one_may_not() {
         let req = "przeszukaj zdjecia i znajdz screenshota z dzisiejsza data, zmien go na pdf i wyslij na telefon";
         assert!(actions_in(req) >= 3);
         assert_eq!(actions_in("turn on dark mode"), 1);
@@ -3269,26 +3258,6 @@ mod tests {
             "a question"
         );
         let _h = temp_home();
-        let flm = FakeFlm::start(vec![(200, tool_reply(REPLY, r#"{"text": "OK."}"#, "r1"))]);
-        let mut a = agent(&flm);
-        a.ask(
-            "find the screenshot from today, turn it into a pdf and send it to my phone",
-            &Rec::default(),
-            &[],
-        )
-        .unwrap();
-        let sent = flm.requests()[0]["messages"].as_array().unwrap().clone();
-        let last = sent.last().unwrap()["content"]
-            .as_str()
-            .unwrap()
-            .to_string();
-        assert!(last.ends_with("(Answer in English. This is a task of several steps: call plan with them first, then do them in order.)"), "{last}");
-        assert!(
-            !a.messages[0]["content"]
-                .as_str()
-                .unwrap()
-                .contains("call plan")
-        );
         // One action: no plan, nothing shown.
         let flm = FakeFlm::start(vec![
             (
@@ -3384,7 +3353,7 @@ mod tests {
                 .to_string()
         };
         assert!(
-            last(&reqs[2]).contains("Next: step 2, get_datetime"),
+            last(&reqs[2]).contains("Next: step 2, Tell the time"),
             "{}",
             last(&reqs[2])
         );
