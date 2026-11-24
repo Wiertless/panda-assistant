@@ -79,5 +79,9 @@
   "no-plan": {
     "about": "Without the plan tool (as before stage 2).",
     "planning": false
+  },
+  "no-quick": {
+    "about": "One-action requests get a model-written answer after the tool (as before 0.35).",
+    "quick_confirm": false
   }
 }

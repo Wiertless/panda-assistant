@@ -221,11 +221,11 @@ done, tell the user plainly which weren't done and why. Don't say it's all done.
 fn plan_schema() -> Value {
     json!({"type": "function", "function": {
         "name": PLAN,
-        "description": "For a task of 3 or more steps (several tools one after another), first list the steps \
-(steps), one per tool call, then do them in order. The user sees the list as a checklist; steps are ticked as their \
-tools succeed. Not for a one-step request.",
+        "description": "For a task of several steps, first list them, then do them in order. Each step is \
+\"tool: what\" with the tool that does it (\"find_files: find today's screenshot\"), or \"answer: what\" for one \
+you do in words (\"answer: say who the artist is\"). The user sees a checklist, ticked as the tools succeed.",
         "parameters": {"type": "object", "properties": {
-            "steps": {"type": "array", "items": {"type": "string"}, "description": "The steps, short, in order"},
+            "steps": {"type": "array", "items": {"type": "string"}, "description": "The steps in order, each \"tool: what\""},
             "done": {"type": "array", "items": {"type": "integer"}, "description": "Numbers of the steps just done (from 1)"}}}}})
 }
 /// How to read the screen context the pop-up puts before a question.
@@ -458,8 +458,13 @@ pub struct Agent {
     plan_allowed: bool,
     /// Offer the plan tool (tasks of several steps get a checklist and a check at the end).
     pub planning: bool,
+    /// A request of one action that succeeded with a short confirmation ends there:
+    /// the confirmation is the answer (one round instead of two).
+    pub quick_confirm: bool,
     /// This turn's plan: each step and whether it's done.
     pub plan: Vec<(String, bool)>,
+    /// The tool each step names ("" for a step done in words or naming no known tool).
+    plan_tools: Vec<String>,
     pub group_seen: std::collections::HashMap<String, usize>,
 }
 
@@ -515,7 +520,9 @@ impl Agent {
             plan_first: false,
             plan_allowed: false,
             planning: true,
+            quick_confirm: true,
             plan: vec![],
+            plan_tools: vec![],
             group_seen: std::collections::HashMap::new(),
         }
     }
@@ -882,6 +889,7 @@ impl Agent {
     ) -> Result<(), FlmError> {
         self.reply_language = language(text);
         self.plan.clear();
+        self.plan_tools.clear();
         let actions = actions_in(text);
         self.plan_allowed = self.planning && self.use_tools && actions >= 2;
         self.plan_first = self.plan_allowed && actions >= 3;
@@ -1222,9 +1230,14 @@ impl Agent {
                 }
                 if !result.starts_with("Error") {
                     turn.done.push(call.name.clone());
-                    // A step done: tick the next one (no extra round of the model to do it).
-                    if let Some(step) = self.plan.iter_mut().find(|(_, d)| !d) {
-                        step.1 = true;
+                    // A step done: tick the first open one naming this tool (no extra round to tick).
+                    let i = self
+                        .plan
+                        .iter()
+                        .zip(&self.plan_tools)
+                        .position(|((_, d), t)| !d && *t == call.name);
+                    if let Some(i) = i {
+                        self.plan[i].1 = true;
                         self.show_plan(cb);
                     }
                 }
@@ -1237,6 +1250,26 @@ impl Agent {
                 }
                 self.messages
                     .push(json!({"role": "tool", "tool_call_id": call.id, "content": result}));
+            }
+            // One action asked, done, confirmed in a line: that's the answer, without another
+            // round (~2.8 s). Not for Polish requests: confirmations are in English.
+            if self.quick_confirm
+                && calls.len() == 1
+                && turn.errors.is_empty()
+                && !turn.declined
+                && self.reply_language != Some("Polish")
+                && actions_in(text) == 1
+                && crate::tools::CONFIRMS.contains(&calls[0].name.as_str())
+                && let Some(done) = self.messages.last().and_then(|m| m["content"].as_str())
+                && !done.contains('\n')
+                && done.chars().count() <= 140
+                && !done.starts_with("Error")
+            {
+                let done = done.to_string();
+                cb.text(&done);
+                self.messages
+                    .push(json!({"role": "assistant", "content": done}));
+                return Ok(());
             }
             // A tool's result is the answer (research): show it as written, no rewording by the model.
             let answer_at = self.messages.iter().rposition(|m| {
@@ -1695,7 +1728,23 @@ Its notes: {notes}{done})"
                 .take(12)
                 .collect();
             if !steps.is_empty() {
-                self.plan = steps;
+                // "tool: what": the tool ticks the step when it succeeds; the user sees "what".
+                let names: Vec<String> =
+                    self.available_tools().into_iter().map(|t| t.name).collect();
+                let (shown, tools): (Vec<(String, bool)>, Vec<String>) = steps
+                    .into_iter()
+                    .map(|(s, _)| match s.split_once(':') {
+                        Some((t, what)) if names.iter().any(|n| n == t.trim()) => {
+                            ((capitalize(what.trim()), false), t.trim().to_string())
+                        }
+                        Some((t, what)) if t.trim().eq_ignore_ascii_case("answer") => {
+                            ((capitalize(what.trim()), false), String::new())
+                        }
+                        _ => ((s, false), String::new()),
+                    })
+                    .unzip();
+                self.plan = shown;
+                self.plan_tools = tools;
             }
         }
         let done: Vec<usize> = match args.get("done") {
@@ -1949,6 +1998,13 @@ impl Turn {
 
 /// A request to do something, not a question ("turn on tap to click", not
 /// "what's my battery?"), in English or Polish.
+fn capitalize(s: &str) -> String {
+    let mut c = s.chars();
+    c.next()
+        .map(|f| f.to_uppercase().collect::<String>() + c.as_str())
+        .unwrap_or_default()
+}
+
 /// How many actions a request lists ("find the screenshot, turn it into a PDF and
 /// send it" is 3): the parts between commas, "and", "then", "i", "potem"…
 fn actions_in(text: &str) -> usize {
@@ -2117,6 +2173,7 @@ mod tests {
             test_tools(),
         );
         a.reply_tool = false; // most tests script plain replies; reply_is_a_tool_on_the_first_round turns it on
+        a.quick_confirm = false; // most tests script the answer after a tool; quick_confirm_ends_a_one_action_turn turns it on
         a.machine = Some("About this computer: test".into());
         a
     }
@@ -2606,6 +2663,7 @@ mod tests {
             Arc::new(move || tools.clone()),
         );
         a.machine = Some("About this computer: test".into());
+        a.quick_confirm = false; // the answer after the forced call is what's checked
         let rec = Rec::default();
         a.ask("turn it down a bit", &rec, &[]).unwrap();
         let reqs = flm.requests();
@@ -3177,6 +3235,50 @@ mod tests {
                 .iter()
                 .any(|m| m["content"] == "No plan for a single step: just do it.")
         );
+    }
+
+    #[test]
+    fn quick_confirm_ends_a_one_action_turn() {
+        let _h = temp_home();
+        let flm = FakeFlm::start(vec![(
+            200,
+            tool_reply("set_volume", r#"{"percent": 30}"#, "c1"),
+        )]);
+        let mut a = agent(&flm);
+        a.quick_confirm = true;
+        a.ask("set the volume to 30", &Rec::default(), &[]).unwrap();
+        assert_eq!(
+            flm.requests().len(),
+            1,
+            "one round: the confirmation is the answer"
+        );
+        let last = a.messages.last().unwrap();
+        assert_eq!(last["role"], "assistant");
+        assert!(!last["content"].as_str().unwrap().is_empty());
+        // Polish: confirmations are English, so the model answers.
+        let flm = FakeFlm::start(vec![
+            (200, tool_reply("set_volume", r#"{"percent": 30}"#, "c1")),
+            (200, text_reply("Głośność 30%.")),
+        ]);
+        let mut a = agent(&flm);
+        a.quick_confirm = true;
+        a.ask("ustaw głośność na 30", &Rec::default(), &[]).unwrap();
+        assert_eq!(a.messages.last().unwrap()["content"], "Głośność 30%.");
+        // Two actions: the model goes on.
+        let flm = FakeFlm::start(vec![
+            (200, tool_reply("set_volume", r#"{"percent": 30}"#, "c1")),
+            (200, tool_reply("get_datetime", "{}", "c2")),
+            (200, text_reply("Done, it's 22:00.")),
+        ]);
+        let mut a = agent(&flm);
+        a.quick_confirm = true;
+        a.ask(
+            "set the volume to 30 and tell me the time",
+            &Rec::default(),
+            &[],
+        )
+        .unwrap();
+        assert_eq!(flm.requests().len(), 3);
     }
 
     #[test]

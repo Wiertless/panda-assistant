@@ -171,6 +171,41 @@ pub const UNDOABLE: [&str; 20] = [
 /// Tools whose results the window shows as a card instead of a pill.
 pub const CARDS: [&str; 3] = ["get_weather", "get_events", "list_reminders"];
 
+/// Actions whose short confirmation ("Dark mode on.") can be the whole answer to a
+/// request of that one action, without another round of the model.
+pub const CONFIRMS: [&str; 30] = [
+    "set_dark_mode",
+    "set_do_not_disturb",
+    "set_night_light",
+    "set_volume",
+    "set_mute",
+    "set_brightness",
+    "set_wifi",
+    "set_bluetooth",
+    "set_power_mode",
+    "change_setting",
+    "media_control",
+    "play_music",
+    "open_app",
+    "open_url",
+    "open_file",
+    "open_settings",
+    "connect_network",
+    "disconnect_network",
+    "connect_bluetooth",
+    "disconnect_bluetooth",
+    "set_reminder",
+    "cancel_reminder",
+    "remember",
+    "forget",
+    "undo",
+    "copy_to_clipboard",
+    "trash_file",
+    "move_file",
+    "make_folder",
+    "edit_image",
+];
+
 pub fn next_step(tool: &str) -> Option<&'static str> {
     Some(match tool {
         "find_files" | "search_file_contents" | "list_folder" => {
@@ -328,7 +363,8 @@ folder, start with ~, or start with a folder name like Downloads or Documents.",
         Tool::new("show_in_files", "Show a file or folder in the file manager (opens its folder with it selected).",
                   path(), Safe, intents::show_in_files, text("path", |p| format!("Show {} in Files", or(p, "it")))),
         Tool::new("play_music", "Play a song, album or artist from the user's own music library (not the web), in the \
-app they name (Gapless, Rhythmbox, Spotify…) or their default player. query: title, album or artist as said.",
+app they name (Gapless, Rhythmbox, Spotify…) or their default player. query: title, album or artist as said. Only \
+to play: to look a song up or send it, use find_files.",
                   obj(json!({"query": {"type": "string"}, "app": {"type": "string", "description": "Only when the user names one"}}), &["query"]),
                   Safe, music::play_music, text("query", |q| format!("Play {q}"))),
         Tool::new("search_apps", "Search inside the user's apps, like the GNOME overview does: Calculator for sums, \
@@ -347,7 +383,7 @@ Characters for emoji, Weather, Settings pages, Files, Contacts and more.",
                   Safe, files::list_folder, text("path", |p| format!("Look in {}", or(p, "your home folder")))),
         Tool::new("find_files", "Find files and folders by part of their name, newest first. Use it whenever the user \
 mentions one of their own documents or files (\"my lease\", \"the invoice\", \"my CV\", \"the screenshot from \
-today\"), to read or send it. Each result has its date.",
+today\", a song in their music: the folder names the artist), to read or send it. Each result has its date.",
                   obj(json!({"name": {"type": "string"}, "folder": {"type": "string", "description": "Where to look (optional)"}}), &["name"]),
                   Safe, files::find_files, text("name", |n| format!("Find files named “{n}”"))),
         Tool::new("read_file", "Read any file's text: notes, code, configs, CSV, PDF, Word, Excel, PowerPoint, \

@@ -255,7 +255,16 @@ pub fn play_music(_: &Context, args: &Args) -> ToolResult {
     app.launch_uris(&uris, None::<&gio::AppLaunchContext>)
         .map_err(|e| ToolError(format!("{} didn't open it: {e}", app.display_name())))?;
     Ok(if pick.len() == 1 {
-        format!("Playing {} in {}.", pick[0].label(), app.display_name())
+        // The file too, so "send it" has a path for send_file.
+        let path = gio::File::for_uri(&pick[0].uri)
+            .path()
+            .map(|p| format!(" ({})", super::files::short(&p)))
+            .unwrap_or_default();
+        format!(
+            "Playing {}{path} in {}.",
+            pick[0].label(),
+            app.display_name()
+        )
     } else {
         let what = if !pick[0].album.is_empty() && pick.iter().all(|t| t.album == pick[0].album) {
             pick[0].album.clone()
