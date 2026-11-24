@@ -81,7 +81,7 @@ def encode(tok, template, row):
 def main():
     src = setup()
     import torch
-    from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+    from peft import LoraConfig, get_peft_model
     from transformers import (AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, Trainer,
                               TrainingArguments)
 
@@ -99,11 +99,19 @@ def main():
         MODEL,
         quantization_config=BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4",
                                                bnb_4bit_compute_dtype=torch.float16, bnb_4bit_use_double_quant=True),
-        torch_dtype=torch.float16,
+        dtype=torch.float16,
         device_map="auto",
         attn_implementation="eager",
     )
-    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
+    # Not peft's prepare_model_for_kbit_training: it casts every weight that isn't 4-bit
+    # to float32, and Gemma 4 E2B's per-layer embeddings (262144 x 8960) alone then need
+    # 8.75 GB (out of memory on a T4). LoRA trains only its own small weights; the rest
+    # stays frozen in float16, so checkpointing and input gradients are all it needs.
+    model.config.use_cache = False
+    for prm in model.parameters():
+        prm.requires_grad_(False)
+    model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+    model.enable_input_require_grads()
     lora = LoraConfig(r=RANK, lora_alpha=RANK * 2, lora_dropout=0.05, task_type="CAUSAL_LM",
                       # The language model's linear layers only, not the vision or audio towers
                       # (names differ with how transformers loads Gemma 4: with or without
