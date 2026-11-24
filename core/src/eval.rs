@@ -104,6 +104,15 @@ pub struct Expect {
     /// Each value must appear in the argument (any of "a|b"), ignoring case.
     #[serde(default)]
     pub args: serde_json::Map<String, Value>,
+    /// Other argument sets that are right too ({"percent": "65"} or {"change": "up"}).
+    #[serde(default)]
+    pub or_args: Vec<serde_json::Map<String, Value>>,
+}
+
+impl Expect {
+    fn fits(&self, args: &Args) -> bool {
+        args_match(&self.args, args) || self.or_args.iter().any(|o| args_match(o, args))
+    }
 }
 
 #[derive(Deserialize, Clone)]
@@ -229,8 +238,7 @@ pub fn judge(s: &Scenario, calls: &[(String, Args)], answer: &str) -> Result<(),
     let mut next = 0;
     for want in &s.expect {
         let names: Vec<&str> = want.tool.split('|').collect();
-        let fits =
-            |(n, a): &(String, Args)| names.contains(&n.as_str()) && args_match(&want.args, a);
+        let fits = |(n, a): &(String, Args)| names.contains(&n.as_str()) && want.fits(a);
         let from = if s.unordered { 0 } else { next };
         match calls[from..].iter().position(fits) {
             Some(i) => next = from + i + 1,
@@ -263,7 +271,7 @@ pub fn judge(s: &Scenario, calls: &[(String, Args)], answer: &str) -> Result<(),
         let names: Vec<&str> = want.tool.split('|').collect();
         if !calls
             .iter()
-            .any(|(n, a)| names.contains(&n.as_str()) && args_match(&want.args, a))
+            .any(|(n, a)| names.contains(&n.as_str()) && want.fits(a))
         {
             return Err(format!(
                 "never called {}{}",

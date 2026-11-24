@@ -92,9 +92,24 @@ pub fn set_night_light(ctx: &Context, args: &Args) -> ToolResult {
     Ok(format!("Night Light {}.", on_off(on)))
 }
 
+/// "up" or "down": a step from where it is now, worked out here (the small model,
+/// asked "ciszej proszę" at 70%, guessed 75).
+fn stepped(args: &Args, now: Option<i64>, step: i64, low: i64) -> Result<i64, ToolError> {
+    let change = crate::tool::arg_str(args, "change").trim().to_lowercase();
+    if change.is_empty() || args.get("percent").is_some_and(|v| !v.is_null()) {
+        return arg_percent(args, "percent", low);
+    }
+    let now = now.ok_or("can't read the current level; give percent")?;
+    match change.as_str() {
+        "up" | "louder" | "brighter" | "more" => Ok((now + step).min(100)),
+        "down" | "quieter" | "darker" | "less" => Ok((now - step).max(low)),
+        _ => Err("change: up or down".into()),
+    }
+}
+
 pub fn set_volume(ctx: &Context, args: &Args) -> ToolResult {
-    let pct = arg_percent(args, "percent", 0)?;
     let before = volume_now();
+    let pct = stepped(args, before.map(|(v, _)| v as i64), 15, 0)?;
     run(
         &[
             "wpctl",
@@ -196,8 +211,9 @@ fn set_backlight(dev: &str, value: u32) -> Result<(), ToolError> {
 }
 
 pub fn set_brightness(ctx: &Context, args: &Args) -> ToolResult {
-    let pct = arg_percent(args, "percent", 1)?;
     let (dev, cur, top) = backlight()?;
+    let now = (cur as f64 * 100.0 / top.max(1) as f64).round() as i64;
+    let pct = stepped(args, Some(now), 20, 1)?;
     let value = ((top as f64 * pct as f64 / 100.0).round() as u32).max(1);
     set_backlight(&dev, value)?;
     ctx.can_undo(&format!("Brightness {pct}%"), move || {
@@ -660,6 +676,33 @@ pub fn clipboard_history(_: &Context, args: &Args) -> ToolResult {
         .map_err(|_| ToolError::cannot("clipboard history is off: turn on the Assistant Clipboard extension in the Extensions app"))?;
     let clips: Vec<String> = reply.child_value(0).get().unwrap_or_default();
     Ok(format_clips(&clips, &arg_str(args, "query")))
+}
+
+#[cfg(test)]
+mod step_tests {
+    use super::*;
+
+    #[test]
+    fn steps_from_where_it_is() {
+        let a = |v: serde_json::Value| -> Args { serde_json::from_value(v).unwrap() };
+        assert_eq!(
+            stepped(&a(serde_json::json!({"change": "down"})), Some(70), 15, 0).unwrap(),
+            55
+        );
+        assert_eq!(
+            stepped(&a(serde_json::json!({"change": "up"})), Some(95), 15, 0).unwrap(),
+            100
+        );
+        assert_eq!(
+            stepped(&a(serde_json::json!({"change": "down"})), Some(10), 20, 1).unwrap(),
+            1
+        );
+        assert_eq!(
+            stepped(&a(serde_json::json!({"percent": 30})), Some(70), 15, 0).unwrap(),
+            30
+        );
+        assert!(stepped(&a(serde_json::json!({})), Some(70), 15, 0).is_err());
+    }
 }
 
 #[cfg(test)]

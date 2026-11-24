@@ -982,8 +982,13 @@
    {
     "tool": "set_volume",
     "args": {
-     "percent": "30|35|40|45|50|55|60|65"
-    }
+     "change": "down"
+    },
+    "or_args": [
+     {
+      "percent": "30|35|40|45|50|55|60|65"
+     }
+    ]
    }
   ],
   "forbid": [
@@ -3465,7 +3470,12 @@
     "tool": "set_volume",
     "args": {
      "percent": "55|60|65|70|75|80"
-    }
+    },
+    "or_args": [
+     {
+      "change": "up"
+     }
+    ]
    }
   ],
   "paraphrases": [

@@ -514,16 +514,26 @@ copied\", \"the link from before\", \"paste that address\". query keeps only cli
                   onoff("enabled", "dark mode")),
         Tool::new("set_do_not_disturb", "Turn Do Not Disturb (hide notification banners) on or off.", enabled(), Safe,
                   settings::set_do_not_disturb, onoff("enabled", "Do Not Disturb")),
-        Tool::new("set_volume", "Set the output volume in percent (0-100): also for louder or quieter (\"głośniej\", \
-\"ciszej\", \"ścisz\", \"podgłośnij\"), a step of about 15.",
-                  obj(json!({"percent": {"type": "integer", "minimum": 0, "maximum": 100}}), &["percent"]), Safe,
-                  settings::set_volume, text("percent", |p| format!("Set volume to {p}%"))),
+        Tool::new("set_volume", "Set the output volume: percent (0-100) for a number, or change up or down for \
+louder or quieter without one (\"głośniej\", \"ciszej\", \"ścisz trochę\", \"podgłośnij\"): a step from where it is now.",
+                  obj(json!({"percent": {"type": "integer", "minimum": 0, "maximum": 100},
+                             "change": {"type": "string", "enum": ["up", "down"]}}), &[]), Safe,
+                  settings::set_volume, |a| match arg_str(a, "change").as_str() {
+                      "up" => "Turn the volume up".into(),
+                      "down" => "Turn the volume down".into(),
+                      _ => format!("Set volume to {}%", arg_str(a, "percent")),
+                  }),
         Tool::new("set_mute", "Mute or unmute the sound output.", obj(json!({"muted": {"type": "boolean"}}), &["muted"]),
                   Safe, settings::set_mute, onoff("muted", "mute")),
-        Tool::new("set_brightness", "Set the screen brightness in percent (1-100): also when the screen is too bright or \
-too dark (\"przyciemnij\", \"rozjaśnij\"), a step of about 20.",
-                  obj(json!({"percent": {"type": "integer", "minimum": 1, "maximum": 100}}), &["percent"]), Safe,
-                  settings::set_brightness, text("percent", |p| format!("Set brightness to {p}%"))),
+        Tool::new("set_brightness", "Set the screen brightness: percent (1-100) for a number, or change up or down when \
+the screen is too dark or too bright (\"rozjaśnij\", \"przyciemnij\"): a step from where it is now.",
+                  obj(json!({"percent": {"type": "integer", "minimum": 1, "maximum": 100},
+                             "change": {"type": "string", "enum": ["up", "down"]}}), &[]), Safe,
+                  settings::set_brightness, |a| match arg_str(a, "change").as_str() {
+                      "up" => "Turn the brightness up".into(),
+                      "down" => "Turn the brightness down".into(),
+                      _ => format!("Set brightness to {}%", arg_str(a, "percent")),
+                  }),
         Tool::new("set_power_mode", "Set the power mode: power-saver, balanced or performance.",
                   obj(json!({"mode": {"type": "string", "enum": ["power-saver", "balanced", "performance"]}}), &["mode"]),
                   Safe, settings::set_power_mode, text("mode", |m| {
