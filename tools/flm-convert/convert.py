@@ -238,16 +238,49 @@ def convert(src_path, out_path, only=None, log=print):
     src = ST(src_path)
     items = plan(src, cfg)
     hdr, h = build_header(items)
+    # Every tensor has a fixed place in the file (the header gives its offsets), so they
+    # can be written in any order. The big ones (vocabulary-sized: several GB while being
+    # converted) go one at a time here; the many layer tensors go to worker processes,
+    # each writing straight into its place. Same bytes as one by one, several times faster.
+    base = len(hdr)
     with open(out_path, "wb") as f:
         f.write(hdr)
-        for name, dt, shape, prod in items:
-            n = 0
-            for chunk in produce(prod):
-                b = np.ascontiguousarray(chunk).tobytes(); f.write(b); n += len(b)
-            a, e = h[name]["data_offsets"]
-            assert n == e - a, (name, n, e - a)
-            log(f"wrote {name} {dt} {shape}")
+        f.truncate(base + max(v["data_offsets"][1] for v in h.values()))
+    big = [i for i, it in enumerate(items) if int(np.prod(it[2], dtype=np.int64)) > BIG]
+    small = [i for i in range(len(items)) if i not in big]
+    global _JOB
+    _JOB = (items, h, base, out_path)
+    for i in big:
+        log(_write_one(i))
+    workers = int(os.environ.get("CONVERT_WORKERS", min(5, os.cpu_count() or 1)))
+    if workers > 1 and small:
+        import multiprocessing as mp
+        # fork: the workers reach the producers (closures) without pickling them.
+        with mp.get_context("fork").Pool(workers) as pool:
+            for line in pool.imap_unordered(_write_one, small, chunksize=4):
+                log(line)
+    else:
+        for i in small:
+            log(_write_one(i))
     return out_path
+
+
+# Tensors above this many elements are converted one at a time (memory).
+BIG = 50_000_000
+_JOB = None
+
+
+def _write_one(i):
+    items, h, base, out_path = _JOB
+    name, dt, shape, prod = items[i]
+    a, e = h[name]["data_offsets"]
+    n = 0
+    with open(out_path, "r+b") as f:
+        f.seek(base + a)
+        for chunk in produce(prod):
+            b = np.ascontiguousarray(chunk).tobytes(); f.write(b); n += len(b)
+    assert n == e - a, (name, n, e - a)
+    return f"wrote {name} {dt} {shape}"
 
 if __name__ == "__main__":
     args = [a for a in sys.argv[1:] if not a.startswith("--")]

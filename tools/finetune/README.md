@@ -29,7 +29,7 @@ free GPU, merged and converted on the laptop, and run by FastFlowLM on the NPU.
    model's own call syntax), loss only on what the model writes, logits only at
    those positions. ~55 s a step on one T4 for ~3K-token examples. Download
    `panda-lora.zip` (~90 MB).
-3. **Merge and convert** (`make_npu_model.sh ZIP NAME`, the laptop, ~20 min):
+3. **Merge and convert** (`make_npu_model.sh ZIP NAME`, the laptop, ~15 min):
    `merge.py` writes W + (B @ A) * alpha / r into a reflink copy of the base
    weights (small memory); `../flm-convert/convert.py` turns them into FLM's
    `model.q4nx`; the result goes into its own model root,
@@ -47,9 +47,11 @@ free GPU, merged and converted on the laptop, and run by FastFlowLM on the NPU.
 | stock Gemma 4 E2B | — | 321/381 (84%), 5.0 s/request |
 | ft1: 444 conversations, 2 epochs | first pipeline run | 340/381 (89%), 4.9 s/request: **BETTER**, +4.8 points (95% +0.6 to +9.2), p = 0.01, 27 families better, 11 worse |
 
-(Both on the build before `change: up/down` for volume and brightness, which
-counts against ft1 on those scenarios; a rerun on the 0.35.0 build is in
-`HANDOFF.md`.)
+| stock, 0.35.0 RC build (b22db7f) | — | 324/381 (85%), 5.2 s/request |
+| ft1, same RC build | | 340/381 (89%), 4.9 s/request: UNDECIDED, +3.6 points (95% −0.7 to +7.8), p = 0.10, 24 better, 13 worse, 5% faster |
+
+(The first two rows ran on the build before `change: up/down` for volume and
+brightness, which counts against ft1 on those scenarios.)
 
 ## Lessons from the first run
 
