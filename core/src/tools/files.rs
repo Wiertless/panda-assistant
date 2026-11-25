@@ -159,26 +159,60 @@ fn missing(path: &Path) -> String {
     msg
 }
 
-/// Small models retype long names ("Zrzut ekranu z 2026-11-15 01-02-03.png")
-/// with the case, spaces or punctuation a bit off: take the one file in the
-/// same folder whose name matches when only letters and digits count.
+/// Small models retype long paths with bits off ("Zrzut ekranu z 2026-11-15
+/// 01-02-03.png", "1 Make you mine.m4a" for "1-06 Make you mine.m4a", a folder
+/// name cut short): fix each missing part of the path with `loose_child`.
 fn loosely(path: &Path) -> Option<PathBuf> {
-    let key = |s: &str| {
-        s.chars()
-            .filter(|c| c.is_alphanumeric())
-            .flat_map(char::to_lowercase)
-            .collect::<String>()
+    let base = path.ancestors().find(|d| d.is_dir())?;
+    path.strip_prefix(base)
+        .ok()?
+        .components()
+        .try_fold(base.to_path_buf(), |dir, part| {
+            let part = part.as_os_str().to_string_lossy();
+            let exact = dir.join(&*part);
+            if exact.exists() {
+                Some(exact)
+            } else {
+                loose_child(&dir, &part)
+            }
+        })
+}
+
+/// The one entry in `dir` whose name matches `want` when only letters and
+/// digits count, or else the one whose name has all of want's words. Words only
+/// from 3 up: "notes.txt" must not turn into "notes old.txt".
+fn loose_child(dir: &Path, want: &str) -> Option<PathBuf> {
+    let words = |s: &str| -> Vec<String> {
+        s.split(|c: char| !c.is_alphanumeric())
+            .filter(|w| !w.is_empty())
+            .map(str::to_lowercase)
+            .collect()
     };
-    let want = key(&path.file_name()?.to_string_lossy());
+    let names: Vec<(Vec<String>, PathBuf)> = fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .map(|e| (e.file_name().to_string_lossy().to_string(), e.path()))
+        .filter(|(n, _)| !n.starts_with('.'))
+        .map(|(n, p)| (words(&n), p))
+        .collect();
+    let one = |hits: Vec<&PathBuf>| (hits.len() == 1).then(|| hits[0].clone());
+    let want = words(want);
     if want.is_empty() {
         return None;
     }
-    let mut hits = fs::read_dir(path.parent()?).ok()?.flatten().filter(|e| {
-        !e.file_name().to_string_lossy().starts_with('.')
-            && key(&e.file_name().to_string_lossy()) == want
-    });
-    let hit = hits.next()?;
-    hits.next().is_none().then(|| hit.path())
+    one(names
+        .iter()
+        .filter(|(w, _)| w.concat() == want.concat())
+        .map(|(_, p)| p)
+        .collect())
+    .or_else(|| {
+        (want.len() >= 3).then_some(())?;
+        one(names
+            .iter()
+            .filter(|(w, _)| want.iter().all(|x| w.contains(x)))
+            .map(|(_, p)| p)
+            .collect())
+    })
 }
 
 pub fn size(n: u64) -> String {
@@ -241,20 +275,127 @@ pub fn list_folder(_: &Context, args: &Args) -> ToolResult {
     Ok(lines.join("\n"))
 }
 
+/// Words that say which file by when, not by name ("the screenshot from
+/// today", "my latest invoice"). Results come newest first with their dates,
+/// so these are left out of the match.
+const NOT_IN_NAMES: &str = "from today today's todays yesterday yesterday's latest newest last \
+    recent most my the a an of i took z ze dzisiaj dziś dzisiejszy dzisiejsze dzisiejszego wczoraj \
+    wczorajszy wczorajszego ostatni ostatnie ostatniego najnowszy najnowsze najnowszego mój moje mojego";
+
+fn not_in_names(word: &str) -> bool {
+    NOT_IN_NAMES.split_whitespace().any(|w| w == word)
+}
+
+fn is_shot_word(word: &str) -> bool {
+    word.starts_with("screenshot") || word.starts_with("zrzut")
+}
+
+/// GNOME Shell's Screenshots folder in Pictures, under its name in the user's
+/// language ("Zrzuty ekranu"). Its files are named in that language too
+/// ("Zrzut ekranu z …"), so "screenshot" matches them by their folder.
+fn screenshots_dir() -> Option<PathBuf> {
+    let pictures = glib::user_special_dir(glib::UserDirectory::Pictures)?;
+    shell_translation("Screenshots")
+        .into_iter()
+        .chain(["Screenshots".to_string()])
+        .find_map(|name| {
+            fs::canonicalize(pictures.join(name))
+                .ok()
+                .filter(|p| p.is_dir())
+        })
+}
+
+/// `msgid` in gnome-shell's translations for the user's languages, read from
+/// the .mo file itself: this service never calls setlocale, so gettext would
+/// answer in English.
+fn shell_translation(msgid: &str) -> Option<String> {
+    glib::language_names().iter().find_map(|lang| {
+        let mo = fs::read(format!(
+            "/usr/share/locale/{lang}/LC_MESSAGES/gnome-shell.mo"
+        ))
+        .ok()?;
+        mo_lookup(&mo, msgid)
+    })
+}
+
+/// Looks `msgid` up in a GNU gettext .mo catalog.
+fn mo_lookup(mo: &[u8], msgid: &str) -> Option<String> {
+    let little = match mo.get(..4)? {
+        [0xde, 0x12, 0x04, 0x95] => true,
+        [0x95, 0x04, 0x12, 0xde] => false,
+        _ => return None,
+    };
+    let num = |at: usize| -> Option<usize> {
+        let b: [u8; 4] = mo.get(at..at + 4)?.try_into().ok()?;
+        Some(if little {
+            u32::from_le_bytes(b)
+        } else {
+            u32::from_be_bytes(b)
+        } as usize)
+    };
+    let text = |table: usize, i: usize| -> Option<&[u8]> {
+        let (len, at) = (num(table + 8 * i)?, num(table + 8 * i + 4)?);
+        mo.get(at..at + len)
+    };
+    let (count, originals, translations) = (num(8)?, num(12)?, num(16)?);
+    let i = (0..count).find(|&i| text(originals, i) == Some(msgid.as_bytes()))?;
+    let found = std::str::from_utf8(text(translations, i)?).ok()?;
+    (!found.is_empty()).then(|| found.to_string())
+}
+
 pub fn find_files(_: &Context, args: &Args) -> ToolResult {
-    let words: Vec<String> = arg_str(args, "name")
-        .split_whitespace()
-        .map(str::to_lowercase)
-        .collect();
-    if words.is_empty() {
+    let name = arg_str(args, "name");
+    if name.trim().is_empty() {
         return Err("give part of the file name to look for".into());
     }
+    // "*" matches any name (small models pass it to mean "everything"), "*.pdf" is ".pdf".
+    let mut words: Vec<String> = name
+        .split_whitespace()
+        .map(|w| w.trim_matches('*').to_lowercase())
+        .filter(|w| !w.is_empty())
+        .collect();
+    if words.iter().any(|w| !not_in_names(w)) {
+        words.retain(|w| !not_in_names(w));
+    }
+    let shots = words
+        .iter()
+        .any(|w| is_shot_word(w))
+        .then(screenshots_dir)
+        .flatten();
     let raw = arg_str(args, "folder");
-    let root = home_path(if raw.is_empty() { "~" } else { &raw }, true)?;
+    let root = match (&shots, raw.is_empty()) {
+        // Screenshots live in Pictures: don't spend the time limit on the rest of home.
+        (Some(dir), true) => dir.parent().map_or_else(real_home, Path::to_path_buf),
+        _ => home_path(if raw.is_empty() { "~" } else { &raw }, true)?,
+    };
+    let hits = search(&root, &words, shots.as_deref());
+    if hits.is_empty() {
+        return Ok(format!(
+            "No files named like '{}' in {}.",
+            words.join(" "),
+            short(&root)
+        ));
+    }
+    Ok(hits
+        .iter()
+        .take(20)
+        .map(|(t, p, d, n)| match d {
+            true => format!("{}/ ({})", short(p), date(*t)),
+            false => format!("{} ({}, {})", short(p), size(*n), date(*t)),
+        })
+        .collect::<Vec<_>>()
+        .join("\n"))
+}
+
+/// Files and folders under `root` whose names hold every word, newest first,
+/// as (modified, path, is folder, size). A screenshot word also matches every
+/// file in `shots`.
+fn search(root: &Path, words: &[String], shots: Option<&Path>) -> Vec<(u64, PathBuf, bool, u64)> {
     let deadline = Instant::now() + Duration::from_secs(4);
-    let mut hits: Vec<(u64, PathBuf, bool)> = vec![];
-    let mut stack = vec![root.clone()];
+    let mut hits = vec![];
+    let mut stack = vec![root.to_path_buf()];
     'walk: while let Some(dir) = stack.pop() {
+        let in_shots = shots == Some(dir.as_path());
         for entry in fs::read_dir(&dir).into_iter().flatten().flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
             if name.starts_with('.') {
@@ -266,30 +407,24 @@ pub fn find_files(_: &Context, args: &Args) -> ToolResult {
                 stack.push(path.clone());
             }
             let lower = name.to_lowercase();
-            if words.iter().all(|w| lower.contains(w))
+            if words
+                .iter()
+                .all(|w| lower.contains(w.as_str()) || (in_shots && !is_dir && is_shot_word(w)))
+                // The folder itself: newest whenever a screenshot lands in it, but not one to send.
+                && shots != Some(path.as_path())
                 && let Ok(m) = entry.metadata()
             {
-                hits.push((mtime(&m), path, is_dir));
+                hits.push((mtime(&m), path, is_dir, m.len()));
             }
-            if Instant::now() > deadline || hits.len() > 500 {
+            // Not a cap on hits alone: the walk order isn't by date, so stopping
+            // early could leave out the newest (a Screenshots folder has hundreds).
+            if Instant::now() > deadline || hits.len() > 20_000 {
                 break 'walk;
             }
         }
     }
-    if hits.is_empty() {
-        return Ok(format!(
-            "No files named like '{}' in {}.",
-            words.join(" "),
-            short(&root)
-        ));
-    }
     hits.sort_by_key(|h| std::cmp::Reverse(h.0));
-    Ok(hits
-        .iter()
-        .take(20)
-        .map(|(_, p, d)| format!("{}{}", short(p), if *d { "/" } else { "" }))
-        .collect::<Vec<_>>()
-        .join("\n"))
+    hits
 }
 
 pub fn read_file(_: &Context, args: &Args) -> ToolResult {
@@ -422,6 +557,23 @@ mod tests {
             shots.join("Zrzut ekranu z 2026-11-15 01-02-03.png")
         );
         assert!(home_path("~/Obrazy/Zrzuty ekranu/zrzut ekranu z 2026-11-16.png", true).is_err());
+        // Gemma's retyping in a real chat: track number cut, folder name cut short.
+        let album =
+            home.join("Muzyka/brat-and-its-not-the-same-because-its-the-b-side-in-sessions");
+        fs::create_dir_all(&album).unwrap();
+        fs::write(album.join("1-06 Make you mine.m4a"), "m4a").unwrap();
+        fs::write(album.join("1-10 Made it.m4a"), "m4a").unwrap();
+        assert_eq!(
+            home_path(
+                "~/Muzyka/brat-and-its-not-the-same-because-its-the-b-side/1 Make you mine.m4a",
+                true
+            )
+            .unwrap(),
+            album.join("1-06 Make you mine.m4a")
+        );
+        fs::write(home.join("Projects/app/notes old.txt"), "old").unwrap();
+        assert!(home_path("Projects/app/note.txt", true).is_err());
+        fs::remove_file(home.join("Projects/app/notes old.txt")).unwrap();
         assert_eq!(short(&home.join("Projects")), "~/Projects");
         let out = read_file(
             &Context::default(),
@@ -430,10 +582,108 @@ mod tests {
         .unwrap();
         assert_eq!(out, "~/Projects/app/notes.txt:\nhello");
         let found = find_files(&Context::default(), &args(json!({"name": "NOTES"}))).unwrap();
-        assert_eq!(found, "~/Projects/app/notes.txt");
+        assert!(
+            found.starts_with("~/Projects/app/notes.txt (5 B, 20"),
+            "{found}"
+        );
+        // "from today" says when, not what: the match leaves it out.
+        let found = find_files(
+            &Context::default(),
+            &args(json!({"name": "the notes from today"})),
+        )
+        .unwrap();
+        assert!(found.starts_with("~/Projects/app/notes.txt ("), "{found}");
+        let found = find_files(&Context::default(), &args(json!({"name": "*.TXT"}))).unwrap();
+        assert!(found.starts_with("~/Projects/app/notes.txt ("), "{found}");
+        let found = find_files(
+            &Context::default(),
+            &args(json!({"name": "*", "folder": "Projects/app"})),
+        )
+        .unwrap();
+        assert!(found.starts_with("~/Projects/app/notes.txt ("), "{found}");
         let listing =
             list_folder(&Context::default(), &args(json!({"path": "Projects/app"}))).unwrap();
         assert!(listing.starts_with("~/Projects/app (1 items):\nnotes.txt  (5 B, "));
         assert_eq!(size(1536), "1.5 KB");
+    }
+
+    #[test]
+    fn screenshots_match_by_their_folder_in_any_language() {
+        let _h = temp_home();
+        let pictures = real_home().join("Obrazy");
+        let shots = pictures.join("Zrzuty ekranu");
+        fs::create_dir_all(&shots).unwrap();
+        let day = |d: u64| UNIX_EPOCH + Duration::from_secs(1_795_000_000 + d * 86_400);
+        for (name, d) in [
+            ("Zrzuty ekranu/Zrzut ekranu z 2026-11-24 22-58-34.png", 1),
+            ("Zrzuty ekranu/Zrzut ekranu z 2026-11-25 11-57-14.png", 3),
+            ("Screenshot-9.png", 2),
+            ("wakacje.jpg", 4),
+        ] {
+            let f = fs::File::create(pictures.join(name)).unwrap();
+            f.set_modified(day(d)).unwrap();
+        }
+        let names = |words: &[&str]| -> Vec<String> {
+            let words: Vec<String> = words.iter().map(|w| w.to_string()).collect();
+            search(&pictures, &words, Some(&shots))
+                .into_iter()
+                .map(|h| h.1.file_name().unwrap().to_string_lossy().into_owned())
+                .collect()
+        };
+        assert_eq!(
+            names(&["screenshot"]),
+            [
+                "Zrzut ekranu z 2026-11-25 11-57-14.png",
+                "Screenshot-9.png",
+                "Zrzut ekranu z 2026-11-24 22-58-34.png"
+            ]
+        );
+        assert_eq!(names(&["zrzuty", "ekranu"]).len(), 2);
+        assert_eq!(names(&["screenshot", "2026-11-24"]).len(), 1);
+        // Without the folder, only names count.
+        let words = vec!["screenshot".to_string()];
+        assert_eq!(search(&pictures, &words, None).len(), 1);
+    }
+
+    #[test]
+    fn mo_catalogs_are_read() {
+        // A catalog with "" (the header) and "Screenshots", as msgfmt sorts them.
+        let (ids, strs) = (
+            ["", "Screenshots"],
+            ["Content-Type: text/plain\n", "Zrzuty ekranu"],
+        );
+        let mut mo: Vec<u8> = vec![];
+        let mut put = |v: u32| mo.extend(v.to_le_bytes());
+        let strings_at = 28 + 16 * 2;
+        for v in [0x950412de, 0, 2, 28, 28 + 16, 0, 0] {
+            put(v);
+        }
+        let mut at = strings_at;
+        let mut tables = vec![];
+        for s in ids.iter().chain(&strs) {
+            tables.push((s.len() as u32, at as u32));
+            at += s.len() + 1;
+        }
+        for (len, off) in &tables {
+            put(*len);
+            put(*off);
+        }
+        for s in ids.iter().chain(&strs) {
+            mo.extend(s.as_bytes());
+            mo.push(0);
+        }
+        assert_eq!(
+            mo_lookup(&mo, "Screenshots").as_deref(),
+            Some("Zrzuty ekranu")
+        );
+        assert_eq!(mo_lookup(&mo, "Screenshot"), None);
+        assert_eq!(mo_lookup(b"not a catalog", "Screenshots"), None);
+        // The real one, where installed.
+        if let Ok(real) = fs::read("/usr/share/locale/pl/LC_MESSAGES/gnome-shell.mo") {
+            assert_eq!(
+                mo_lookup(&real, "Screenshots").as_deref(),
+                Some("Zrzuty ekranu")
+            );
+        }
     }
 }

@@ -666,7 +666,12 @@
     "tool": "set_volume",
     "args": {
      "percent": "30|35|40|45|50|55"
-    }
+    },
+    "or_args": [
+     {
+      "change": "down"
+     }
+    ]
    }
   ],
   "forbid": [
@@ -1387,7 +1392,12 @@
     "tool": "set_brightness",
     "args": {
      "percent": "10|20|25|30|40|50|60|65|70|75"
-    }
+    },
+    "or_args": [
+     {
+      "change": "down"
+     }
+    ]
    }
   ],
   "paraphrases": [
@@ -3411,13 +3421,11 @@
   "name": "math (pl)",
   "prompt": "ile to 17 razy 23?",
   "tags": [
-   "no-tool",
    "answer"
   ],
   "paraphrases": [
    "what's 17 times 23?"
   ],
-  "no_tools": true,
   "answer": [
    "391"
   ]
@@ -3437,13 +3445,11 @@
   "name": "unit math",
   "prompt": "how many minutes are in 3.5 hours?",
   "tags": [
-   "no-tool",
    "answer"
   ],
   "paraphrases": [
    "ile minut ma 3,5 godziny?"
   ],
-  "no_tools": true,
   "answer": [
    "210"
   ]
@@ -3792,7 +3798,7 @@
   "prompt": "ile to 15% z 240?",
   "answer": [
    "36",
-   "wynosi|jest|równa|daje|procent"
+   "wynosi|jest|równa|daje|procent|to 36"
   ],
   "tags": [
    "answer",
@@ -3801,7 +3807,7 @@
   ],
   "paraphrases": [
    "policz 15 procent z 240",
-   "ile to 15 proc z 79,2?"
+   "ile to 15 proc z 240?"
   ]
  },
  {
@@ -4022,6 +4028,61 @@
   ],
   "paraphrases": [
    "przeszukaj zdjecia i znajdz screenshota z dzisiejsza data, zmien go na pdf i wyslij na telefon"
+  ]
+ },
+ {
+  "name": "latest screenshot to phone",
+  "prompt": "find the latest screenshot and send it to my phone",
+  "memory": [
+   "The user's phone is the iPhone (Jakub)"
+  ],
+  "stubs": {
+   "find_files": "~/Obrazy/Zrzuty ekranu/Zrzut ekranu z 2026-11-25 11-57-14.png (262 KB, 2026-11-25)\n~/Obrazy/Zrzuty ekranu/Zrzut ekranu z 2026-11-24 22-58-34.png (406 KB, 2026-11-24)",
+   "list_folder": "~/Obrazy/Zrzuty ekranu/Zrzut ekranu z 2026-11-25 11-57-14.png (262 KB, 2026-11-25)\n~/Obrazy/Zrzuty ekranu/Zrzut ekranu z 2026-11-24 22-58-34.png (406 KB, 2026-11-24)",
+   "list_devices": "jakubs-iphone (iOS, online)\nframework (linux, this device)",
+   "send_file": [
+    {
+     "when": {
+      "device": "jakubs-iphone|iphone|jakub",
+      "path": "2026-11-25 11-57-14"
+     },
+     "result": "Sent Zrzut ekranu z 2026-11-25 11-57-14.png to jakubs-iphone with Taildrop."
+    },
+    {
+     "when": {
+      "device": "jakubs-iphone|iphone|jakub"
+     },
+     "error": "that file doesn't exist"
+    },
+    {
+     "error": "no device on the tailnet called that. Devices: jakubs-iphone (iOS), framework (linux)"
+    }
+   ]
+  },
+  "expect": [
+   {
+    "tool": "find_files|list_folder"
+   },
+   {
+    "tool": "send_file",
+    "args": {
+     "device": "jakubs-iphone|iphone|jakub",
+     "path": "2026-11-25 11-57-14"
+    }
+   }
+  ],
+  "forbid": [
+   "save_screenshot"
+  ],
+  "tags": [
+   "chain",
+   "files",
+   "resolve",
+   "polish"
+  ],
+  "paraphrases": [
+   "send my last screenshot to my phone",
+   "wyślij mi na telefon ostatni zrzut ekranu"
   ]
  },
  {
