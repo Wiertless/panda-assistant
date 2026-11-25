@@ -4025,6 +4025,61 @@
   ]
  },
  {
+  "name": "latest screenshot to phone",
+  "prompt": "find the latest screenshot and send it to my phone",
+  "memory": [
+   "The user's phone is the iPhone (Jakub)"
+  ],
+  "stubs": {
+   "find_files": "~/Obrazy/Zrzuty ekranu/Zrzut ekranu z 2026-11-25 11-57-14.png (262 KB, 2026-11-25)\n~/Obrazy/Zrzuty ekranu/Zrzut ekranu z 2026-11-24 22-58-34.png (406 KB, 2026-11-24)",
+   "list_folder": "~/Obrazy/Zrzuty ekranu/Zrzut ekranu z 2026-11-25 11-57-14.png (262 KB, 2026-11-25)\n~/Obrazy/Zrzuty ekranu/Zrzut ekranu z 2026-11-24 22-58-34.png (406 KB, 2026-11-24)",
+   "list_devices": "jakubs-iphone (iOS, online)\nframework (linux, this device)",
+   "send_file": [
+    {
+     "when": {
+      "device": "jakubs-iphone|iphone|jakub",
+      "path": "2026-11-25 11-57-14"
+     },
+     "result": "Sent Zrzut ekranu z 2026-11-25 11-57-14.png to jakubs-iphone with Taildrop."
+    },
+    {
+     "when": {
+      "device": "jakubs-iphone|iphone|jakub"
+     },
+     "error": "that file doesn't exist"
+    },
+    {
+     "error": "no device on the tailnet called that. Devices: jakubs-iphone (iOS), framework (linux)"
+    }
+   ]
+  },
+  "expect": [
+   {
+    "tool": "find_files|list_folder"
+   },
+   {
+    "tool": "send_file",
+    "args": {
+     "device": "jakubs-iphone|iphone|jakub",
+     "path": "2026-11-25 11-57-14"
+    }
+   }
+  ],
+  "forbid": [
+   "save_screenshot"
+  ],
+  "tags": [
+   "chain",
+   "files",
+   "resolve",
+   "polish"
+  ],
+  "paraphrases": [
+   "send my last screenshot to my phone",
+   "wyślij mi na telefon ostatni zrzut ekranu"
+  ]
+ },
+ {
   "name": "song, artist, send",
   "prompt": "search for make you mine in music and tell me the artist then send it to my phone",
   "stubs": {
