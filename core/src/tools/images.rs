@@ -28,7 +28,11 @@ fn pictures(raw: &str) -> Result<Vec<PathBuf>, ToolError> {
         })
         .collect();
     if found.is_empty() {
-        return Err(format!("no pictures in {}", raw.trim()).into());
+        return Err(format!(
+            "no pictures in {}. For text, write_file with a path ending in .pdf makes the PDF",
+            raw.trim()
+        )
+        .into());
     }
     Ok(found)
 }

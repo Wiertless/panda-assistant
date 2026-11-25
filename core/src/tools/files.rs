@@ -159,26 +159,60 @@ fn missing(path: &Path) -> String {
     msg
 }
 
-/// Small models retype long names ("Zrzut ekranu z 2026-11-15 01-02-03.png")
-/// with the case, spaces or punctuation a bit off: take the one file in the
-/// same folder whose name matches when only letters and digits count.
+/// Small models retype long paths with bits off ("Zrzut ekranu z 2026-11-15
+/// 01-02-03.png", "1 Make you mine.m4a" for "1-06 Make you mine.m4a", a folder
+/// name cut short): fix each missing part of the path with `loose_child`.
 fn loosely(path: &Path) -> Option<PathBuf> {
-    let key = |s: &str| {
-        s.chars()
-            .filter(|c| c.is_alphanumeric())
-            .flat_map(char::to_lowercase)
-            .collect::<String>()
+    let base = path.ancestors().find(|d| d.is_dir())?;
+    path.strip_prefix(base)
+        .ok()?
+        .components()
+        .try_fold(base.to_path_buf(), |dir, part| {
+            let part = part.as_os_str().to_string_lossy();
+            let exact = dir.join(&*part);
+            if exact.exists() {
+                Some(exact)
+            } else {
+                loose_child(&dir, &part)
+            }
+        })
+}
+
+/// The one entry in `dir` whose name matches `want` when only letters and
+/// digits count, or else the one whose name has all of want's words. Words only
+/// from 3 up: "notes.txt" must not turn into "notes old.txt".
+fn loose_child(dir: &Path, want: &str) -> Option<PathBuf> {
+    let words = |s: &str| -> Vec<String> {
+        s.split(|c: char| !c.is_alphanumeric())
+            .filter(|w| !w.is_empty())
+            .map(str::to_lowercase)
+            .collect()
     };
-    let want = key(&path.file_name()?.to_string_lossy());
+    let names: Vec<(Vec<String>, PathBuf)> = fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .map(|e| (e.file_name().to_string_lossy().to_string(), e.path()))
+        .filter(|(n, _)| !n.starts_with('.'))
+        .map(|(n, p)| (words(&n), p))
+        .collect();
+    let one = |hits: Vec<&PathBuf>| (hits.len() == 1).then(|| hits[0].clone());
+    let want = words(want);
     if want.is_empty() {
         return None;
     }
-    let mut hits = fs::read_dir(path.parent()?).ok()?.flatten().filter(|e| {
-        !e.file_name().to_string_lossy().starts_with('.')
-            && key(&e.file_name().to_string_lossy()) == want
-    });
-    let hit = hits.next()?;
-    hits.next().is_none().then(|| hit.path())
+    one(names
+        .iter()
+        .filter(|(w, _)| w.concat() == want.concat())
+        .map(|(_, p)| p)
+        .collect())
+    .or_else(|| {
+        (want.len() >= 3).then_some(())?;
+        one(names
+            .iter()
+            .filter(|(w, _)| want.iter().all(|x| w.contains(x)))
+            .map(|(_, p)| p)
+            .collect())
+    })
 }
 
 pub fn size(n: u64) -> String {
@@ -310,13 +344,16 @@ fn mo_lookup(mo: &[u8], msgid: &str) -> Option<String> {
 }
 
 pub fn find_files(_: &Context, args: &Args) -> ToolResult {
-    let mut words: Vec<String> = arg_str(args, "name")
-        .split_whitespace()
-        .map(str::to_lowercase)
-        .collect();
-    if words.is_empty() {
+    let name = arg_str(args, "name");
+    if name.trim().is_empty() {
         return Err("give part of the file name to look for".into());
     }
+    // "*" matches any name (small models pass it to mean "everything"), "*.pdf" is ".pdf".
+    let mut words: Vec<String> = name
+        .split_whitespace()
+        .map(|w| w.trim_matches('*').to_lowercase())
+        .filter(|w| !w.is_empty())
+        .collect();
     if words.iter().any(|w| !not_in_names(w)) {
         words.retain(|w| !not_in_names(w));
     }
@@ -520,6 +557,23 @@ mod tests {
             shots.join("Zrzut ekranu z 2026-11-15 01-02-03.png")
         );
         assert!(home_path("~/Obrazy/Zrzuty ekranu/zrzut ekranu z 2026-11-16.png", true).is_err());
+        // Gemma's retyping in a real chat: track number cut, folder name cut short.
+        let album =
+            home.join("Muzyka/brat-and-its-not-the-same-because-its-the-b-side-in-sessions");
+        fs::create_dir_all(&album).unwrap();
+        fs::write(album.join("1-06 Make you mine.m4a"), "m4a").unwrap();
+        fs::write(album.join("1-10 Made it.m4a"), "m4a").unwrap();
+        assert_eq!(
+            home_path(
+                "~/Muzyka/brat-and-its-not-the-same-because-its-the-b-side/1 Make you mine.m4a",
+                true
+            )
+            .unwrap(),
+            album.join("1-06 Make you mine.m4a")
+        );
+        fs::write(home.join("Projects/app/notes old.txt"), "old").unwrap();
+        assert!(home_path("Projects/app/note.txt", true).is_err());
+        fs::remove_file(home.join("Projects/app/notes old.txt")).unwrap();
         assert_eq!(short(&home.join("Projects")), "~/Projects");
         let out = read_file(
             &Context::default(),
@@ -536,6 +590,14 @@ mod tests {
         let found = find_files(
             &Context::default(),
             &args(json!({"name": "the notes from today"})),
+        )
+        .unwrap();
+        assert!(found.starts_with("~/Projects/app/notes.txt ("), "{found}");
+        let found = find_files(&Context::default(), &args(json!({"name": "*.TXT"}))).unwrap();
+        assert!(found.starts_with("~/Projects/app/notes.txt ("), "{found}");
+        let found = find_files(
+            &Context::default(),
+            &args(json!({"name": "*", "folder": "Projects/app"})),
         )
         .unwrap();
         assert!(found.starts_with("~/Projects/app/notes.txt ("), "{found}");
