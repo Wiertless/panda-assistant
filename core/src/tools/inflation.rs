@@ -83,6 +83,13 @@ pub fn inflation(_: &Context, args: &Args) -> ToolResult {
     let this_year = glib::DateTime::now_local().map_or(2026, |d| d.year() as i64);
     let from =
         year(args.get("from_year"), this_year).ok_or("from_year must be a year, e.g. 1998")?;
+    // "100 euro w złotówkach" is an exchange rate, not inflation (the model mixed them up).
+    if from >= this_year - 1 {
+        return Err(format!(
+            "{from} is this year's money: no inflation to work out. To change currencies, web_search the exchange rate"
+        )
+        .into());
+    }
     let to = year(args.get("to_year"), this_year);
     let raw = arg_str(args, "country");
     let country = match raw.trim() {
@@ -137,6 +144,15 @@ mod tests {
                 .unwrap_err()
                 .0
                 .contains("1998–2025")
+        );
+        let now = glib::DateTime::now_local().unwrap().year() as i64;
+        let recent: Args =
+            serde_json::from_value(json!({"amount": 100, "from_year": now - 1})).unwrap();
+        assert!(
+            inflation(&Context::default(), &recent)
+                .unwrap_err()
+                .0
+                .contains("web_search")
         );
     }
 }

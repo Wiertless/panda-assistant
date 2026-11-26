@@ -65,7 +65,6 @@ pub fn norm_name(text: &str) -> String {
 pub fn renamed(name: &str) -> Option<&'static str> {
     Some(match name {
         "read_document" => "read_file",
-        "search_file_contents" => "search_everything",
         "get_battery" | "get_datetime" => "get_status",
         _ => return None,
     })
@@ -425,7 +424,7 @@ it first), with new_text. old_text must appear once, or pass all true to change 
 delete or remove a file.", path(), Confirm, edit::trash_file,
                   text("path", |p| format!("Move {} to the Trash", or(p, "it")))),
         Tool::new("search_text", "Search inside text files (notes, code, configs, CSV) in a folder for words, like \
-grep: returns file:line: matching line. For PDFs and office documents use search_everything.",
+grep: returns file:line: matching line. For PDFs and office documents use search_file_contents.",
                   obj(json!({"query": {"type": "string"},
                              "folder": {"type": "string", "description": "Where to look (default: home)"}}), &["query"]),
                   Safe, edit::search_text, text("query", |q| format!("Search text files for “{q}”"))),
@@ -629,6 +628,9 @@ several with * and ? in the name (Pictures/Scans/*.jpg); name: the PDF's name. I
 in it. Use it when the user says this, here, or asks about what they're looking at.",
                   obj(json!({"app": {"type": "string", "description": "Only to pick a window other than the focused one"}}), &[]),
                   Safe, screen::read_window, text("app", |a| format!("Read {}", or(a, "the window")))),
+        Tool::new("search_file_contents", "Search inside the user's files (documents, PDFs, notes) for words, \
+using GNOME's file index. Returns files and matching snippets.", obj(json!({"query": {"type": "string"}}), &["query"]),
+                  Safe, localsearch::search_file_contents, text("query", |q| format!("Search files for “{q}”"))),
         Tool::new("get_events", "Get calendar events. when: today, tomorrow, this week, next week, a weekday or a \
 date like 2026-11-20.", obj(json!({"when": {"type": "string"}}), &[]), Safe, personal::get_events,
                   text("when", |w| format!("Check the calendar ({})", or(w, "today")))),
@@ -732,14 +734,9 @@ mod tests {
     #[test]
     fn same_tools_and_risks_as_the_python_app() {
         let names: Vec<String> = all().into_iter().map(|t| t.name).collect();
-        assert_eq!(names.len(), 77, "{names:?}");
+        assert_eq!(names.len(), 78, "{names:?}");
         // Folded tools forward to one that exists, and aren't offered themselves.
-        for old in [
-            "read_document",
-            "search_file_contents",
-            "get_battery",
-            "get_datetime",
-        ] {
+        for old in ["read_document", "get_battery", "get_datetime"] {
             assert!(!names.contains(&old.to_string()), "{old}");
             assert!(
                 names.iter().any(|n| Some(n.as_str()) == renamed(old)),

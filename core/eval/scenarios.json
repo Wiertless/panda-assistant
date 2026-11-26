@@ -162,11 +162,11 @@
      "error": "no device on the tailnet called that, or no such file. Devices: jakubs-iphone (iOS), framework (linux)"
     }
    ],
-   "search_everything": "~/Dokumenty/lease-2026.pdf"
+   "search_file_contents": "~/Dokumenty/lease-2026.pdf"
   },
   "expect": [
    {
-    "tool": "find_files|search_everything"
+    "tool": "find_files|search_file_contents"
    },
    {
     "tool": "send_file",
@@ -791,7 +791,7 @@
    "find_files": "~/Dokumenty/lease-2026.pdf",
    "ask_document": "From ~/Dokumenty/lease-2026.pdf: The deposit is 4 500 zł, paid before moving in.",
    "read_file": "LEASE AGREEMENT ... §4 Deposit: the Tenant pays a deposit of 4 500 zł before moving in ...",
-   "search_everything": "~/Dokumenty/lease-2026.pdf (mentions: deposit)"
+   "search_file_contents": "~/Dokumenty/lease-2026.pdf (mentions: deposit)"
   },
   "expect": [
    {
@@ -1158,7 +1158,7 @@
   "stubs": {
    "find_files": "~/Dokumenty/lease-2026.pdf",
    "ask_document": "Summary of ~/Dokumenty/lease-2026.pdf: a 12-month lease of a flat at ul. Długa 5, rent 3 200 zł a month, deposit 4 500 zł, notice 3 months.",
-   "search_everything": "~/Dokumenty/lease-2026.pdf"
+   "search_file_contents": "~/Dokumenty/lease-2026.pdf"
   },
   "expect": [
    {
@@ -1946,7 +1946,7 @@
    "czy laptop się ładuje?"
   ],
   "answer": [
-   "charg|ładuj"
+   "charg|ładuj|ładow"
   ],
   "stubs": {
    "get_status": "62%, charging, full in 1 h 10 min"
@@ -2184,7 +2184,12 @@
    "42"
   ],
   "stubs": {
-   "web_search": "1. EUR to PLN - https://example.com/eur-pln\n   1 EUR = 4.25 PLN (15 Nov 2026)."
+   "web_search": "1. EUR to PLN - https://example.com/eur-pln\n   1 EUR = 4.25 PLN (15 Nov 2026).",
+   "inflation": [
+    {
+     "error": "2026 is this year's money: no inflation to work out. To change currencies, web_search the exchange rate"
+    }
+   ]
   }
  },
  {
@@ -2481,7 +2486,7 @@
   ],
   "expect": [
    {
-    "tool": "search_text|search_everything",
+    "tool": "search_text|search_file_contents",
     "args": {
      "query": "dentist|denty"
     }
@@ -2495,7 +2500,7 @@
   ],
   "stubs": {
    "search_text": "~/Dokumenty/appointments.md:3: dentist on Tuesday 10:00",
-   "search_everything": "~/Dokumenty/appointments.md — dentist on Tuesday 10:00"
+   "search_file_contents": "~/Dokumenty/appointments.md — dentist on Tuesday 10:00"
   }
  },
  {
