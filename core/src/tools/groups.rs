@@ -694,7 +694,7 @@ pub fn group_of(tool: &str) -> &'static str {
         | "read_mail" => "personal",
         "list_app_actions" | "run_app_action" | "media_control" | "play_music" | "search_apps"
         | "open_search_result" | "open_terminal" => "apps",
-        "read_web_page" | "research" | "get_weather" => "web",
+        "read_web_page" | "research" | "get_weather" | "inflation" => "web",
         "forget" | "save_skill" => "memory",
         "run_command" => "commands",
         t if t.contains("__") => "connected",

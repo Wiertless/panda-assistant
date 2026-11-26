@@ -3811,6 +3811,35 @@
   ]
  },
  {
+  "name": "inflation (pl)",
+  "prompt": "5070pln w 98 roku ile to teraz",
+  "stubs": {
+   "inflation": "5070 from 1998 is worth about 13379 in 2025 prices (PL: prices ×2.64, World Bank consumer price index; 2025 is the latest year it has)."
+  },
+  "expect": [
+   {
+    "tool": "inflation",
+    "args": {
+     "from_year": "98|1998|1990"
+    }
+   }
+  ],
+  "forbid": [
+   "calculate"
+  ],
+  "answer": [
+   "13"
+  ],
+  "tags": [
+   "single",
+   "answer",
+   "polish"
+  ],
+  "paraphrases": [
+   "how much is 100 dollars from 1990 worth today?"
+  ]
+ },
+ {
   "name": "shrink photos",
   "prompt": "make the photos in Pictures/Trip smaller, they're too big to send",
   "stubs": {

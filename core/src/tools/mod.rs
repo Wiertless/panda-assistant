@@ -19,6 +19,7 @@ pub mod extract;
 pub mod files;
 pub mod groups;
 pub mod images;
+pub mod inflation;
 pub mod intents;
 pub mod localsearch;
 pub mod mail;
@@ -435,6 +436,13 @@ something always has the % sign: \"15% of 240\", \"15 procent z 240\" and \"15 p
 never \"15 * 240\".",
                   obj(json!({"expression": {"type": "string"}}), &["expression"]), Safe,
                   system::calculate, |a| format!("Calculate {}", crate::tool::arg_str(a, "expression"))),
+        Tool::new("inflation", "What money from one year is worth in another year's prices (inflation): \
+\"5070 zł w 98 roku ile to teraz\", \"$100 from 1990 in today's money\". from_year: the year the amount is from \
+(98 is 1998). to_year: leave out for now. country: a code like PL or US, only when it isn't the user's own.",
+                  obj(json!({"amount": {"type": "number"}, "from_year": {"type": "integer"},
+                             "to_year": {"type": "integer"}, "country": {"type": "string"}}), &["amount", "from_year"]),
+                  Safe, inflation::inflation,
+                  |a| format!("Inflation since {}", crate::tool::arg_str(a, "from_year"))),
         Tool::new("remember", "Save a lasting fact or preference about the user for future chats \
 (e.g. 'Prefers metric units'). Only when the user asks or it's clearly useful later.",
                   obj(json!({"fact": {"type": "string"}}), &["fact"]), Safe, brains::remember, |_| "Remember this".into()),
@@ -724,7 +732,7 @@ mod tests {
     #[test]
     fn same_tools_and_risks_as_the_python_app() {
         let names: Vec<String> = all().into_iter().map(|t| t.name).collect();
-        assert_eq!(names.len(), 80, "{names:?}");
+        assert_eq!(names.len(), 81, "{names:?}");
         let risky: Vec<String> = all()
             .into_iter()
             .filter(|t| t.risk == Risk::Confirm)
