@@ -21,6 +21,17 @@
   <supports><control>keyboard</control><control>pointing</control></supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.35.2" date="2026-11-26">
+      <description>
+        <ul>
+          <li>"How much is 5070 zł from 1998 now?": a new inflation tool with World Bank data, and exchange rates still go to the web</li>
+          <li>Asks before keeping or sending something it only guessed from a window title</li>
+          <li>Doesn't ask for an action you typed out yourself, even with text selected</li>
+          <li>The pop-up sees the tab you're on, and closes when you click away after the answer</li>
+          <li>Battery and the time are part of the status; fewer tools for the model to choose from</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.35.1" date="2026-11-25">
       <description>
         <ul>
