@@ -67,6 +67,8 @@ struct Bar {
     below: gtk::Box,
     pill: gtk::Box,
     opened: std::cell::Cell<bool>,
+    /// The answer is in: clicking away closes the bar.
+    answered: std::cell::Cell<bool>,
     springing: Rc<std::cell::Cell<bool>>,
     entry: gtk::Entry,
     answer: gtk::Label,
@@ -160,6 +162,7 @@ impl Turn for Bar {
         self.to_full("");
     }
     fn on_finished(&self, error: &str) {
+        self.answered.set(true);
         self.status.set_visible(!error.is_empty());
         self.status.set_label(error);
         self.show_answer();
@@ -273,6 +276,7 @@ pub fn show(app: &adw::Application, open_full: OpenChat) {
         below: below.clone(),
         pill: pill.clone(),
         opened: Default::default(),
+        answered: Default::default(),
         springing: Default::default(),
         entry: entry.clone(),
         answer,
@@ -293,6 +297,13 @@ pub fn show(app: &adw::Application, open_full: OpenChat) {
         glib::Propagation::Proceed
     });
     win.add_controller(keys);
+    // Clicked away after the answer: close, unless a follow-up is being typed.
+    let b = bar.clone();
+    win.connect_is_active_notify(move |w| {
+        if !w.is_active() && b.answered.get() && b.entry.text().is_empty() {
+            w.close();
+        }
+    });
 
     let b = bar.clone();
     more.connect_clicked(move |_| b.to_full(""));
