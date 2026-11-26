@@ -1006,6 +1006,7 @@ impl Agent {
         let mut turn = Turn {
             tainted: text.starts_with(CONTEXT_MARK) && text.contains("Selected text:"),
             own_words: own_words(text),
+            screen: screen_words(text),
             ..Turn::default()
         };
         let result = self.run_turn(text, actionable, turn_start, &mut turn, cb);
@@ -1263,7 +1264,7 @@ impl Agent {
                 let result = if turn.failed.contains(&key) {
                     REPEATED.to_string()
                 } else {
-                    self.run_call(call, cb, turn.tainted.then_some(turn.own_words.as_str()))
+                    self.run_call(call, cb, turn)
                 };
                 if crate::tools::reads_untrusted(&call.name) && !result.starts_with("Error") {
                     turn.tainted = true;
@@ -1853,8 +1854,7 @@ Its notes: {notes}{done})"
         )
     }
 
-    /// `tainted`: untrusted text came in this turn; it holds the words the user typed.
-    fn run_call(&self, call: &ToolCall, cb: &dyn Callbacks, tainted: Option<&str>) -> String {
+    fn run_call(&self, call: &ToolCall, cb: &dyn Callbacks, turn: &Turn) -> String {
         let loose = || {
             if self.repair_args {
                 crate::repair::parse_loose(&call.arguments)
@@ -1907,15 +1907,25 @@ Its notes: {notes}{done})"
         // anything that sends, keeps or quietly changes something asks first.
         // Unless the user typed every argument themselves ("change wifi to eduroam"):
         // outside text can't put words in their message.
-        let steered = tainted.is_some_and(|own| {
-            crate::tools::guarded_after_untrusted(&tool.name) && !typed_by_user(&args, own)
-        });
-        let detail = if steered && detail.is_empty() {
+        let guarded = crate::tools::guarded_after_untrusted(&tool.name);
+        let steered = turn.tainted && guarded && !typed_by_user(&args, &turn.own_words);
+        // Keeping or sending something on a guess: "remember this" with only a window title
+        // to go on (it can be another tab's, or the app's name) and nothing read.
+        let guessed = guarded
+            && !steered
+            && !turn.done.iter().any(|t| crate::tools::reads_untrusted(t))
+            && from_screen(&args, &turn.own_words, &turn.screen);
+        let detail = if !detail.is_empty() {
+            detail
+        } else if steered {
             "Asking because the assistant just read text from outside (a page, a document, the clipboard)".to_string()
+        } else if guessed {
+            "Asking because this comes only from the window's title, not from what you typed"
+                .to_string()
         } else {
             detail
         };
-        if (needs_ok || steered) && !cb.confirm(&tool.name, &summary, &detail) {
+        if (needs_ok || steered || guessed) && !cb.confirm(&tool.name, &summary, &detail) {
             cb.tool_finished(&call.name, "Cancelled", false);
             return DECLINED.into();
         }
@@ -2048,6 +2058,34 @@ fn own_words(text: &str) -> String {
         .to_lowercase()
 }
 
+/// The app and title of the screen context ("[On screen: Helium — “Riccardo”…"), lowercase.
+fn screen_words(text: &str) -> String {
+    text.rsplit_once(CONTEXT_END)
+        .and_then(|(head, _)| head.strip_prefix(CONTEXT_MARK))
+        .map(|head| {
+            head.split(". Selected text:")
+                .next()
+                .unwrap_or(head)
+                .to_lowercase()
+        })
+        .unwrap_or_default()
+}
+
+/// An argument has a word (3+ letters) that is on the screen but not in what the user typed.
+fn from_screen(args: &crate::tool::Args, own: &str, screen: &str) -> bool {
+    let words = |s: &str| -> Vec<String> {
+        s.split(|c: char| !c.is_alphanumeric())
+            .filter(|w| w.chars().count() >= 3)
+            .map(str::to_lowercase)
+            .collect()
+    };
+    let (own, screen) = (words(own), words(screen));
+    args.values()
+        .filter_map(|v| v.as_str())
+        .flat_map(words)
+        .any(|w| screen.contains(&w) && !own.contains(&w))
+}
+
 /// Every argument is text of 3+ characters found in what the user typed.
 fn typed_by_user(args: &crate::tool::Args, own: &str) -> bool {
     !args.is_empty()
@@ -2075,6 +2113,8 @@ struct Turn {
     tainted: bool,
     /// What the user typed, lowercase, without the screen context before it.
     own_words: String,
+    /// The app and window title from the screen context, lowercase (not the selection).
+    screen: String,
     /// The model chose to answer with the reply tool on a required round.
     replied: bool,
     /// The user declined an action this turn.
@@ -2986,6 +3026,59 @@ mod tests {
         let log = rec.log.lock().unwrap().clone();
         let asked: Vec<&String> = log.iter().filter(|l| l.starts_with("confirm:")).collect();
         assert_eq!(asked, ["confirm:connect_network:Connect"], "{log:?}");
+    }
+
+    #[test]
+    fn keeping_something_from_a_window_title_alone_asks() {
+        let _h = temp_home();
+        let flm = FakeFlm::start(vec![
+            (
+                200,
+                tool_reply(
+                    "remember",
+                    r#"{"fact": "Riccardo is a Helium perfume"}"#,
+                    "c1",
+                ),
+            ),
+            (200, text_reply("Not remembered.")),
+            (
+                200,
+                tool_reply(
+                    "remember",
+                    r#"{"fact": "The user's phone is an iPhone"}"#,
+                    "c2",
+                ),
+            ),
+            (200, text_reply("Remembered.")),
+        ]);
+        let mut tools = test_tools()();
+        tools.push(Tool::new(
+            "remember",
+            "Remember",
+            obj(json!({"fact": {"type": "string"}}), &["fact"]),
+            Risk::Safe,
+            |_, _| Ok("Remembered.".into()),
+            |_| "Remember".into(),
+        ));
+        let mut a = Agent::new(
+            Arc::new(FlmClient::new(&flm.url)),
+            "test-model",
+            Arc::new(move || tools.clone()),
+        );
+        a.reply_tool = false;
+        let rec = Rec::default(); // declines
+        let screen = |typed: &str| format!("{CONTEXT_MARK}Helium — “Riccardo”{CONTEXT_END}{typed}");
+        a.ask(&screen("remember this perfume"), &rec, &[]).unwrap();
+        // Words of its own (or its own rewording) need no OK, whatever is on screen.
+        a.ask(&screen("remember that my phone is an iPhone"), &rec, &[])
+            .unwrap();
+        let log = rec.log.lock().unwrap().clone();
+        let asked: Vec<&String> = log.iter().filter(|l| l.starts_with("confirm:")).collect();
+        assert_eq!(asked, ["confirm:remember:Remember"], "{log:?}");
+        assert!(
+            log.contains(&"tool:remember:false:Cancelled".to_string()),
+            "{log:?}"
+        );
     }
 
     #[test]
