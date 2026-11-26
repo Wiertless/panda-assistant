@@ -56,7 +56,7 @@ pub fn system_context() -> String {
     lines.push(format!("CPU: {}{threads}", cpu_name()));
     // Only what stays put: this text is part of the prompt FastFlowLM reuses, and
     // one changed digit (free memory, battery charge) makes it read it all again.
-    // get_system_info and get_battery tell the current values.
+    // get_system_info and get_status tell the current values.
     if let Some(total) = meminfo_kib("MemTotal") {
         lines.push(format!("Memory: {:.0} GiB", total as f64 / 1048576.0));
     }
@@ -70,7 +70,7 @@ pub fn system_context() -> String {
         std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_else(|_| "?".into())
     ));
     if crate::tools::system::battery_dir().is_some() {
-        lines.push("Battery: yes (get_battery tells the charge)".into());
+        lines.push("Battery: yes (get_status tells the charge)".into());
     }
     let home = crate::paths::home();
     let folders: Vec<String> = crate::tools::files::user_dirs()

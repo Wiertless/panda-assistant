@@ -92,8 +92,10 @@ class History {
             invocation.return_dbus_error('org.freedesktop.DBus.Error.AccessDenied', 'Only Assistant may read this');
             return;
         }
-        const [app, title] = this.focus ?? ['', ''];
-        invocation.return_value(new GLib.Variant('(ss)', [app, title]));
+        // The title now, not when the window got focus: switching tabs changes it.
+        const w = this.focus;
+        const app = w ? Shell.WindowTracker.get_default().get_window_app(w)?.get_name() ?? w.get_wm_class() ?? '' : '';
+        invocation.return_value(new GLib.Variant('(ss)', [app, w?.get_title() ?? '']));
     }
 
     ClearAsync(_params, invocation) {
@@ -122,8 +124,11 @@ export default class AssistantClipboard extends Extension {
             const w = global.display.focus_window;
             if (!w || (w.get_wm_class() ?? '').includes('PandaAssistant'))
                 return;
-            const app = Shell.WindowTracker.get_default().get_window_app(w);
-            this._history.focus = [app?.get_name() ?? w.get_wm_class() ?? '', w.get_title() ?? ''];
+            this._history.focus = w;
+            w.connect('unmanaged', () => {
+                if (this._history?.focus === w)
+                    this._history.focus = null;
+            });
         });
         this._dbus = Gio.DBusExportedObject.wrapJSObject(IFACE, this._history);
         this._dbus.export(Gio.DBus.session, PATH);

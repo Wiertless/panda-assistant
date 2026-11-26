@@ -21,11 +21,25 @@ thread_local! {
     static OPEN: RefCell<Option<adw::Window>> = const { RefCell::new(None) };
 }
 
+/// "Perfume X – Helium" → "Perfume X": browsers end titles with their name, and the small
+/// model took it for part of the page ("Riccardo is Helium perfume").
+fn without_app<'a>(title: &'a str, app: &str) -> &'a str {
+    let lower = title.to_lowercase();
+    for dash in [" – ", " — ", " - "] {
+        let end = format!("{dash}{}", app.to_lowercase());
+        if !app.is_empty() && lower.ends_with(&end) {
+            return title[..title.len() - end.len()].trim_end();
+        }
+    }
+    title
+}
+
 /// "[On screen: Firefox — “Title”. Selected text: «…»]" ahead of the question.
 fn screen_note(core: &Core) -> String {
     let ctx = core.context().unwrap_or_default();
     let s = |k: &str| ctx[k].as_str().unwrap_or("").trim().to_string();
     let (app, title, selection) = (s("app"), s("title"), s("selection"));
+    let title = without_app(&title, &app);
     let mut note = vec![];
     if !app.is_empty() || !title.is_empty() {
         note.push(format!("{app} — “{title}”"));
@@ -53,6 +67,8 @@ struct Bar {
     below: gtk::Box,
     pill: gtk::Box,
     opened: std::cell::Cell<bool>,
+    /// The answer is in: clicking away closes the bar.
+    answered: std::cell::Cell<bool>,
     springing: Rc<std::cell::Cell<bool>>,
     entry: gtk::Entry,
     answer: gtk::Label,
@@ -146,6 +162,7 @@ impl Turn for Bar {
         self.to_full("");
     }
     fn on_finished(&self, error: &str) {
+        self.answered.set(true);
         self.status.set_visible(!error.is_empty());
         self.status.set_label(error);
         self.show_answer();
@@ -259,6 +276,7 @@ pub fn show(app: &adw::Application, open_full: OpenChat) {
         below: below.clone(),
         pill: pill.clone(),
         opened: Default::default(),
+        answered: Default::default(),
         springing: Default::default(),
         entry: entry.clone(),
         answer,
@@ -279,6 +297,13 @@ pub fn show(app: &adw::Application, open_full: OpenChat) {
         glib::Propagation::Proceed
     });
     win.add_controller(keys);
+    // Clicked away after the answer: close, unless a follow-up is being typed.
+    let b = bar.clone();
+    win.connect_is_active_notify(move |w| {
+        if !w.is_active() && b.answered.get() && b.entry.text().is_empty() {
+            w.close();
+        }
+    });
 
     let b = bar.clone();
     more.connect_clicked(move |_| b.to_full(""));
@@ -318,4 +343,17 @@ pub fn show(app: &adw::Application, open_full: OpenChat) {
     OPEN.with(|o| *o.borrow_mut() = Some(win.clone()));
     win.present();
     entry.grab_focus();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::without_app;
+
+    #[test]
+    fn titles_lose_the_app_name() {
+        assert_eq!(without_app("Riccardo – Helium", "Helium"), "Riccardo");
+        assert_eq!(without_app("Notes - gedit", "gedit"), "Notes");
+        assert_eq!(without_app("Helium docs", "Helium"), "Helium docs");
+        assert_eq!(without_app("Title", ""), "Title");
+    }
 }

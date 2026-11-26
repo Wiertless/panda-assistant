@@ -19,6 +19,7 @@ pub mod extract;
 pub mod files;
 pub mod groups;
 pub mod images;
+pub mod inflation;
 pub mod intents;
 pub mod localsearch;
 pub mod mail;
@@ -60,6 +61,15 @@ pub fn norm_name(text: &str) -> String {
         .to_string()
 }
 
+/// Tools folded into others. Models (ft2 was trained on them) still call the old names.
+pub fn renamed(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "read_document" => "read_file",
+        "get_battery" | "get_datetime" => "get_status",
+        _ => return None,
+    })
+}
+
 /// The tools that finish what a lookup started ("change it", "connect it"),
 /// for requests that ask for an action: a turn that stops after the lookup
 /// is asked again with only these (and ask_user).
@@ -72,7 +82,6 @@ pub fn completes(lookup: &str) -> &'static [&'static str] {
         "find_files" | "search_file_contents" | "list_folder" => &[
             "send_file",
             "ask_document",
-            "read_document",
             "read_file",
             "open_file",
             "show_in_files",
@@ -419,22 +428,25 @@ grep: returns file:line: matching line. For PDFs and office documents use search
                   obj(json!({"query": {"type": "string"},
                              "folder": {"type": "string", "description": "Where to look (default: home)"}}), &["query"]),
                   Safe, edit::search_text, text("query", |q| format!("Search text files for “{q}”"))),
-        Tool::new("get_battery", "Get the battery charge level and charging state.", obj(json!({}), &[]), Safe,
-                  system::get_battery, |_| "Read battery".into()),
         Tool::new("get_system_info", "Get OS, kernel, uptime, memory and disk space.", obj(json!({}), &[]), Safe,
                   system::get_system_info, |_| "Read system info".into()),
         Tool::new("list_servers", "List the programs on this computer that listen for connections (local \
 servers: Lemonade, FastFlowLM, Ollama, web dev servers, databases) with their address and port. Use it for which \
 port or URL a program or service is on, or whether a server is running.", obj(json!({}), &[]), Safe,
                   system::list_servers, |_| "List local servers".into()),
-        Tool::new("get_datetime", "Get the current local date and time.", obj(json!({}), &[]), Safe,
-                  system::get_datetime, |_| "Read the time".into()),
         Tool::new("calculate", "Work out arithmetic exactly; use it for any sum, percentage, average or \
 conversion instead of working it out yourself. expression: numbers with + - * / ^ and brackets. A percent of \
 something always has the % sign: \"15% of 240\", \"15 procent z 240\" and \"15 proc z 240\" are all \"15% * 240\", \
 never \"15 * 240\".",
                   obj(json!({"expression": {"type": "string"}}), &["expression"]), Safe,
                   system::calculate, |a| format!("Calculate {}", crate::tool::arg_str(a, "expression"))),
+        Tool::new("inflation", "What money from one year is worth in another year's prices (inflation): \
+\"5070 zł w 98 roku ile to teraz\", \"$100 from 1990 in today's money\". from_year: the year the amount is from \
+(98 is 1998). to_year: leave out for now. country: a code like PL or US, only when it isn't the user's own.",
+                  obj(json!({"amount": {"type": "number"}, "from_year": {"type": "integer"},
+                             "to_year": {"type": "integer"}, "country": {"type": "string"}}), &["amount", "from_year"]),
+                  Safe, inflation::inflation,
+                  |a| format!("Inflation since {}", crate::tool::arg_str(a, "from_year"))),
         Tool::new("remember", "Save a lasting fact or preference about the user for future chats \
 (e.g. 'Prefers metric units'). Only when the user asks or it's clearly useful later.",
                   obj(json!({"fact": {"type": "string"}}), &["fact"]), Safe, brains::remember, |_| "Remember this".into()),
@@ -451,7 +463,8 @@ steps: short numbered steps.",
         Tool::new("list_app_actions", "List the actions an app offers, e.g. New Private Window, Compose Message.",
                   obj(json!({"app": {"type": "string"}}), &["app"]), Safe, apps::list_app_actions,
                   text("app", |a| format!("Look at what {} can do", or(a, "the app")))),
-        Tool::new("get_status", "Get dark mode, Do Not Disturb, Wi-Fi, volume and brightness state.", obj(json!({}), &[]),
+        Tool::new("get_status", "Get dark mode, Do Not Disturb, Wi-Fi, volume, brightness, battery, and the date and \
+time.", obj(json!({}), &[]),
                   Safe, settings::get_status, |_| "Read settings".into()),
         Tool::new("web_search", "Search the web for current information, facts, news, prices or how-tos. \
 Returns titles, links and short snippets. Not for the user's own files, settings or devices: use the tools for those. \
@@ -618,9 +631,6 @@ in it. Use it when the user says this, here, or asks about what they're looking 
         Tool::new("search_file_contents", "Search inside the user's files (documents, PDFs, notes) for words, \
 using GNOME's file index. Returns files and matching snippets.", obj(json!({"query": {"type": "string"}}), &["query"]),
                   Safe, localsearch::search_file_contents, text("query", |q| format!("Search files for “{q}”"))),
-        Tool::new("read_document", "Read the text of a document (PDF, Word, Excel, PowerPoint, LibreOffice, EPUB…), \
-the start of it for long ones.", path(),
-                  Safe, localsearch::read_document, text("path", |p| format!("Read {}", base_name(&or(p, "a document"))))),
         Tool::new("get_events", "Get calendar events. when: today, tomorrow, this week, next week, a weekday or a \
 date like 2026-11-20.", obj(json!({"when": {"type": "string"}}), &[]), Safe, personal::get_events,
                   text("when", |w| format!("Check the calendar ({})", or(w, "today")))),
@@ -724,7 +734,15 @@ mod tests {
     #[test]
     fn same_tools_and_risks_as_the_python_app() {
         let names: Vec<String> = all().into_iter().map(|t| t.name).collect();
-        assert_eq!(names.len(), 80, "{names:?}");
+        assert_eq!(names.len(), 78, "{names:?}");
+        // Folded tools forward to one that exists, and aren't offered themselves.
+        for old in ["read_document", "get_battery", "get_datetime"] {
+            assert!(!names.contains(&old.to_string()), "{old}");
+            assert!(
+                names.iter().any(|n| Some(n.as_str()) == renamed(old)),
+                "{old}"
+            );
+        }
         let risky: Vec<String> = all()
             .into_iter()
             .filter(|t| t.risk == Risk::Confirm)

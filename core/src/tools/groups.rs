@@ -668,9 +668,7 @@ pub fn group_of(tool: &str) -> &'static str {
         "list_reminders" | "cancel_reminder" => "reminders",
         "list_folder"
         | "read_file"
-        | "read_document"
         | "ask_document"
-        | "search_file_contents"
         | "look_at_image"
         | "edit_image"
         | "images_to_pdf"
@@ -679,8 +677,9 @@ pub fn group_of(tool: &str) -> &'static str {
         | "move_file"
         | "make_folder"
         | "trash_file"
-        | "search_text" => "files",
-        "get_battery" | "get_system_info" | "list_servers" => "system",
+        | "search_text"
+        | "search_file_contents" => "files",
+        "get_system_info" | "list_servers" => "system",
         "list_networks"
         | "connect_network"
         | "disconnect_network"
@@ -694,7 +693,7 @@ pub fn group_of(tool: &str) -> &'static str {
         | "read_mail" => "personal",
         "list_app_actions" | "run_app_action" | "media_control" | "play_music" | "search_apps"
         | "open_search_result" | "open_terminal" => "apps",
-        "read_web_page" | "research" | "get_weather" => "web",
+        "read_web_page" | "research" | "get_weather" | "inflation" => "web",
         "forget" | "save_skill" => "memory",
         "run_command" => "commands",
         t if t.contains("__") => "connected",
