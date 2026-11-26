@@ -341,6 +341,15 @@ pub fn get_status(_: &Context, _: &Args) -> ToolResult {
             (100.0 * cur as f64 / top.max(1) as f64).round()
         ));
     }
+    // Battery and clock too: one status tool instead of three.
+    if let Ok(b) = super::system::get_battery(&Context::default(), &Args::new())
+        && !b.starts_with("No battery")
+    {
+        out.push(format!("battery: {}", b.replace('\n', ", ")));
+    }
+    if let Ok(t) = super::system::get_datetime(&Context::default(), &Args::new()) {
+        out.push(format!("now: {t}"));
+    }
     Ok(if out.is_empty() {
         "No status available.".into()
     } else {

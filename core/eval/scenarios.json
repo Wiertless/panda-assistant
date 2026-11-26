@@ -149,7 +149,6 @@
   ],
   "stubs": {
    "find_files": "~/Dokumenty/lease-2026.pdf",
-   "search_file_contents": "~/Dokumenty/lease-2026.pdf",
    "list_devices": "jakubs-iphone (iOS, online)\nframework (linux, this device)",
    "send_file": [
     {
@@ -162,11 +161,12 @@
     {
      "error": "no device on the tailnet called that, or no such file. Devices: jakubs-iphone (iOS), framework (linux)"
     }
-   ]
+   ],
+   "search_everything": "~/Dokumenty/lease-2026.pdf"
   },
   "expect": [
    {
-    "tool": "find_files|search_file_contents"
+    "tool": "find_files|search_everything"
    },
    {
     "tool": "send_file",
@@ -279,11 +279,11 @@
   "name": "battery",
   "prompt": "how much battery do I have left?",
   "stubs": {
-   "get_battery": "62%, discharging, about 3 h 40 min left"
+   "get_status": "62%, discharging, about 3 h 40 min left"
   },
   "expect": [
    {
-    "tool": "get_battery|get_status|get_system_info"
+    "tool": "get_status|get_system_info"
    }
   ],
   "answer": [
@@ -789,13 +789,13 @@
   "prompt": "how big is the deposit in my lease?",
   "stubs": {
    "find_files": "~/Dokumenty/lease-2026.pdf",
-   "search_file_contents": "~/Dokumenty/lease-2026.pdf (mentions: deposit)",
-   "read_document": "LEASE AGREEMENT ... §4 Deposit: the Tenant pays a deposit of 4 500 zł before moving in ...",
-   "ask_document": "From ~/Dokumenty/lease-2026.pdf: The deposit is 4 500 zł, paid before moving in."
+   "ask_document": "From ~/Dokumenty/lease-2026.pdf: The deposit is 4 500 zł, paid before moving in.",
+   "read_file": "LEASE AGREEMENT ... §4 Deposit: the Tenant pays a deposit of 4 500 zł before moving in ...",
+   "search_everything": "~/Dokumenty/lease-2026.pdf (mentions: deposit)"
   },
   "expect": [
    {
-    "tool": "read_document|read_file|ask_document",
+    "tool": "read_file|ask_document",
     "args": {
      "path": "lease-2026.pdf"
     }
@@ -1157,8 +1157,8 @@
   ],
   "stubs": {
    "find_files": "~/Dokumenty/lease-2026.pdf",
-   "search_file_contents": "~/Dokumenty/lease-2026.pdf",
-   "ask_document": "Summary of ~/Dokumenty/lease-2026.pdf: a 12-month lease of a flat at ul. Długa 5, rent 3 200 zł a month, deposit 4 500 zł, notice 3 months."
+   "ask_document": "Summary of ~/Dokumenty/lease-2026.pdf: a 12-month lease of a flat at ul. Długa 5, rent 3 200 zł a month, deposit 4 500 zł, notice 3 months.",
+   "search_everything": "~/Dokumenty/lease-2026.pdf"
   },
   "expect": [
    {
@@ -1908,7 +1908,7 @@
    "web_search"
   ],
   "stubs": {
-   "get_datetime": "Sunday 2026-11-15 10:00 CET"
+   "get_status": "Sunday 2026-11-15 10:00 CET"
   }
  },
  {
@@ -1927,7 +1927,7 @@
    "web_search"
   ],
   "stubs": {
-   "get_datetime": "Sunday 2026-11-15 10:00 CET"
+   "get_status": "Sunday 2026-11-15 10:00 CET"
   }
  },
  {
@@ -1939,7 +1939,7 @@
   ],
   "expect": [
    {
-    "tool": "get_battery"
+    "tool": "get_status"
    }
   ],
   "paraphrases": [
@@ -1949,7 +1949,7 @@
    "charg|ładuj"
   ],
   "stubs": {
-   "get_battery": "62%, charging, full in 1 h 10 min"
+   "get_status": "62%, charging, full in 1 h 10 min"
   }
  },
  {
@@ -2481,7 +2481,7 @@
   ],
   "expect": [
    {
-    "tool": "search_text|search_file_contents",
+    "tool": "search_text|search_everything",
     "args": {
      "query": "dentist|denty"
     }
@@ -2495,7 +2495,7 @@
   ],
   "stubs": {
    "search_text": "~/Dokumenty/appointments.md:3: dentist on Tuesday 10:00",
-   "search_file_contents": "~/Dokumenty/appointments.md — dentist on Tuesday 10:00"
+   "search_everything": "~/Dokumenty/appointments.md — dentist on Tuesday 10:00"
   }
  },
  {
@@ -2534,7 +2534,7 @@
   ],
   "expect": [
    {
-    "tool": "read_document|read_file|ask_document",
+    "tool": "read_file|ask_document",
     "args": {
      "path": "cv"
     }
@@ -2545,8 +2545,7 @@
   ],
   "stubs": {
    "find_files": "~/Dokumenty/CV-Jakub-2026.pdf (2026-10-02)",
-   "read_document": "Jakub Wiertel — student of mathematics, UMK Toruń. Skills: Rust, Linux.",
-   "read_file": "Jakub Wiertel — student of mathematics, UMK Toruń."
+   "read_file": "Jakub Wiertel — student of mathematics, UMK Toruń. Skills: Rust, Linux."
   }
  },
  {
@@ -3562,7 +3561,7 @@
   ],
   "stubs": {
    "get_events": "Fri 20 Nov, 13:00–14:00: Lunch with Ola",
-   "get_datetime": "Sunday 2026-11-15 10:00 CET"
+   "get_status": "Sunday 2026-11-15 10:00 CET"
   }
  },
  {
@@ -3573,7 +3572,7 @@
   ],
   "expect": [
    {
-    "tool": "get_battery"
+    "tool": "get_status"
    },
    {
     "tool": "set_power_mode",
@@ -3586,7 +3585,7 @@
    "sprawdź baterię i jeśli jest poniżej 20%, włącz oszczędzanie energii"
   ],
   "stubs": {
-   "get_battery": "15%, discharging, about 40 min left"
+   "get_status": "15%, discharging, about 40 min left"
   }
  },
  {

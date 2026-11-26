@@ -666,21 +666,10 @@ pub fn group_of(tool: &str) -> &'static str {
         | "open_settings" | "set_wifi" | "set_bluetooth" => "settings",
         "clipboard_history" | "rewrite_selection" => "clipboard",
         "list_reminders" | "cancel_reminder" => "reminders",
-        "list_folder"
-        | "read_file"
-        | "read_document"
-        | "ask_document"
-        | "search_file_contents"
-        | "look_at_image"
-        | "edit_image"
-        | "images_to_pdf"
-        | "write_file"
-        | "edit_file"
-        | "move_file"
-        | "make_folder"
-        | "trash_file"
-        | "search_text" => "files",
-        "get_battery" | "get_system_info" | "list_servers" => "system",
+        "list_folder" | "read_file" | "ask_document" | "look_at_image" | "edit_image"
+        | "images_to_pdf" | "write_file" | "edit_file" | "move_file" | "make_folder"
+        | "trash_file" | "search_text" => "files",
+        "get_system_info" | "list_servers" => "system",
         "list_networks"
         | "connect_network"
         | "disconnect_network"

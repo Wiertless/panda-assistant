@@ -1872,6 +1872,10 @@ Its notes: {notes}{done})"
             .available_tools()
             .into_iter()
             .find(|t| t.name == call.name)
+            .or_else(|| {
+                let new = crate::tools::renamed(&call.name)?;
+                self.available_tools().into_iter().find(|t| t.name == new)
+            })
         else {
             let names: Vec<String> = self.available_tools().into_iter().map(|t| t.name).collect();
             let close = crate::tools::close_to(&call.name, &names, 4);
