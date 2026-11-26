@@ -21,11 +21,25 @@ thread_local! {
     static OPEN: RefCell<Option<adw::Window>> = const { RefCell::new(None) };
 }
 
+/// "Perfume X – Helium" → "Perfume X": browsers end titles with their name, and the small
+/// model took it for part of the page ("Riccardo is Helium perfume").
+fn without_app<'a>(title: &'a str, app: &str) -> &'a str {
+    let lower = title.to_lowercase();
+    for dash in [" – ", " — ", " - "] {
+        let end = format!("{dash}{}", app.to_lowercase());
+        if !app.is_empty() && lower.ends_with(&end) {
+            return title[..title.len() - end.len()].trim_end();
+        }
+    }
+    title
+}
+
 /// "[On screen: Firefox — “Title”. Selected text: «…»]" ahead of the question.
 fn screen_note(core: &Core) -> String {
     let ctx = core.context().unwrap_or_default();
     let s = |k: &str| ctx[k].as_str().unwrap_or("").trim().to_string();
     let (app, title, selection) = (s("app"), s("title"), s("selection"));
+    let title = without_app(&title, &app);
     let mut note = vec![];
     if !app.is_empty() || !title.is_empty() {
         note.push(format!("{app} — “{title}”"));
@@ -318,4 +332,17 @@ pub fn show(app: &adw::Application, open_full: OpenChat) {
     OPEN.with(|o| *o.borrow_mut() = Some(win.clone()));
     win.present();
     entry.grab_focus();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::without_app;
+
+    #[test]
+    fn titles_lose_the_app_name() {
+        assert_eq!(without_app("Riccardo – Helium", "Helium"), "Riccardo");
+        assert_eq!(without_app("Notes - gedit", "gedit"), "Notes");
+        assert_eq!(without_app("Helium docs", "Helium"), "Helium docs");
+        assert_eq!(without_app("Title", ""), "Title");
+    }
 }
