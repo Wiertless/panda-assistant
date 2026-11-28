@@ -85,7 +85,7 @@ fn general_page(win: &Rc<Window>) -> adw::PreferencesPage {
     let web = adw::SwitchRow::builder()
         .title("Search the Web")
         .active(win.st.borrow().web_enabled)
-        .subtitle("Look things up with DuckDuckGo and read web pages")
+        .subtitle("Uses DuckDuckGo")
         .build();
     let w = win.weak();
     web.connect_active_notify(move |row| {
@@ -107,21 +107,11 @@ fn general_page(win: &Rc<Window>) -> adw::PreferencesPage {
         (
             "stats_thinking",
             "Thinking Time",
-            "How long the model thought before answering",
+            "Time spent reasoning",
             true,
         ),
-        (
-            "stats_tokens",
-            "Tokens",
-            "How many tokens the answer took",
-            false,
-        ),
-        (
-            "stats_speed",
-            "Speed",
-            "How long the answer took, and tokens per second",
-            true,
-        ),
+        ("stats_tokens", "Tokens", "Tokens used", false),
+        ("stats_speed", "Speed", "Time and tokens per second", true),
     ] {
         let row = adw::SwitchRow::builder()
             .title(title)
@@ -136,7 +126,7 @@ fn general_page(win: &Rc<Window>) -> adw::PreferencesPage {
     let allowed = Rows::new(
         adw::PreferencesGroup::builder()
             .title("Allowed Without Asking")
-            .description("Actions you chose “Always Allow” for")
+            .description("Actions set to “Always Allow”")
             .build(),
     );
     page.add(&allowed.group);
@@ -185,10 +175,8 @@ fn general_page(win: &Rc<Window>) -> adw::PreferencesPage {
     fill_allowed(&allowed, win);
 
     let smart = adw::PreferencesGroup::builder().title("Smarter Model")
-        .description("When a request is too hard, the model can hand it to a bigger one. On the NPU only one model is \
-loaded at a time, so the hand-off takes a moment. With Lemonade, a model marked “graphics chip” runs next to the default \
-one instead, at the cost of more power and memory, so Automatic never picks one. A minute after it's done, the bigger \
-model is unloaded.")
+        .description("Hard requests go to a bigger model. It takes a moment to load and unloads a minute later. \
+Automatic never picks a “graphics chip” model: it uses more power.")
         .build();
     let (models, current, choice) = {
         let st = win.st.borrow();
@@ -229,13 +217,14 @@ model is unloaded.")
     smart.add(&smart_row);
     page.add(&smart);
 
-    let memory = adw::PreferencesGroup::builder().title("Memory")
-        .description("The default model stays loaded so answers start quickly; set a timer to unload it when idle. Bigger models never stay.")
+    let memory = adw::PreferencesGroup::builder()
+        .title("Memory")
+        .description("The default model stays loaded so answers start fast")
         .build();
     let ctx_labels: Vec<&str> = CTX_CHOICES.iter().map(|(_, l)| *l).collect();
     let ctx_row = adw::ComboRow::builder()
         .title("Context Length")
-        .subtitle("16K and more: every tool goes with every question, so answers start sooner")
+        .subtitle("16K or more starts answers sooner")
         .model(&gtk::StringList::new(&ctx_labels))
         .build();
     let ctx = win.st.borrow().ctx_len;
@@ -252,7 +241,7 @@ model is unloaded.")
     let idle_labels: Vec<&str> = IDLE_CHOICES.iter().map(|(_, l)| *l).collect();
     let idle_row = adw::ComboRow::builder()
         .title("Unload Model")
-        .subtitle("Frees memory when the assistant isn't used")
+        .subtitle("Frees memory when idle")
         .model(&gtk::StringList::new(&idle_labels))
         .build();
     let idle = win.st.borrow().unload_after;
@@ -283,7 +272,8 @@ fn memory_page(win: &Rc<Window>) -> adw::PreferencesPage {
         .icon_name("starred-symbolic")
         .build();
     let top = adw::PreferencesGroup::builder()
-        .description("The assistant remembers what you ask it to, in every new chat. It's kept on this computer only.").build();
+        .description("Used in every chat and kept on this computer only")
+        .build();
     let switch = adw::SwitchRow::builder()
         .title("Remember Things")
         .active(win.st.borrow().memory_enabled)
@@ -347,8 +337,8 @@ fn activity_page() -> adw::PreferencesPage {
         .build();
     let rows = Rows::new(
         adw::PreferencesGroup::builder()
-            .title("What the Assistant Did")
-            .description("Every action, newest first. Kept on this computer only (the last 500).")
+            .title("Recent Actions")
+            .description("Newest first, up to 500, kept on this computer only")
             .build(),
     );
     let clear = gtk::Button::builder()
@@ -364,7 +354,7 @@ fn activity_page() -> adw::PreferencesPage {
         if entries.is_empty() {
             rows.add(
                 &adw::ActionRow::builder()
-                    .title("Nothing yet")
+                    .title("No Actions Yet")
                     .subtitle("Actions show up here as they happen")
                     .build(),
             );
@@ -377,9 +367,9 @@ fn activity_page() -> adw::PreferencesPage {
                 .unwrap_or_default();
             let mut sub = vec![when];
             match e["decision"].as_str() {
-                Some("declined") => sub.push("you cancelled it".into()),
-                Some("allowed") => sub.push("you allowed it".into()),
-                Some("always") => sub.push("you chose Always Allow".into()),
+                Some("declined") => sub.push("Cancelled".into()),
+                Some("allowed") => sub.push("Allowed".into()),
+                Some("always") => sub.push("Always allowed".into()),
                 _ => {}
             }
             if e["from"] == "search" {
@@ -419,7 +409,7 @@ fn skills_page(win: &Rc<Window>) -> adw::PreferencesPage {
         .icon_name("view-list-bullet-symbolic")
         .build();
     let group = adw::PreferencesGroup::builder().title("Skills")
-        .description("Saved workflows. Ask “save that as a skill”, or add Markdown files to the skills folder. Run one by typing / and its name.")
+        .description("Say “save that as a skill” or add Markdown files to the folder. Run one by typing / and its name.")
         .build();
     let folder = flat_button("folder-open-symbolic", "Open Skills Folder");
     let w = win.weak();
@@ -443,7 +433,7 @@ fn skills_page(win: &Rc<Window>) -> adw::PreferencesPage {
         if skills.is_empty() {
             rows.add(
                 &adw::ActionRow::builder()
-                    .title("No skills yet")
+                    .title("No Skills Yet")
                     .subtitle(
                         "Try: “Save a skill called morning: turn on dark mode, set volume to 30%”",
                     )
@@ -483,8 +473,7 @@ fn connections_page(win: &Rc<Window>) -> adw::PreferencesPage {
         .icon_name("network-server-symbolic")
         .build();
     let group = adw::PreferencesGroup::builder().title("Apps and Services")
-        .description(format!("The assistant can use tools that other apps and services offer through the Model Context \
-Protocol (MCP). Tools that change things ask first. Each one uses some of the model's memory, so at most {}.", mcp::MAX_TOOLS))
+        .description(format!("Tools from other apps through MCP. Tools that change things ask first. Up to {} tools.", mcp::MAX_TOOLS))
         .build();
     let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     let edit = flat_button("document-edit-symbolic", "Edit Configuration File");
@@ -514,7 +503,7 @@ Protocol (MCP). Tools that change things ask first. Each one uses some of the mo
                 }
             );
         }
-        "Connects when you send a message".into()
+        "Connects with the next message".into()
     }
     fn changed(rows: &Rc<Rows>, win: &Rc<Window>) {
         if let Err(e) = win.core.reload_now() {
@@ -538,7 +527,7 @@ Protocol (MCP). Tools that change things ask first. Each one uses some of the mo
         } else if info["servers"].as_array().is_none_or(|a| a.is_empty()) {
             rows.add(
                 &adw::ActionRow::builder()
-                    .title("No servers yet")
+                    .title("No Servers Yet")
                     .subtitle("Add one with the + button")
                     .build(),
             );
@@ -611,7 +600,7 @@ Protocol (MCP). Tools that change things ask first. Each one uses some of the mo
         list.append(&name);
         list.append(&target);
         let dialog = adw::AlertDialog::builder().heading("Add Server")
-            .body("The command that starts the server, e.g. “npx -y @modelcontextprotocol/server-memory”, or its web address.")
+            .body("The command that starts the server, like “npx -y @modelcontextprotocol/server-memory”, or its web address")
             .extra_child(&list).build();
         dialog.add_responses(&[("cancel", "_Cancel"), ("add", "_Add")]);
         dialog.set_response_appearance("add", adw::ResponseAppearance::Suggested);

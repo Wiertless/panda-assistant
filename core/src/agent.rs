@@ -1219,6 +1219,16 @@ impl Agent {
                     "content": PLAN_LEFT.replace("{left}", &left.join("; "))}));
                 continue;
             }
+            // Small models summarise search results and drop the links: give them back.
+            if calls.is_empty()
+                && !self.cancelled()
+                && !content.trim().is_empty()
+                && !content.contains("http")
+                && let Some(links) = turn.links()
+            {
+                cb.text(&links);
+                assistant["content"] = json!(format!("{content}{links}"));
+            }
             self.messages.push(assistant);
             if calls.is_empty() || self.cancelled() {
                 return Ok(());
@@ -1277,6 +1287,7 @@ impl Agent {
                     self.activate(own);
                 }
                 if !result.starts_with("Error") {
+                    turn.note_links(&call.name, &result);
                     turn.done.push(call.name.clone());
                     // A step done: tick the first open one naming this tool (no extra round to tick).
                     let i = self
@@ -2125,9 +2136,63 @@ struct Turn {
     plan_checked: bool,
     plan_note_at: Option<usize>,
     was_forced: bool,
+    /// Pages read and search hits this turn (title, URL), linked if the answer gives none.
+    pages: Vec<(String, String)>,
+    hits: Vec<(String, String)>,
 }
 
 impl Turn {
+    fn note_links(&mut self, tool: &str, result: &str) {
+        let clean = |t: &str| t.replace(['[', ']'], "").trim().to_string();
+        match tool {
+            // "Title\nhttps://…\n\ntext", or "https://…\n\ntext" without a title.
+            "read_web_page" => {
+                let mut lines = result.lines();
+                let first = lines.next().unwrap_or("");
+                let (title, url) = if first.starts_with("http") {
+                    (first, first)
+                } else {
+                    (first, lines.next().unwrap_or(""))
+                };
+                if url.starts_with("http") && !self.pages.iter().any(|(_, u)| u == url) {
+                    self.pages.push((clean(title), url.to_string()));
+                }
+            }
+            // "1. Title - https://…" lines.
+            "web_search" if result.starts_with("Results from") => {
+                for line in result.lines() {
+                    if let Some((head, url)) = line.rsplit_once(" - ")
+                        && url.starts_with("http")
+                        && let Some((n, title)) = head.split_once(". ")
+                        && n.chars().all(|c| c.is_ascii_digit())
+                    {
+                        self.hits.push((clean(title), url.to_string()));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// The pages read, or else the top three hits, as a Markdown list after the answer.
+    fn links(&self) -> Option<String> {
+        let links = if self.pages.is_empty() {
+            &self.hits[..self.hits.len().min(3)]
+        } else {
+            &self.pages[..]
+        };
+        (!links.is_empty()).then(|| {
+            links.iter().fold(String::from("\n"), |mut s, (t, u)| {
+                s += &if t.is_empty() {
+                    format!("\n- {u}")
+                } else {
+                    format!("\n- [{t}]({u})")
+                };
+                s
+            })
+        })
+    }
+
     /// The finishing tools for a lookup that ran and wasn't followed up.
     fn unfinished(&self) -> Option<Vec<String>> {
         let (i, lookup) = self
@@ -2978,6 +3043,58 @@ mod tests {
             "a safe tool asks after a web page: {log:?}"
         );
         assert!(log.contains(&"tool:send_text:false:Cancelled".to_string()));
+    }
+
+    #[test]
+    fn a_web_answer_without_links_gets_them() {
+        let _h = temp_home();
+        let search = || {
+            Tool::new(
+                "web_search",
+                "Search",
+                obj(json!({"query": {"type": "string"}}), &["query"]),
+                Risk::Safe,
+                |_, _| {
+                    Ok("Results from DuckDuckGo for 'x':\n\
+                        1. A - B [wiki] - https://a.pl\n   snippet\n\
+                        2. C - https://c.pl\n3. D - https://d.pl\n4. E - https://e.pl\n\
+                        Use read_web_page on a result for details."
+                        .into())
+                },
+                |_| "Search".into(),
+            )
+        };
+        for (reply, want) in [
+            (
+                "It's A.",
+                "It's A.\n\n- [A - B wiki](https://a.pl)\n- [C](https://c.pl)\n- [D](https://d.pl)",
+            ),
+            ("See https://a.pl", "See https://a.pl"),
+        ] {
+            let flm = FakeFlm::start(vec![
+                (200, tool_reply("web_search", r#"{"query": "x"}"#, "c1")),
+                (200, text_reply(reply)),
+            ]);
+            let mut tools = test_tools()();
+            tools.push(search());
+            let mut a = Agent::new(
+                Arc::new(FlmClient::new(&flm.url)),
+                "test-model",
+                Arc::new(move || tools.clone()),
+            );
+            a.reply_tool = false;
+            let rec = Rec::default();
+            a.ask("look up x", &rec, &[]).unwrap();
+            assert_eq!(a.messages.last().unwrap()["content"], want);
+            let shown: String = rec
+                .log
+                .lock()
+                .unwrap()
+                .iter()
+                .filter_map(|l| l.strip_prefix("text:"))
+                .collect();
+            assert_eq!(shown, want);
+        }
     }
 
     #[test]
