@@ -545,13 +545,13 @@ impl Reply {
         buttons.append(&cancel);
         let always = can_always.then(|| {
             let b = gtk::Button::with_mnemonic("Always A_llow");
-            b.set_tooltip_text(Some("Don't ask again for this kind of action"));
+            b.set_tooltip_text(Some("Never Ask for This Kind of Action"));
             buttons.append(&b);
             b
         });
         let task = can_always.then(|| {
             let b = gtk::Button::with_mnemonic("Allow for This _Task");
-            b.set_tooltip_text(Some("Don't ask again until this task is done"));
+            b.set_tooltip_text(Some("Don't Ask Again Until the Task Is Done"));
             buttons.append(&b);
             b
         });
@@ -574,7 +574,7 @@ impl Reply {
         card.append(&buttons);
         self.before_spinner(&card);
         self.inner.borrow_mut().label = None;
-        self.spin_label.set_label("Waiting for you…");
+        self.spin_label.set_label("Waiting for approval…");
         self.scroll();
         let pick = {
             let (me, card, buttons, title, summary) = (

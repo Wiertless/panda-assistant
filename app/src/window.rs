@@ -269,7 +269,7 @@ impl Window {
         // the answer), slower; off: they answer straight away.
         let think_btn = gtk::ToggleButton::builder()
             .icon_name("dialog-information-symbolic")
-            .tooltip_text("Think First (slower, shows its reasoning)")
+            .tooltip_text("Show the Model's Reasoning (Slower)")
             .valign(gtk::Align::Center)
             .active(config::bool_or(&cfg, "thinking", false))
             .build();
@@ -469,9 +469,9 @@ impl Window {
             if let Some(s) = w() {
                 s.core.reload();
                 s.toast(if b.is_active() {
-                    "Thinking first: slower, and you can see its reasoning"
+                    "Reasoning shown, answers are slower"
                 } else {
-                    "Answering straight away"
+                    "Reasoning hidden, answers are faster"
                 });
             }
         });
@@ -772,7 +772,7 @@ impl Window {
                 "No Results"
             });
             self.no_chats.set_description(if query.is_empty() {
-                Some("Your conversations are saved here")
+                Some("Chats are saved here")
             } else {
                 None
             });
@@ -807,7 +807,7 @@ impl Window {
         let Some(data) =
             store::load_chat(id).or_else(|| running().then(|| serde_json::json!({"messages": []})))
         else {
-            self.toast("Couldn't open that chat");
+            self.toast("Couldn't open the chat");
             self.refresh_chats();
             return;
         };
@@ -1191,9 +1191,8 @@ impl Window {
             .filter(|m| !m.labels.is_empty())
         {
             if m.single_turn() {
-                self.banner.set_title(
-                    "This model doesn't remember earlier messages and can't take actions",
-                );
+                self.banner
+                    .set_title("This model can't take actions or remember earlier messages");
                 self.banner.set_revealed(true);
             } else if !m.can_use_tools() {
                 self.banner
@@ -1279,7 +1278,7 @@ impl Window {
             s.toast(if gone {
                 "Assistant restarted"
             } else {
-                "The service didn't restart; try again"
+                "Couldn't restart the assistant"
             });
             glib::ControlFlow::Break
         });
@@ -1717,8 +1716,11 @@ fn build_start_page() -> (gtk::ScrolledWindow, gtk::Label, Vec<gtk::Button>) {
     greet.add_css_class("greeting");
     bx.append(&greet);
     let sub = gtk::Label::builder()
-        .label("Ask anything. It runs privately on your NPU and can search the web, see your screen, change settings and work with your apps and files.")
-        .wrap(true).justify(gtk::Justification::Center).max_width_chars(46).build();
+        .label("Ask anything. It runs privately on your NPU.")
+        .wrap(true)
+        .justify(gtk::Justification::Center)
+        .max_width_chars(46)
+        .build();
     sub.add_css_class("dim-label");
     bx.append(&sub);
     let chips: Vec<gtk::Button> = SUGGESTIONS
@@ -1801,7 +1803,7 @@ fn build_sidebar() -> (
             "mail-unread-symbolic"
         })
         .title("No Chats")
-        .description("Your conversations are saved here")
+        .description("Chats are saved here")
         .build();
     empty.add_css_class("compact");
     let stack = gtk::Stack::new();
